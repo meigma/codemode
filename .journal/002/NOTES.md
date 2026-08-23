@@ -47,3 +47,19 @@ Next: use the selected dependency revisions and observed contracts when beginnin
 Created the isolated implementation branch `chore/increment-1-module-cutover` from fetched `origin/master` at `.wt/chore-increment-1-module-cutover`.
 Scope: remove the template command, CLI, config, and template-info packages; rename the Go module; pin only the MCP and Starlark revisions reviewed in Increment 0; update `.golangci.yml` and `moon.yml`; leave release, image, documentation, script, mise, and unrelated CI files unchanged.
 Acceptance: `go mod tidy`, `go list ./...`, and `go build ./...` succeed, then push the branch and open a PR.
+
+## 2026-08-23 09:08 — Increment 1 PR opened
+Completed the minimal repository cutover on commit `ade0a48` and opened PR [#6](https://github.com/meigma/codemode/pull/6), `refactor: cut over to codemode library module`, from `chore/increment-1-module-cutover` to `master`.
+
+Changes:
+- Removed `cmd/template-go`, `internal/cli`, `internal/config`, and `internal/templateinfo`.
+- Renamed the module to `github.com/meigma/codemode`, retained only MCP SDK `v1.7.0` and Starlark-Go `v0.0.0-20260708150628-5395d018f003`, and removed all Cobra/Viper dependency state.
+- Added the root `codemode` package declaration so `go list ./...` and `go build ./...` exercise an actual library package.
+- Updated the golangci local prefix and Moon source groups/build command. Release, image, documentation, script, mise, and unrelated CI files are unchanged.
+
+Verification:
+- `go mod tidy` completed; because the empty root package does not import MCP or Starlark yet, tidy removed both reviewed requirements, which were then deliberately restored and downloaded as required by the Increment 1 plan. The PR documents this temporary condition; Increment 2 will make Starlark a live dependency.
+- `go list ./...` returned `github.com/meigma/codemode`.
+- `go build ./...` passed.
+- `moon run root:build` completed one task successfully.
+- `git ls-files .journal` returned no tracked journal paths in the implementation branch.
