@@ -156,3 +156,10 @@ Verification:
 - PR #9 was open at commit `958be9ddf4680041781ef30e13a9296a496e72ac`; GitHub CI, Pages, and Kusari checks had started and were still in progress when recorded.
 
 Next: after PR #9 checks pass, merge it, remove the integrated worktree, and execute Increment 5's remaining template and release/image cutover without adding a replacement command package.
+
+## 2026-08-23 12:55 — Increment 5 started
+Merged PR [#9](https://github.com/meigma/codemode/pull/9) by squash as `5eb0b1f46596fc2cc3457eb2530eccfa49f62b11`, removed the integrated Increment 4 worktree, and created `chore/increment-5-template-cutover` from fetched `origin/master` at `.wt/chore-increment-5-template-cutover`.
+
+Scope: complete the source-library cutover by removing binary, OCI image, and container-scan assets; pruning their mise tools and generated lock state while pinning Mockery; making Moon and hardened CI run the actual MCP smoke and race suite; retaining only source versioning through Release Please; resolving the completed repository bootstrap surface; and removing stale template branding from repository and user documentation.
+
+Acceptance: no template application, artifact publication path, obsolete tool pin, or stale template identity remains; normal local and CI entrypoints exercise the library and actual-MCP boundary; the package list remains the six substantive packages plus generated mock subpackages; no replacement command package is added.
