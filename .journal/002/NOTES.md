@@ -99,3 +99,26 @@ Merged PR [#7](https://github.com/meigma/codemode/pull/7) by squash as `830d70df
 Scope: implement Increment 3's one-shot mutable builder, immutable concurrency-safe server, and complete secure native Starlark execution path. The increment must enforce phase, source, step, elapsed-time, attempted-call, authorization, argument, panic, cancellation, value-depth, and final-result boundaries without exposing an authorization bypass.
 
 Acceptance: top-level native calls cannot run; valid builtins authorize before dispatch; malformed calls fail before authorization; denial and policy failures produce zero handler calls; each execution owns fresh interpreter state and budgets; and only `main()`'s bounded final value escapes.
+
+## 2026-08-23 11:54 — Increment 3 PR opened
+Completed Increment 3 on commit `edd8995` and opened PR [#8](https://github.com/meigma/codemode/pull/8), `feat: add secure execution server`, from `feat/increment-3-server-core`.
+
+Changes:
+- Added the generic one-shot `Builder`, compile-before-erasure `Register`, immutable concurrency-safe `Server`, and concrete search, describe, and execute methods.
+- Added a fresh restricted Starlark thread per execution with loading/running/done phase guards, source/step/time/attempted-call/depth/result budgets, disabled `load`, discarded `print`, exact zero-argument `main()`, and final-value-only conversion.
+- Compiled and cached one frozen enabled-capability namespace per server while retaining fresh thread-local authorization, counters, globals, and cancellation state for every call.
+- Enforced attempted-call charge, binding and canonical capture, authorization, post-authorization cancellation/deadline gate, handler dispatch, and output conversion in that order. Denial, policy failure, stale allow after cancellation, and authorizer panic produce zero handler calls.
+- Added Mockery-generated `authz.Authorizer` mocks and focused builder, runtime, in-flight cancellation, deadline, panic, limit, final-result, and concurrent-server tests.
+- Cut catalog registrations over to caller-compiled immutable binding plans so generic type information is preserved before handler erasure.
+
+Verification:
+- Focused Increment 3 tests passed.
+- `go test ./... -count=1` passed.
+- `go test -race ./... -count=1` passed.
+- `moon run root:lint` passed.
+- `go build ./...` passed.
+- `git diff --check` passed.
+- Independent code review and implementation-plan conformance review reported PASS after cancellation and critical-path fixes.
+- PR #8 was open at commit `edd8995027d65488ef5589c5a85dc31e2f41a029`; GitHub checks had started and were still in progress when recorded.
+
+Next: after PR #8 checks pass, merge it, remove the integrated worktree, and begin Increment 4's exact three-tool MCP adapter and actual in-memory client/server tests.
