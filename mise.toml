@@ -1,0 +1,82 @@
+# mise: tool + environment management for template-go.
+#
+# mise REPLACES Proto (the former .prototools + .moon/proto/*). The committed
+# mise.lock records per-platform download URLs + checksums; for aqua-backed tools
+# it additionally carries cosign / SLSA / GitHub-attestation verification.
+# `settings.locked` makes `mise install` FAIL CLOSED when a tool lacks a
+# pre-resolved URL for the current platform.
+#
+# moon stays the task runner / CI gate; it is configured (.moon/toolchains.yml +
+# moon.yml `toolchains.default: system`) to run these tools as `system` binaries
+# that mise puts on PATH.
+#
+# Bump a tool: edit its version here, then
+#   mise lock --platform linux-x64,linux-arm64,macos-x64,macos-arm64
+# and commit mise.toml + mise.lock together.
+
+[tools]
+# Language runtimes (core backend).
+go = "1.26.6"
+python = "3.14.3"
+
+# Go dev-tool CLI. The explicit `aqua:` ref forces the VERIFYING backend (checksum +
+# cosign/SLSA/GitHub-attestation recorded in mise.lock); it must never fall back to
+# a version-only backend (asdf/npm/cargo/pipx), which records no checksum.
+"aqua:golangci/golangci-lint" = "2.12.2"
+
+# Docs (MkDocs) toolchain — moved off moon's former unstable_python/unstable_uv.
+"aqua:astral-sh/uv" = "0.11.0"
+
+# Build / CI / release / supply-chain CLIs. The reusable release unit resolves
+# these exact tools through mise and refuses unlocked replacements.
+"aqua:moonrepo/moon"             = "2.3.5"
+"aqua:goreleaser/goreleaser"     = "2.17.1"
+"aqua:cli/cli"                    = "2.97.0"
+"aqua:anchore/syft"               = "1.51.0"
+"aqua:sigstore/cosign"            = "3.1.3"
+"aqua:chainguard-dev/melange"     = "0.59.1"
+"aqua:chainguard-dev/apko"        = "1.2.37"
+
+[env]
+# Pin the Go toolchain: never auto-download a toolchain other than the one above.
+# The version here is authoritative and matches go.mod's `go 1.26.6`.
+GOTOOLCHAIN = "local"
+
+[settings]
+# Read/write mise.lock, and fail closed if a tool lacks a pre-resolved URL for the
+# current platform — replaces Proto's `checksum-url` and extends integrity
+# enforcement to every tool.
+lockfile = true
+locked = true
+
+# Local equivalent of the reusable OCI build's package-and-compose path.
+# Go builds the canonical Linux binary; melange packages those exact bytes.
+[tasks.image-local]
+description = "Build the apko image for the host arch and load it into Docker as template-go:dev"
+run = '''
+set -euo pipefail
+go_arch="$(go env GOARCH)"
+case "$go_arch" in
+  amd64) apk_arch="x86_64" ;;
+  arm64) apk_arch="aarch64" ;;
+  *) echo "unsupported host architecture: $go_arch" >&2; exit 1 ;;
+esac
+
+rm -rf .image-local packages image.tar
+mkdir -p .image-local
+commit="$(git rev-parse --short HEAD 2>/dev/null || echo none)"
+build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+CGO_ENABLED=0 GOOS=linux GOARCH="$go_arch" go build -trimpath \
+  -ldflags="-s -w -buildid= -X main.version=dev -X main.commit=$commit -X main.date=$build_date" \
+  -o .image-local/application ./cmd/template-go
+
+melange keygen melange.rsa
+printf '{"version":"0.0.0"}\n' > .melange-vars.local.json
+melange build melange.yaml --arch "$apk_arch" --signing-key melange.rsa --runner docker \
+  --source-dir .image-local --out-dir packages --vars-file .melange-vars.local.json
+apko build apko.yaml template-go:dev image.tar --arch "$go_arch" \
+  --repository-append ./packages --keyring-append ./melange.rsa.pub
+docker load < image.tar
+docker tag "template-go:dev-$go_arch" template-go:dev
+echo "loaded template-go:dev (host arch $go_arch)"
+'''

@@ -1,0 +1,54 @@
+site_name: template-go
+site_description: Meigma Go repository template
+site_url: https://meigma.github.io/template-go/
+repo_name: meigma/template-go
+repo_url: https://github.com/meigma/template-go
+edit_uri: edit/master/docs/docs/
+docs_dir: docs
+site_dir: build
+strict: true
+
+theme:
+  name: material
+  language: en
+  features:
+    - content.action.edit
+    - navigation.instant
+    - navigation.tracking
+    - search.highlight
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+
+extra_css:
+  - stylesheets/palette.css

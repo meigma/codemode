@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-assets:
+    name: Build release assets
+    if: github.event.deleted == false
+    permissions:
+      attestations: read
+      contents: read
+      id-token: write
+    uses: meigma/release/.github/workflows/go-pre-publish.yml@0dee66ff6c4cc7e28d7bb65e97a37d701e0eff4a
+    with:
+      sign-and-notarize-macos: false
+      sign-native-packages: false
+
+  oci-image:
+    name: Build OCI image
+    needs: release-assets
+    permissions:
+      actions: read
+      attestations: read
+      contents: read
+    uses: meigma/release/.github/workflows/go-oci-build.yml@0dee66ff6c4cc7e28d7bb65e97a37d701e0eff4a
+    with:
+      artifact-id: ${{ needs.release-assets.outputs.oci-input-artifact-id }}
+      artifact-digest: ${{ needs.release-assets.outputs.oci-input-artifact-digest }}
+
+  oci-publish:
+    name: Publish OCI image
+    needs: oci-image
+    permissions:
+      actions: read
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
+      packages: write
+    uses: meigma/release/.github/workflows/publish-oci-image.yml@0dee66ff6c4cc7e28d7bb65e97a37d701e0eff4a
+    with:
+      artifact-id: ${{ needs.oci-image.outputs.artifact-id }}
+      artifact-digest: ${{ needs.oci-image.outputs.artifact-digest }}
+      image-digest: ${{ needs.oci-image.outputs.image-digest }}
+      publish-image: true
+
+  github-release:
+    name: Publish GitHub Release
+    needs:
+      - release-assets
+      - oci-publish
+    permissions:
+      actions: read
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
+    uses: meigma/release/.github/workflows/publish-github-release.yml@0dee66ff6c4cc7e28d7bb65e97a37d701e0eff4a
+    with:
+      artifact-id: ${{ needs.release-assets.outputs.artifact-id }}
+      artifact-digest: ${{ needs.release-assets.outputs.artifact-digest }}
+      checksum-signing-workflow-ref: meigma/release/.github/workflows/go-pre-publish.yml@0dee66ff6c4cc7e28d7bb65e97a37d701e0eff4a
+      require-oci-image: true
+      oci-image-reference: ${{ needs.oci-publish.outputs.image-reference }}
+      release-app-client-id: ${{ vars.MEIGMA_RELEASE_APP_CLIENT_ID }}
+      publish-release: true
+    secrets:
+      release-app-private-key: ${{ secrets.MEIGMA_RELEASE_APP_PRIVATE_KEY }}

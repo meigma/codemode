@@ -1,0 +1,60 @@
+language: 'python'
+layer: 'application'
+stack: 'frontend'
+tags:
+  - 'docs'
+  - 'mkdocs'
+  - 'uv'
+
+project:
+  title: 'template-go docs'
+  description: 'MkDocs documentation site for the Meigma Go repository template.'
+  owner: 'meigma'
+  maintainers:
+    - 'meigma'
+
+# uv + Python come from mise (system binaries on PATH); uv creates/activates the
+# project .venv itself, so moon manages no toolchain here.
+toolchains:
+  default: 'system'
+
+fileGroups:
+  configs:
+    - 'mkdocs.yml'
+    - 'pyproject.toml'
+    - 'uv.lock'
+    - '.python-version'
+  sources:
+    - 'docs/**/*'
+
+tasks:
+  install:
+    command: 'uv sync --locked'
+    inputs:
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.python-version'
+    outputs:
+      - '.venv/pyvenv.cfg'
+    options:
+      cache: false
+
+  build:
+    command: 'uv run --locked mkdocs build --strict'
+    deps:
+      - 'docs:install'
+    inputs:
+      - '@group(configs)'
+      - '@group(sources)'
+    outputs:
+      - 'build/**/*'
+
+  serve:
+    command: 'uv run --locked mkdocs serve --dev-addr 127.0.0.1:8000'
+    deps:
+      - 'docs:install'
+    inputs:
+      - '@group(configs)'
+      - '@group(sources)'
+    options:
+      cache: false

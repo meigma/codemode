@@ -1,0 +1,138 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: template-go
+
+gomod:
+  proxy: true
+  env:
+    - GOTOOLCHAIN=local
+    - GOPROXY=https://proxy.golang.org,direct
+    - GOSUMDB=sum.golang.org
+
+builds:
+  - id: template-go
+    main: ./cmd/template-go
+    binary: template-go
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -buildid=
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .FullCommit }}
+      - -X main.date={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+notarize:
+  macos:
+    - enabled: '{{ eq .Env.MACOS_NOTARIZE_ENABLED "true" }}'
+      ids:
+        - template-go
+      sign:
+        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
+        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+      notarize:
+        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
+        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
+        key: "{{ .Env.MACOS_NOTARY_KEY }}"
+        wait: true
+        timeout: 20m
+
+archives:
+  - id: template-go
+    ids:
+      - template-go
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+nfpms:
+  - id: release
+    ids:
+      - template-go
+    vendor: Meigma
+    homepage: https://github.com/meigma/template-go
+    maintainer: Meigma
+    description: Meigma Go repository template application.
+    license: Apache-2.0 OR MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+    bindir: /usr/bin
+    rpm:
+      signature:
+        key_file: "{{ .Env.RELEASE_RPM_SIGNING_KEY_FILE }}"
+    apk:
+      signature:
+        key_file: "{{ .Env.RELEASE_APK_SIGNING_KEY_FILE }}"
+        key_name: template-go-001
+
+homebrew_casks:
+  - name: template-go
+    ids:
+      - template-go
+    binaries:
+      - template-go
+    repository:
+      owner: meigma
+      name: homebrew-tap
+    homepage: https://github.com/meigma/template-go
+    description: Meigma Go repository template application
+    license: Apache-2.0 OR MIT
+    url:
+      template: "https://github.com/meigma/template-go/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+    skip_upload: true
+
+scoops:
+  - name: template-go
+    ids:
+      - template-go
+    repository:
+      owner: meigma
+      name: scoop-bucket
+    homepage: https://github.com/meigma/template-go
+    description: Meigma Go repository template application
+    license: Apache-2.0 OR MIT
+    url_template: "https://github.com/meigma/template-go/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+    skip_upload: true
+
+checksum:
+  name_template: checksums.txt
+
+sboms:
+  - id: archives
+    artifacts: archive
+  - id: packages
+    artifacts: package
+
+signs:
+  - id: checksums
+    cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sigstore.json"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - --yes
+
+changelog:
+  disable: true
+
+release:
+  disable: true

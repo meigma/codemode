@@ -1,0 +1,120 @@
+# GitHub repository settings managed by .github/scripts/configure_github_repo.py.
+#
+# Run:
+#   uv run .github/scripts/configure_github_repo.py plan --repo OWNER/REPO
+#   uv run .github/scripts/configure_github_repo.py apply --repo OWNER/REPO
+#
+# Notes:
+# - Supported settings are applied directly through the GitHub REST API.
+# - Unsupported settings stay in this file so the script can report manual follow-ups.
+# - The branch ruleset follows the repository default branch via ~DEFAULT_BRANCH.
+# - Status checks default to the standard template CI check. Adjust them when
+#   the repository adds more required workflows.
+
+[repository]
+default_branch = "master"
+is_template = true
+immutable_releases = true
+
+has_wiki = false
+has_issues = true
+has_projects = false
+has_discussions = true
+
+allow_merge_commit = false
+allow_squash_merge = true
+allow_rebase_merge = false
+squash_merge_commit_title = "PR_TITLE"
+squash_merge_commit_message = "BLANK"
+
+allow_update_branch = true
+allow_auto_merge = true
+delete_branch_on_merge = true
+web_commit_signoff_required = false
+
+[security]
+advanced_security = true
+private_vulnerability_reporting = true
+
+# GitHub exposes dependency graph and vulnerability alerts through the same repository-level toggle.
+dependency_graph = true
+vulnerability_alerts = true
+
+# Dependabot security updates / automated security fixes.
+automated_security_fixes = true
+
+[pages]
+build_type = "workflow"
+https_enforced = true
+
+[rulesets.branch_default]
+name = "Default branch"
+enforcement = "active"
+restrict_creations = false
+restrict_updates = false
+update_allows_fetch_and_merge = false
+restrict_deletions = true
+require_linear_history = true
+require_signed_commits = true
+require_pull_request = true
+block_force_pushes = true
+
+bypass = [
+  { type = "repository_admin_role", mode = "always" },
+]
+
+[rulesets.branch_default.pull_request]
+allowed_merge_methods = ["squash"]
+dismiss_stale_reviews_on_push = false
+require_code_owner_review = false
+require_last_push_approval = false
+required_approving_review_count = 0
+required_review_thread_resolution = false
+
+[rulesets.branch_default.status_checks]
+enabled = true
+strict_required_status_checks_policy = false
+do_not_enforce_on_create = false
+contexts = [
+  "ci",
+]
+
+[rulesets.tags_default]
+name = "Default tags"
+enforcement = "active"
+restrict_creations = true
+restrict_updates = true
+update_allows_fetch_and_merge = false
+restrict_deletions = true
+require_linear_history = false
+require_signed_commits = true
+block_force_pushes = true
+
+bypass = [
+  { type = "repository_admin_role", mode = "always" },
+  # Release Please needs tag-creation bypass because tags are protected here.
+  { type = "app", slug = "meigma-release-please", mode = "always" },
+]
+
+[rulesets.tags_default.status_checks]
+enabled = false
+strict_required_status_checks_policy = false
+do_not_enforce_on_create = false
+contexts = [
+]
+
+[unsupported]
+# GitHub Archive Program
+preserve_repository = true
+
+# Advanced security / Dependabot UI controls without a documented repository REST toggle.
+automatic_dependency_submission = true
+dependabot_malware_alerts = true
+prevent_direct_alert_dismissals = false
+grouped_security_updates = true
+dependabot_version_updates = false
+
+# General settings not currently handled in v1.
+code_quality_preview = true
+commit_comments_on_individual_commits = true
+pull_request_creation_permissions = "all_users"

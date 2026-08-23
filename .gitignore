@@ -1,0 +1,97 @@
+# Moon
+.moon/cache/
+.moon/docker/
+
+# Agent/runtime state
+.agents/
+.journal/
+.wt/
+
+# Environment
+.env
+.env.*
+.envrc
+
+# mise local overrides (per-developer tool/env overrides; never committed).
+# mise.toml and mise.lock ARE committed.
+mise.local.toml
+.mise.local.toml
+
+# Local container build artifacts (melange apks + ephemeral signing keys + apko
+# image tarballs/SBOMs from `mise run image-local`). melange.yaml/apko.yaml ARE committed.
+/packages/
+/sbom/
+melange*.rsa
+melange*.rsa.pub
+melange-vars.yaml
+.melange-vars.local.yaml
+.melange-vars.local.json
+.image-local/
+image.tar
+*.oci
+*.spdx.json
+
+# Go
+bin/
+cover.out
+coverage.out
+coverage.html
+*.test
+*.prof
+vendor/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.python-version
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+htmlcov/
+.coverage
+.coverage.*
+dist/
+build/
+site/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+!docs/.python-version
+
+# Node / TypeScript
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+.npm/
+.yarn/cache/
+.yarn/unplugged/
+.yarn/install-state.gz
+.yarn/build-state.yml
+*.tsbuildinfo
+.turbo/
+.next/
+.nuxt/
+.svelte-kit/
+coverage/
+
+# Template repo outputs
+docs/build/
+docs/.venv/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
