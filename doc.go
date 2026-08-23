@@ -1,2 +1,2 @@
-// Package codemode is the root package of the CodeMode library.
+// Package codemode defines capability and runtime configuration contracts for code-native MCP servers.
 package codemode
