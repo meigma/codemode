@@ -1,314 +1,296 @@
 # CodeMode Architecture
 
-## 1. Problem statement
+## Problem
 
-CodeMode is a Go framework for building code-native Model Context Protocol (MCP) servers. A server author registers new, native Go capabilities backed directly by application services, established SDKs, databases, and protocols. The framework exposes only a small MCP surface—`search_api`, `describe_api`, and `execute`—so a model can discover a Starlark API progressively and compose several native calls in one program.
+CodeMode is a Go framework for authoring **new, code-native MCP servers**. A server author registers native Go capabilities backed directly by application services, SDKs, databases, and protocols. CodeMode exposes those capabilities to a model as a generated Starlark SDK behind three MCP tools:
 
-The architectural problem is to preserve that compact model-facing surface without weakening the native Go boundary. Discovery metadata, generated Starlark reference, input validation, authorization, runtime binding, handler dispatch, and result conversion must all describe the same capability. Credentials and trusted identity must stay in Go. Untrusted Starlark must receive only explicitly enabled functions and must not gain ambient filesystem, environment, network, subprocess, SDK-client, credential, or module-loading access.
+- `search_api`
+- `describe_api`
+- `execute`
 
-The repository is currently an uncustomized Go application template: `go.mod` still declares `github.com/meigma/template-go`; `cmd/template-go`, `internal/cli`, `internal/config`, and `internal/templateinfo` implement a Cobra/Viper example; and the release configuration assumes a standalone binary and image. CodeMode is a framework, not a configurable generic proxy binary. Implementation therefore begins with a clean repository cutover to the `github.com/meigma/codemode` library and removes the template application rather than adapting its CLI into a generic server.
+CodeMode is not an MCP client, proxy, importer, translator, or compatibility layer. It never connects to or invokes downstream MCP servers. MCP exists only at the client boundary.
 
-## 2. Decision summary
+The central design problem is keeping discovery compact while preserving a strict native boundary. Registration, generated signatures, runtime binding, deployment filtering, authorization, handler dispatch, and result conversion must agree about each capability. Untrusted Starlark must not gain ambient access to the host. Authentication and credential selection must remain in trusted Go code.
 
-1. **Use an immutable capability registry.** Authors register typed capabilities through a builder, then call `Build`. Build compiles names, schemas, codecs, references, search indexes, deployment filtering, and erased runtime handlers into one immutable catalog. Registration is closed before serving.
-2. **Keep one stable identity and one model-facing name per capability.** An opaque `CapabilityID` is the authorization and audit identity; a dotted `CapabilityName`, such as `github.list_repos`, is the Starlark contract. Both are unique. A display rename cannot silently change policy identity.
-3. **Derive a restricted value contract from Go types.** A compiled type plan handles Starlark binding, canonical values, validation, typed Go decoding, output conversion, and reference/schema generation. The supported subset is deliberately narrower than arbitrary Go or JSON Schema.
-4. **Separate application orchestration from adapters.** Pure catalog, schema, value, reference, and budget logic lives in focused packages. Starlark-Go, the official MCP Go SDK, optional embedded Rego, logging, transports, and native capability implementations are single-purpose adapters behind narrow ports.
-5. **Authorize at the native call boundary.** Deployment filtering happens once at build time. Per-invocation authorization happens after canonical argument validation and immediately before every Go handler call. It never relies on source inspection.
-6. **Use a fresh Starlark-Go thread for every execution.** Programs define `main()`; module initialization cannot invoke capabilities. Each thread receives only the immutable namespaces produced from the enabled catalog. `load` is unavailable, recursion remains disabled, and execution is bounded by steps, time, native-call count, concurrency, and value sizes.
-7. **Keep the MCP surface fixed and small.** `search_api` returns compact ranked summaries, `describe_api` returns deterministic generated reference for exact names, and `execute` accepts one Starlark program and returns only its final representable value.
-8. **Do not claim hard isolation.** Starlark-Go cancellation can wait while a Go builtin is blocked, and it provides neither a hard per-execution memory ceiling nor process isolation. An adversarial prototype creates an explicit evidence gate for retaining in-process execution or moving it into workers.
-9. **Make authentication host-controlled and non-secret.** Trusted transport middleware or a process-local resolver supplies a subject and execution attributes from Go context. Credentials remain in that context or in services closed over by handlers; they are never converted to CodeMode values.
-10. **Keep OPA optional.** The core accepts an application-defined `Authorizer`. The `rego` adapter prepares and reuses a local query, restricts unsafe Rego builtins, and fails closed. CodeMode does not require an OPA daemon or network policy service.
+The repository is currently a Go application template: its module name, template CLI, Cobra/Viper packages, and binary/image release configuration do not describe this product. The first implementation replaces that scaffold with a library-oriented layout rather than adapting the template CLI into a generic CodeMode server.
 
-## 3. Goals
+## Goals
 
-- Keep the initial MCP tool catalog small and make API discovery progressive.
-- Let one Starlark program perform loops, branches, dataflow, and multiple native calls without additional model round trips.
-- Make capability registration the single source of truth for discovery, reference, validation, runtime dispatch, result conversion, and authorization identity.
-- Preserve trusted authenticated subject and credentials across the Go request context without representing credentials in Starlark.
-- Ensure disabled capabilities are absent from discovery, description, and execution.
-- Ensure every attempted side effect passes argument validation, resource accounting, and per-call authorization first.
-- Provide an ergonomic, typed Go authoring API without exposing Starlark or MCP implementation types to capability handlers.
-- Remain deterministic, testable without I/O, and maintainable under the repository’s strict hexagonal architecture rules.
-- Provide honest, configurable resource controls and actionable failure classification.
-- Deliver in working vertical slices whose measurements determine search, schema, containment, and concurrency refinements.
+- Expose a small, stable MCP surface while allowing progressive API discovery.
+- Let one Starlark program compose multiple native calls with ordinary namespaced functions, branches, loops, and data flow.
+- Make typed capability registration the single source of truth for discovery, signatures, binding, authorization identity, and dispatch.
+- Keep authenticated identity and credentials in trusted Go code and out of Starlark values.
+- Remove deployment-disabled capabilities from discovery, description, and execution together.
+- Authorize every valid native invocation after canonical keyword decoding and before its Go handler or side effect.
+- Fail closed when authorization denies, errors, times out, or panics.
+- Give every execution a fresh, restricted, bounded Starlark thread.
+- Keep the initial implementation small enough to learn from working behavior.
 
-## 4. Non-goals
+## Non-goals
 
-- Proxying another MCP server or translating downstream MCP schemas.
-- Importing legacy MCP tools or exposing `call_tool(name, params)`.
-- Providing raw HTTP, raw SDK clients, generic SQL, shell, filesystem, environment, or subprocess escape hatches to Starlark.
-- Implementing an identity provider, OAuth server, secret store, or credential broker.
-- Authorizing by parsing, rewriting, or pattern-matching Starlark source.
-- Supporting arbitrary Python packages, Starlark `load`, user modules, or dynamic code loading.
-- Supporting all Go types or all JSON Schema features in the initial codec.
-- Automatically retrying arbitrary capability handlers. A generic retry can duplicate side effects; a focused capability adapter or its SDK owns protocol-aware retries and idempotency.
-- Streaming intermediate capability results through MCP. Starlark materializes values in-process, and only the program’s final value crosses the MCP boundary.
-- Providing a generic standalone CodeMode binary whose capabilities are selected at runtime. Native capabilities are compiled into the author’s server.
-- Claiming hostile multi-tenant process isolation from an in-process Starlark interpreter.
+- Importing, proxying, translating, or invoking downstream MCP servers.
+- Exposing one MCP tool per capability.
+- Exposing `call_tool(name, params)`, raw HTTP, generic SQL, SDK clients, filesystem access, environment access, shell commands, or subprocesses to Starlark.
+- Implementing authentication providers, OAuth flows, a secret store, or credential brokering.
+- Authorizing by inspecting Starlark source.
+- Supporting Starlark `load`, user modules, dynamic code loading, or arbitrary Python packages.
+- Supporting arbitrary Go values, all JSON Schema features, or a public codec extension framework in the first release.
+- Streaming or returning intermediate native-call results through MCP.
+- Automatically retrying generic capability calls. A focused native adapter owns protocol-aware retry, idempotency, and backoff.
+- Claiming hard memory isolation or hostile multi-tenant process isolation from an in-process interpreter.
+- Shipping a generic CodeMode binary whose capabilities are selected at runtime. A consuming application compiles its native capabilities into its own server.
 
-## 5. Terminology
+## Terminology
 
 | Term | Meaning |
 |---|---|
-| **Capability** | One registered native operation with metadata, a stable identity, typed input/output codecs, and a Go handler. |
-| **Capability ID** | Stable, opaque policy and audit identity. It does not need to be shown to the model. |
-| **Capability name** | Dotted Starlark name, for example `github.list_repos`. It is part of the model-facing API contract. |
-| **Catalog** | Immutable, deployment-filtered set of compiled capabilities. |
-| **Canonical value** | Bounded, immutable CodeMode value: null, Boolean, string, signed integer, finite float, list, or string-keyed object. |
-| **Subject** | Trusted, non-secret authenticated identity supplied from Go context. |
-| **Execution** | One call to the MCP `execute` meta-tool, with a fresh Starlark thread and resource budget. |
-| **Invocation** | One native capability call made during an execution. |
-| **Native handler** | Trusted Go function that calls an application service, SDK, database port, or protocol adapter. |
-| **Deployment filter** | Startup policy that removes capabilities from the catalog before serving. |
-| **Authorizer** | Engine-agnostic port evaluated for every valid native invocation before its handler runs. |
-| **Reference** | Deterministically generated Starlark signature, documentation, constraints, and output type for a capability. |
+| **Capability** | A registered native Go operation with metadata, typed input and output, a stable identity, and a handler. |
+| **Capability ID** | Stable, opaque identity used for authorization and audit. Renaming the model-facing function does not implicitly change it. |
+| **Capability name** | Dotted model-facing Starlark name, such as `github.list_repos`. |
+| **Catalog** | The immutable, deployment-filtered set of built capabilities. |
+| **Subject** | Trusted, non-secret authenticated identity resolved from Go context. |
+| **Execution** | One `execute` call, using one fresh Starlark thread and one set of budgets. |
+| **Invocation** | One native capability call made by a running program. |
+| **Binder** | The restricted type plan that decodes keyword arguments, produces authorization arguments, converts results, and renders the signature. |
+| **Native handler** | Trusted Go code that calls an application service, SDK, database port, or protocol adapter. |
+| **Deployment filter** | Static startup configuration that removes capabilities before the catalog becomes usable. |
+| **Authorizer** | Engine-neutral Go port called for every valid invocation before handler dispatch. |
 
-## 6. Invariants
+## Settled invariants
 
-1. A capability is either present in search, description, and runtime bindings, or absent from all three.
-2. Every model-facing name resolves to exactly one stable capability ID. Duplicate IDs or names fail `Build`.
-3. Every alias, if aliases are introduced in a later contract, must close over the same compiled capability and invoke the same authorization callback. The initial API has no aliases.
-4. Positional and keyword calls normalize to the same canonical object before authorization.
-5. Invalid, duplicate, missing, or unknown arguments cannot reach the authorizer or handler.
-6. A valid invocation cannot reach its handler until the call budget and authorizer have both allowed it.
-7. Policy evaluation errors, malformed policy decisions, cancellation, and panic all fail closed.
-8. Handlers receive typed Go input and trusted invocation metadata, never raw Starlark values or a `*starlark.Thread`.
-9. Credentials are not fields of `Subject`, `Invocation`, canonical values, policy input, logs, or MCP results.
-10. Only a final canonical value leaves `execute`; intermediate values remain in the thread.
-11. A server catalog is immutable after `Build`. Dynamic capability registration and hot policy/catalog reload are not supported initially.
-12. Each execution has a fresh thread, fresh budget, fresh execution ID, and no globals shared with another execution.
-13. Module initialization cannot invoke a native capability. Side effects are enabled only while `main()` or a helper called from `main()` is running.
-14. The core performs no I/O. MCP, Starlark, Rego, logging, clocks, and native external operations enter through ports or adapters.
-15. No framework error returned to the model includes credentials, raw request headers, raw source, arguments, capability results, SDK response bodies, or Go stack traces.
+1. The only MCP tools are `search_api`, `describe_api`, and `execute`.
+2. CodeMode never opens or proxies a downstream MCP session.
+3. A capability is either present in search, exact description, and runtime bindings, or absent from all three.
+4. Every capability has one unique stable `CapabilityID` and one unique model-facing `CapabilityName`. Duplicate IDs, names, or namespace/function collisions fail the build.
+5. Programs call ordinary, pre-bound namespaced functions. There is no dynamic function that accepts a capability or tool name.
+6. Capability calls are keyword-only in the initial contract.
+7. The binder rejects positional arguments, missing required fields, duplicate or unknown keywords, unsupported values, and invalid nesting before authorization and dispatch.
+8. The canonical authorization arguments and typed handler input come from the same compiled field plan. No defaulting or argument transformation occurs after authorization.
+9. Every valid invocation is authorized after canonical decoding and before its handler runs. A denial or policy failure results in zero handler calls.
+10. The required `Authorizer` fails closed. An unrestricted deployment must choose `authz.AllowAll` explicitly; a missing authorizer is a build error.
+11. The authenticated subject is resolved only from trusted Go context. Tool arguments, source code, MCP client self-description, and `_meta` cannot select a subject.
+12. Credentials, tokens, raw headers, credential selectors, and clients never enter Starlark, authorization arguments, discovery output, or MCP results.
+13. Each execution receives a fresh Starlark thread and fresh budgets. No mutable program state is shared between executions.
+14. Capability calls are disabled while module top-level code is loading. They become available only while the required zero-argument `main()` and its helpers are running.
+15. Starlark receives no filesystem, environment, network, subprocess, credential, SDK-client, reflection, unsafe, or module-loading capability.
+16. Only the value returned by `main()` crosses the MCP boundary. Prints and intermediate values are not returned or logged by the framework.
+17. The catalog is immutable after `Build`; the first implementation has no hot registration or catalog reload.
+18. The framework performs no automatic generic retry. A timeout does not prove that an external side effect stopped.
+19. Public errors never expose credentials, raw source, arguments, results, SDK payloads, policy details, or Go stack traces.
+20. In-process Starlark provides restricted capabilities and bounded accounting, not a hard heap ceiling or process boundary.
 
-## 7. Trust boundaries
+## Trust boundaries and data flow
 
 ```mermaid
 flowchart LR
-    Model[Untrusted model / MCP client]
-    MCP[MCP adapter]
-    Authn[Trusted transport middleware and invocation resolver]
-    App[CodeMode application core]
-    Star[Starlark-Go adapter]
-    Invoke[Invocation service]
-    Authz[Authorizer port]
+    Client[Untrusted model and MCP client]
+    MCP[mcpserver adapter]
+    Resolver[Trusted InvocationResolver]
+    Server[codemode server]
+    Catalog[Immutable catalog]
+    Runtime[Restricted Starlark execution]
+    Binder[Compiled binder]
+    Authz[authz.Authorizer]
     Handler[Trusted native handler]
-    Service[External API / SDK / DB / application service]
+    Service[API / SDK / database / application service]
 
-    Model -->|search, describe, program| MCP
-    Authn -->|subject and trusted attributes in Go context| MCP
-    MCP --> App
-    App --> Star
-    Star -->|capability ID + canonical arguments| Invoke
-    Invoke --> Authz
-    Invoke -->|typed input after allow| Handler
+    Client -->|three MCP tools| MCP
+    Resolver -->|subject from Go context| MCP
+    MCP --> Server
+    Server --> Catalog
+    Server --> Runtime
+    Runtime --> Binder
+    Binder -->|canonical arguments| Authz
+    Authz -->|allow only| Handler
     Handler --> Service
     Service --> Handler
-    Handler -->|bounded canonical result| Star
-    Star -->|final value only| App
-    App --> MCP
-    MCP --> Model
+    Handler --> Binder
+    Binder --> Runtime
+    Runtime -->|main result only| Server
+    Server --> MCP
+    MCP --> Client
 ```
 
-### 7.1 Untrusted inputs
+### Untrusted data
 
-The MCP envelope, meta-tool arguments, Starlark source, positional and keyword values, and all data returned by external systems are untrusted. Client-reported identity, MCP client metadata, `_meta`, and program-provided fields never select a subject or credential.
+The MCP envelope, meta-tool inputs, Starlark source and values, capability arguments, and external-service results are untrusted. Registration metadata and application code are trusted but still validated at build time where possible.
 
-### 7.2 Trusted framework inputs
+Native handlers are part of the trusted computing base. CodeMode can prevent Starlark from obtaining ambient authority, but it cannot prevent a malicious registered handler from leaking a secret or ignoring cancellation.
 
-Deployment configuration, registered capability descriptors, compiled codecs, application-defined authorizer implementations, local Rego policy, and the invocation resolver are trusted configuration or code. They are validated at startup where possible.
+### Authentication and credential path
 
-### 7.3 Trusted native code
+For HTTP, host middleware authenticates the request and places typed identity and any request-scoped credential selection in `context.Context`. For stdio, the host supplies an explicit fixed or process-derived resolver. `mcpserver.InvocationResolver` reads only that trusted context and returns a non-secret `authz.Subject`.
 
-Capability handlers are trusted Go code. CodeMode prevents accidental ambient access from Starlark, but it cannot stop a malicious or defective registered handler from returning a secret or ignoring cancellation. Handler review, focused ports, output schemas, and tests remain part of the security boundary.
+The original context continues through authorization and handler dispatch. A closed-over application service or client factory may use it to choose credentials. CodeMode copies only the subject into authorization input. It never serializes credentials or credential selectors.
 
-### 7.4 Credential path
+All three meta-tools resolve the subject before doing work. Discovery is deployment-visible rather than subject-filtered in the initial contract: authentication gates access, the static deployment filter controls catalog visibility, and per-invocation authorization controls native effects.
 
-HTTP middleware authenticates a request and places a principal and any request-scoped client/credential selector in `context.Context`. For stdio, the host supplies an explicit fixed or process-derived invocation resolver. CodeMode copies only the non-secret `Subject` and bounded trusted attributes into its invocation domain. The original derived context reaches the registered handler, allowing a closed-over service or client factory to select credentials. No credential value is converted to a canonical or Starlark value.
+### Startup
 
-## 8. End-to-end flows
+1. The host creates a builder with an authorizer, static disabled-capability configuration, and execution limits.
+2. The host registers typed native capabilities.
+3. `Build` validates metadata and collisions, compiles binders, applies deployment filtering, and creates the immutable catalog.
+4. A filter error or reference to an unknown configured capability fails the build. There is no partially usable server.
+5. `mcpserver.New` binds the built server and an `InvocationResolver` to the official MCP Go SDK and registers exactly the three meta-tools.
 
-### 8.1 Startup and catalog build
+### Discovery
 
-1. The host constructs a `codemode.Builder` with limits, a deployment filter, an authorizer, and observability ports.
-2. `codemode.Register` accepts each typed capability and immediately validates basic metadata.
-3. `Build` validates stable IDs and dotted names, compiles input and output type plans, compiles schemas, validates examples, erases the typed handler behind a native invocation closure, and rejects unsupported types or tags.
-4. The deployment filter evaluates every complete descriptor. A filter error fails startup; a false decision removes the capability.
-5. The enabled definitions produce one immutable catalog snapshot, deterministic API references, a compact search index, and immutable namespace prototypes.
-6. `Build` computes a catalog revision digest over sorted IDs, names, metadata, and schemas. The digest is for diagnostics and cache validation, not authorization.
-7. The MCP adapter registers exactly the three meta-tools against the built `*codemode.Server`.
+`search_api` scans the immutable enabled slice using only capability name and summary. Results are compact `{name, signature, summary}` records in deterministic order. `describe_api` performs exact lookup and returns the generated compact reference for one exact name. Neither path reflects over Go types per request.
 
-There is no partially usable server: any duplicate, invalid schema, failed policy preparation, unknown filter ID, or invalid limit prevents `Build` or adapter construction from succeeding.
+Disabled capabilities have no catalog entry, search record, description, namespace, or callable builtin.
 
-### 8.2 Discovery
+### Execution
 
-1. The MCP adapter validates the typed `search_api` or `describe_api` input using the official SDK’s tool boundary.
-2. The invocation resolver derives a trusted subject from Go context. Authentication failure returns a tool error before catalog access.
-3. `search_api` normalizes a bounded query and ranks only the immutable enabled catalog. It returns bounded summaries and signatures.
-4. `describe_api` performs exact name lookup and renders the already-compiled reference; it does not reflect over Go types per request.
-5. No per-argument authorizer runs during discovery because there are no capability arguments. Capability metadata is deployment-visible, not subject-filtered, in the initial contract.
+1. `mcpserver` validates the `execute` request and resolves the trusted subject.
+2. The server rejects source that exceeds its configured source budget.
+3. `internal/execution` creates a fresh thread, connects request cancellation, installs the enabled namespaces, rejects `load`, and applies execution budgets.
+4. Module code runs in the **loading** phase. A capability builtin called in this phase fails without calling the authorizer or handler.
+5. The runtime requires one callable `main()` with no parameters, switches to the **running** phase, and calls it.
+6. Each native invocation follows the ordering below.
+7. The runtime converts and bounds the value returned by `main()`.
+8. MCP returns only `{"result": <final value>}`.
 
-Deployment-visible metadata is an explicit security property. A deployment that considers capability names sensitive must place those capabilities in separate filtered server instances until a distinct, engine-agnostic visibility policy is justified.
+### Native invocation ordering
 
-### 8.3 Execution
+1. Verify that execution is in the running phase.
+2. Charge the native-call attempt budget.
+3. Reject positional arguments.
+4. Decode and validate keywords with the capability’s compiled binder.
+5. Produce both typed Go input and the canonical authorization projection from that same plan.
+6. Construct `authz.AuthorizationInput` from the trusted subject, stable capability ID and name, and canonical arguments.
+7. Call `Authorizer.Authorize` under the execution context.
+8. On any denial, error, cancellation, timeout, or recovered authorizer panic, return a safe failure and do not call the handler.
+9. On allow, call the registered typed handler directly with the same subject and request-derived context.
+10. Convert the handler result through the compiled output plan before returning a Starlark value.
 
-1. The MCP adapter rejects an oversized `program` before parsing and resolves the trusted subject from context.
-2. The server acquires a bounded execution slot. If saturated, it returns a retryable `busy` error without creating a thread.
-3. The server creates an execution ID, derives the overall deadline, initializes call/value/log budgets, and creates a fresh Starlark thread.
-4. The Starlark adapter installs immutable namespaces for enabled capabilities. It supplies a bounded `Print` sink, sets `Load` to reject module loading, applies a step limit, retains recursion prohibition, and connects context cancellation to `Thread.Cancel`.
-5. Module code is compiled and evaluated in a **loading** phase. Pure constants and helper definitions may initialize, but every capability builtin rejects calls in this phase.
-6. The adapter requires exactly one callable `main` with zero parameters. It switches the execution state to **running**, invokes `main()`, and lets helpers called by `main` use the same state and budget.
-7. Every builtin call follows the invocation flow below.
-8. The value returned by `main()` is converted to a bounded canonical value. Unsupported values, non-string dictionary keys, non-finite floats, or integers outside the supported signed 64-bit range fail execution.
-9. The MCP adapter serializes only that final value as structured tool output. Program prints and intermediate values are never included.
+The executor does not wrap a handler in a detached timeout goroutine. Returning while a side effect continues would provide a false cancellation guarantee and leak work.
 
-### 8.4 Native invocation
+## Package structure
 
-1. The builtin charges one attempted native call before argument work, so loops over denied or malformed calls cannot bypass the call budget.
-2. The compiled binder accepts positional and keyword forms, rejects duplicates and unknown names, applies no implicit defaults, and converts values into typed Go input plus one canonical argument object.
-3. Structural and declarative schema validation completes before authorization. Optional `None` and omission normalize identically.
-4. The invocation service constructs the stable `authz.Input` from trusted subject/execution metadata, stable capability identity, and untrusted canonical arguments.
-5. The authorizer runs under a deadline bounded by the execution deadline. Any error or non-allow decision fails closed.
-6. The service derives a per-call context whose deadline cannot exceed the overall execution deadline, then calls the typed handler synchronously.
-7. The handler output is converted and validated by the compiled output plan before becoming a Starlark value.
-8. The builtin charges output node and byte budgets and returns the value to the running program.
-
-The framework does not start a detached goroutine to abandon a blocked handler. Doing so would allow side effects and resource use to continue after the model receives a timeout. Handlers must honor their context; inability to force that behavior is an explicit limitation.
-
-## 9. Domain model
-
-### 9.1 Capability definition
-
-A public generic `Capability[In, Out]` contains:
-
-- stable `CapabilityID`;
-- unique dotted `CapabilityName`;
-- one-line `Summary` used in search results;
-- full `Description` used in generated reference;
-- bounded `Keywords` used only for search;
-- input and output codec selections, derived from `In` and `Out` by default;
-- a typed `Handler[In, Out]`.
-
-A compiled capability adds an immutable input plan, output plan, schema documents, reference model, search document, namespace path, and erased handler. It is an internal build artifact, not a second source of author-supplied truth.
-
-### 9.2 Identity types
-
-`CapabilityID`, `CapabilityName`, `ExecutionID`, `SubjectID`, `Issuer`, and `TenantID` are domain types rather than interchangeable strings. IDs use an intentionally conservative printable grammar and bounded length. Capability names use ASCII Starlark identifiers joined by dots:
-
-```text
-[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+
-```
-
-The last segment is the function name; preceding segments form immutable namespace objects. Reserved Starlark words and framework bindings are rejected. Names are case-sensitive but lowercase-only, eliminating case-folding ambiguity.
-
-### 9.3 Subject and execution context
-
-`authz.Subject` contains a required subject ID and issuer plus optional tenant, sorted roles, and bounded canonical attributes. It contains no token, secret, credential reference, or raw header.
-
-`authz.Execution` contains execution ID, transport name, start time, and bounded trusted attributes supplied by the host, such as a deployment or workspace identifier. It does not contain Starlark source.
-
-### 9.4 Canonical values
-
-The `value` package defines immutable tagged values and read-only object/list accessors. Objects retain deterministic sorted keys for policy input, reference examples, digests, and tests. Supported kinds are:
-
-- null;
-- Boolean;
-- UTF-8 string;
-- signed 64-bit integer;
-- finite IEEE-754 float;
-- list;
-- string-keyed object.
-
-Canonical values have explicit depth, node, string, and aggregate-byte accounting. They do not carry Go pointers, functions, channels, SDK objects, credentials, or Starlark values.
-
-### 9.5 Result
-
-A successful execution result contains exactly one canonical `Value`. Internal statistics go to the observer, not to the model-facing result. Search and description have separate bounded domain result types.
-
-### 9.6 Error
-
-A `codemode.Error` carries a stable code, safe public message, optional capability name, optional Starlark source location, retryability, and an internal wrapped cause. Only the safe projection crosses MCP. Sentinel errors exist only where callers need control flow, such as denied, not found, exhausted, deadline, invalid program, and busy.
-
-## 10. Hexagonal package decomposition
+The initial implementation has six substantive packages. These boundaries reflect distinct vocabularies, invariants, and reasons to change without creating speculative ports.
 
 ```text
 .
-├── doc.go                         # package codemode overview
-├── builder.go                     # public authoring facade and immutable Build boundary
-├── capability.go                  # generic public capability and handler contracts
-├── server.go                      # concrete application service
-├── limits.go                      # validated resource configuration
-├── errors.go                      # stable public error taxonomy
-├── value/
-│   ├── doc.go                     # canonical immutable value domain
-│   └── ...
+├── doc.go
+├── builder.go
+├── capability.go
+├── limits.go
+├── errors.go
+├── server.go                         # package codemode
 ├── authz/
-│   ├── doc.go                     # subject, policy input, decision, Authorizer port
-│   └── mocks/                     # mockery-generated Authorizer mock
+│   ├── doc.go
+│   ├── authz.go
+│   └── mocks/                        # mockery-generated Authorizer mock
 ├── mcpserver/
-│   ├── doc.go                     # MCP inbound adapter
-│   ├── server.go                  # three typed meta-tool registrations
-│   ├── context.go                 # trusted invocation resolver port
-│   └── mocks/                     # generated service/resolver mocks
-├── rego/
-│   ├── doc.go                     # optional embedded OPA adapter
-│   └── authorizer.go              # prepared local query implementation
-├── internal/
-│   ├── capability/                # descriptor compilation and erased handler
-│   ├── schema/                    # type-plan and schema compilation
-│   ├── catalog/                   # immutable lookup, search, and reference index
-│   ├── reference/                 # pure deterministic Starlark reference renderer
-│   ├── invoke/                    # authorize-then-dispatch application service
-│   │   └── mocks/
-│   ├── program/                   # execution orchestration, phases, and budgets
-│   │   └── mocks/
-│   └── starlark/                  # Starlark-Go outbound interpreter adapter
-│       └── mocks/
-├── internal/e2e/testserver/       # compiled native test server, never released
-└── docs/docs/
-    ├── tutorials/
-    ├── how-to-guides/
-    ├── reference/
-    └── explanation/
+│   ├── doc.go
+│   ├── server.go
+│   ├── resolver.go
+│   ├── service.go
+│   └── mocks/                        # generated resolver/service mocks
+└── internal/
+    ├── binding/
+    │   ├── doc.go
+    │   ├── plan.go
+    │   ├── input.go
+    │   ├── output.go
+    │   └── signature.go
+    ├── catalog/
+    │   ├── doc.go
+    │   ├── build.go
+    │   ├── catalog.go
+    │   └── search.go
+    └── execution/
+        ├── doc.go
+        ├── execute.go
+        ├── phase.go
+        └── limits.go
 ```
 
-### 10.1 Dependency direction
+### Responsibilities
 
-- `value` and `authz` are stable domain packages with no adapter dependencies.
-- The root `codemode` package is the thin application facade. It owns builder/server construction and delegates to internal pure services.
-- `internal/capability`, `internal/schema`, `internal/catalog`, and `internal/reference` are pure and deterministic.
-- `internal/program` defines the interpreter runner port it consumes; `internal/starlark` implements that port.
-- `internal/invoke` depends on the `authz.Authorizer` port and an erased native handler port, not on Rego or an SDK.
-- `mcpserver` defines the narrow service and invocation-resolver interfaces it consumes. `*codemode.Server` satisfies the service interface; the adapter depends on the official MCP SDK.
-- `rego` depends on `authz` and OPA. Nothing in the core depends on `rego`.
-- Native capability handlers live in the consuming server repository. Each should close over a focused application port rather than a broad SDK surface.
+#### Root `codemode`
 
-This preserves accept-interfaces/return-concrete behavior: `codemode.New` returns a concrete builder, `Build` returns a concrete server, `mcpserver.New` returns a concrete MCP adapter, and adapters accept narrow consumer-owned interfaces.
+The thin public facade owns capability registration, builder state, server construction, minimal typed options and limits, and safe public errors. `Register` erases the generic handler only after compiling its concrete input and output plans. `Build` returns an immutable, concurrency-safe server.
 
-### 10.2 Current repository integration points
+The root package does not read flags, files, or environment variables. It does not own transport shutdown or background services.
 
-| Current path | Architectural treatment when implementation begins |
-|---|---|
-| `go.mod` | Rename the module to `github.com/meigma/codemode`; replace Cobra/Viper application dependencies with core, MCP, Starlark, schema, test, and optional adapter dependencies. |
-| `cmd/template-go` | Remove. The framework has no generic production binary. The executable test server belongs under `internal/e2e/testserver`. |
-| `internal/cli`, `internal/config`, `internal/templateinfo` | Remove with their scaffold tests. Configuration remains programmatic in the core and transport/application-specific at composition roots. |
-| `moon.yml` | Change metadata and make library build, unit/integration tests, lint, docs, race tests, and separately gated end-to-end tests explicit. |
-| `.goreleaser.yaml`, `melange.yaml`, `apko.yaml`, release and image workflows | Remove binary/image publication unless a separately approved first-party server is added. Keep library tags/changelog only if the repository publishes versioned Go releases. |
-| `README.md`, `docs/docs/index.md` | Replace template content with CodeMode documentation; all user documentation remains under `docs/` and follows Diátaxis. |
-| `AGENTS.md` | Remains authoritative: every package receives `doc.go`; every function, type, and field receives Godoc; ports receive generated mocks; no Go source file approaches 1,000 lines. |
+#### Public `authz`
 
-## 11. Public Go authoring API
+`authz` defines only the non-secret `Subject`, `AuthorizationInput`, `Authorizer`, denial representation, and explicit `AllowAll`. It has no Starlark, MCP, OPA, logging, or network dependency.
 
-The authoring surface is intentionally small. The exact declarations may evolve during the first slice, but the contract shape is fixed:
+This package is the stable policy-engine-neutral boundary. Its input starts deliberately small and grows only when a real Go authorizer proves another trusted field is required.
+
+#### `mcpserver`
+
+`mcpserver` is the real inbound adapter for the official MCP Go SDK. It defines the adapter-owned narrow `Service` interface implemented by `*codemode.Server` and the trusted `InvocationResolver` port. It owns MCP request validation, tool registration, and safe projection of errors into tool results.
+
+It does not authenticate requests itself, implement transport middleware, expose capability-specific MCP tools, or manage framework-wide shutdown.
+
+#### `internal/binding`
+
+`binding` compiles the supported Go type subset into reusable input and output plans. The same input plan:
+
+- renders the compact keyword-only Starlark signature;
+- validates keyword names and requiredness;
+- converts Starlark values directly to typed Go values;
+- produces the canonical JSON-shaped authorization projection.
+
+The output plan converts typed handler results to bounded Starlark values and the final Starlark result to MCP-safe data. There is no public canonical value package, public `Codec[T]`, capability JSON Schema generator, separate runtime schema validator, or broad validation-tag language.
+
+#### `internal/catalog`
+
+`catalog` validates ID, name, and namespace collisions; applies the static deployment filter; and stores the enabled capabilities in copied immutable maps and a deterministic slice. Exact lookup uses the map. Search linearly scans name and summary in the slice.
+
+The catalog owns no weighted index, cache contract, digest, keyword system, generated examples, or namespace prototype cache.
+
+#### `internal/execution`
+
+`execution` owns the Starlark lifecycle, loading/running phase guard, fresh thread, disabled module loading, request cancellation, minimal budgets, per-call authorization, direct handler dispatch, and final-result extraction.
+
+It does not define runner, invoker, or erased-handler interfaces merely to split implementation files. A second implementation must exist before such an internal port is introduced.
+
+### Dependency direction
+
+```text
+mcpserver ──> codemode ──> authz
+    │             │
+    └────────────>│
+                  ├──> internal/execution ──> internal/catalog ──> internal/binding
+                  │              └──────────────────────────────> internal/binding
+                  └─────────────────────────────────────────────> internal/catalog
+```
+
+`authz` has no framework dependency. Internal packages never import `mcpserver`. `mcpserver` owns the service interface it consumes; the root package returns concrete builders and servers. The only initial interfaces are real ports with independent implementations or composition owners:
+
+- `authz.Authorizer`
+- `mcpserver.InvocationResolver`
+- `mcpserver.Service`
+
+Mocks are generated only for those interfaces. Handler function values and concrete internal components do not acquire interfaces solely for testing.
+
+### Repository cutover
+
+Implementation starts with a clean cutover:
+
+- rename the module from `github.com/meigma/template-go` to `github.com/meigma/codemode`;
+- remove `cmd/template-go`, `internal/cli`, `internal/config`, and `internal/templateinfo` rather than adapting them;
+- remove binary and image publication configuration unless a separately approved first-party server later creates that need;
+- revise Moon and CI tasks for a Go library, its tests, linting, and actual MCP end-to-end scenario;
+- replace template-facing README and documentation only with behavior that exists.
+
+`AGENTS.md` remains authoritative: every package has `doc.go`, every Go declaration and struct field has Godoc, source files remain below the repository cap, and user-visible documentation lives under `docs/` in Plain Language and Diátaxis form.
+
+## Minimal public API direction
+
+The exact spelling may adjust while the first slice is compiled, but the boundary stays this small:
 
 ```go
 builder := codemode.New(codemode.Options{
-    Limits:     codemode.DefaultLimits(),
-    Filter:     deploymentFilter,
-    Authorizer: authorizer,
-    Observer:   observer,
+    Authorizer: authz.AllowAll(), // Explicit; nil is never treated as allow.
+    DisabledCapabilities: []codemode.CapabilityID{
+        "github.repositories.delete",
+    },
+    Limits: codemode.DefaultLimits(),
 })
 
 err := codemode.Register(builder, codemode.Capability[ListReposInput, []Repository]{
@@ -316,576 +298,379 @@ err := codemode.Register(builder, codemode.Capability[ListReposInput, []Reposito
     Name:        "github.list_repos",
     Summary:     "List repositories in an organization.",
     Description: "Returns repositories visible to the authenticated subject.",
-    Keywords:    []string{"repository", "organization"},
-    Handler: func(ctx context.Context, call codemode.Call, in ListReposInput) ([]Repository, error) {
-        return repositories.List(ctx, call.Subject, in)
+    Handler: func(
+        ctx context.Context,
+        subject authz.Subject,
+        input ListReposInput,
+    ) ([]Repository, error) {
+        return repositories.List(ctx, subject, input)
     },
 })
 if err != nil {
     return err
 }
 
-server, err := builder.Build(ctx)
+server, err := builder.Build()
 if err != nil {
     return err
 }
 
-mcpAdapter, err := mcpserver.New(server, invocationResolver, mcpOptions)
+adapter, err := mcpserver.New(server, invocationResolver)
 ```
 
-This is an API sketch, not an implementation prescription. The important properties are:
-
-- registration is a generic function because Go methods cannot introduce their own type parameters;
-- the builder is mutable and single-threaded; the returned server is immutable and concurrency-safe;
-- handlers receive standard `context.Context`, trusted non-secret call metadata, and typed input;
-- handlers do not receive Starlark tuples, keyword pairs, MCP requests, raw JSON, credential values, or a generic tool name;
-- absence of an authorizer is a build error. Deliberately unrestricted deployments must pass an explicit `authz.AllowAll()` implementation;
-- authentication is not inferred. The MCP adapter requires an invocation resolver; a static stdio subject is explicit configuration rather than an implicit anonymous fallback;
-- custom codecs are registered as a schema-and-value pair, so a codec cannot change conversion without also defining its model-facing schema.
-
-## 12. Capability registration and compilation
-
-### 12.1 Registration lifecycle
-
-`Register` is valid only before `Build`. It rejects nil handlers, empty metadata, invalid IDs/names, oversized descriptions or keyword sets, and obvious duplicates. `Build` performs whole-catalog checks and codec/reference compilation. Calling `Register` after build returns a specific state error; it never mutates the live server.
-
-The builder owns author-supplied slices only after copying them. The built server retains immutable compiled forms and does not reflect over handler types on the execution path.
-
-### 12.2 Input shape
-
-The default input type is a non-pointer Go struct. Exported fields form Starlark parameters:
-
-- `json` tags define parameter names; names must also be valid non-reserved Starlark identifiers;
-- declaration order defines positional order and generated signature order;
-- non-pointer fields are required;
-- pointer fields are optional; omitted and explicit `None` both canonicalize to absence and decode to nil;
-- `omitempty` controls output encoding only and does not silently change input requiredness;
-- framework defaults are not applied initially. Defaults would need to run before authorization and introduce another source of truth, so handlers use explicit optional values instead;
-- unknown fields, duplicate positional/keyword assignment, excess positional values, and unsupported struct embedding fail registration or binding deterministically.
-
-Reordering fields is therefore a breaking positional API change and must be treated as such in release notes. Keyword calls remain stable across a field reorder, but CodeMode does not hide the positional break.
-
-### 12.3 Supported types
-
-The initial derived codec supports Boolean, string, fixed-width signed integers, finite floats, slices, arrays, string-keyed maps, named aliases of supported scalars, nested structs, pointers for optionality, and explicitly supported standard types such as RFC 3339 timestamps. It rejects interfaces, arbitrary `any`, functions, channels, complex numbers, unsafe pointers, cyclic object graphs, maps with non-string keys, untagged unions, and opaque SDK types.
-
-A custom `Codec[T]` may support an additional domain type only by supplying all of the following as one object:
-
-- its canonical representation;
-- its schema/reference representation;
-- bounded decode and encode behavior;
-- validation behavior.
-
-Custom codecs cannot receive execution context, perform I/O, resolve credentials, or return Starlark builtins. They are pure conversion adapters, not capability escape hatches.
-
-### 12.4 Schema and validation
-
-A single schema compiler walks each Go type into an immutable `TypePlan`. The plan owns field mapping, requiredness, supported constraints, canonical conversion, and reference types. The same plan renders Draft 2020-12 JSON Schema for machine-readable description and compiles declarative constraints for runtime validation.
-
-Conventional `json` and documented `jsonschema` tags provide names, descriptions, enumerations, lengths, numeric bounds, and patterns. Unsupported or contradictory tags fail `Build`; they are never silently ignored. Input validation occurs on the canonical object before authorization. Output validation occurs before a handler result becomes visible to Starlark.
-
-The direct type plan decodes into `In` and encodes `Out` without a JSON marshal/unmarshal round trip on every call. This avoids unnecessary copies on the execution path while retaining a standards-based schema document.
-
-### 12.5 Naming and namespace binding
-
-A name such as `github.repos.list` creates nested immutable namespace values `github.repos` with builtin attribute `list`. Namespace/function collisions fail build—for example, registering both `github.repos` as a function and `github.repos.list` as a nested function is invalid.
-
-Each builtin closes over only:
-
-- stable capability ID and name;
-- immutable input/output plans;
-- the invocation port;
-- per-execution state obtained from the thread local.
-
-It does not close over raw credentials. It cannot dispatch by an untrusted name. Future aliases, if justified, must reference this same compiled object rather than creating a second authorization path.
-
-### 12.6 Reference generation
-
-Reference generation is pure and deterministic. A described capability includes:
-
-- canonical dotted name;
-- compact Starlark-like signature;
-- summary and description;
-- parameter names, types, requiredness, constraints, and descriptions;
-- output type and description;
-- validated examples when supplied by the author.
-
-A representative signature is:
-
-```text
-github.list_repos(org: str, limit: int | None = None) -> list[Repository]
-```
-
-The notation is documentation, not runtime type annotation syntax. References and search documents are generated at build time, sorted deterministically, and bounded before storage. Examples are parsed during build so invalid Starlark never enters reference output.
-
-## 13. MCP meta-tools
-
-The MCP adapter exposes tools only. It does not expose prompts, resources, capability-specific MCP tools, or downstream MCP sessions.
-
-### 13.1 `search_api`
-
-Input:
-
-- `query`: required trimmed string, 1–256 bytes;
-- `limit`: optional integer, default 8, maximum 20;
-- `namespace`: optional exact namespace filter.
-
-Output contains a bounded ordered array of `{name, signature, summary}`. It does not return full schemas, handler identities, policy details, or capability IDs.
-
-The initial search index is an in-memory deterministic token index. Ranking weights exact dotted-name and final-segment matches highest, then namespace and keyword matches, then summary/description token matches. Stable name order breaks score ties. This boring lexical design is inspectable and sufficient until real catalogs demonstrate a recall problem; embeddings and an external search service are rejected initially because they add I/O, nondeterminism, deployment weight, and another trust boundary.
-
-### 13.2 `describe_api`
-
-Input:
-
-- `names`: one to eight exact capability names.
-
-Output contains the generated reference for each found name in request order. Missing names are reported individually without substituting fuzzy matches. The response is capped by the description-output budget; callers can request fewer names if the aggregate reference is too large.
-
-Exact lookup prevents a description request from unexpectedly expanding context. `search_api` is the only fuzzy discovery operation.
-
-### 13.3 `execute`
-
-Input:
-
-- `program`: one Starlark source string, bounded by `MaxSourceBytes`.
-
-There is no user-supplied timeout, call budget, capability allow-list, subject, credential, raw header, module path, or environment option. Deployment configuration owns all enforcement limits.
-
-Success returns structured content equivalent to:
-
-```json
-{"result": <final canonical value>}
-```
-
-Failure returns an MCP tool result with `isError: true` and a structured safe error. JSON-RPC/protocol errors are reserved for malformed MCP envelopes and transport/server failures; valid `tools/call` requests whose program, policy, capability, or budget fails remain tool execution errors, consistent with the official Go SDK’s error model.
-
-## 14. Authentication and authorization
-
-### 14.1 Authentication boundary
-
-`mcpserver.InvocationResolver` is a narrow adapter port:
-
-```text
-Resolve(context.Context) -> trusted Subject + trusted Execution attributes, or error
-```
-
-For Streamable HTTP, server authors put authentication middleware before the MCP handler and implement the resolver by reading typed values from the trusted request context. For stdio, authors supply a fixed local subject or a resolver bound to the process environment at composition time. The resolver does not inspect meta-tool arguments, source, MCP client self-identification, or `_meta`.
-
-CodeMode does not put credentials into `Subject`. Credential selection remains in a context-bound client factory or a service closed over by a handler. This keeps the policy identity inspectable while preventing secrets from entering interpreter values.
-
-### 14.2 Layer one: deployment capability filter
-
-The deployment filter runs during `Build` over complete, validated capability metadata. Its result creates the catalog snapshot:
-
-- disabled capabilities are absent from search results;
-- `describe_api` treats them as unknown;
-- no Starlark namespace contains their builtins;
-- unknown IDs referenced by declarative filter configuration fail startup;
-- filter errors fail startup rather than falling back to enabled.
-
-This layer is deployment-scoped and stable for the server lifetime. A configuration change builds and swaps a new server instance through normal deployment, avoiding races and partial catalog states.
-
-### 14.3 Layer two: per-invocation authorizer
-
-The public engine-agnostic port is:
-
-```text
-Authorize(context.Context, authz.Input) error
-```
-
-A nil error allows. A typed denied error denies. Every other error—including cancellation, timeout, panic recovery, remote failure in an application-defined authorizer, or malformed decision—fails closed and is classified as a policy failure.
-
-The call occurs after canonical decoding and schema validation, but before typed handler dispatch or any side effect. It runs for every call, not once per program. No decision is cached by the core because arguments, execution attributes, and policy data may vary.
-
-### 14.4 Stable policy input
-
-The versioned logical document is:
-
-```json
-{
-  "version": "codemode.authz/v1",
-  "subject": {
-    "id": "user-123",
-    "issuer": "https://issuer.example",
-    "tenant": "tenant-7",
-    "roles": ["developer"],
-    "attributes": {}
-  },
-  "capability": {
-    "id": "github.repositories.list",
-    "name": "github.list_repos"
-  },
-  "execution": {
-    "id": "01...",
-    "transport": "streamable_http",
-    "started_at": "2026-08-22T12:00:00Z",
-    "attributes": {}
-  },
-  "arguments": {
-    "org": "meigma",
-    "limit": 25
-  }
+The important contract is:
+
+- `Register` is a generic function because Go methods cannot add type parameters;
+- the mutable builder is single-threaded and ends at `Build`;
+- the returned server is immutable and safe for concurrent MCP calls;
+- handlers receive standard context, the same trusted non-secret subject used for authorization, and typed input;
+- handlers never receive MCP requests, raw JSON, Starlark values, threads, credentials, or dynamically selected tool names;
+- a static disabled list is data, not a speculative filtering interface;
+- explicit `authz.AllowAll()` makes an intentionally unrestricted deployment reviewable.
+
+A minimal authorization boundary is conceptually:
+
+```go
+type Subject struct {
+    ID string
+}
+
+type AuthorizationInput struct {
+    Subject        Subject
+    CapabilityID   string
+    CapabilityName string
+    Arguments      map[string]any
+}
+
+type Authorizer interface {
+    Authorize(context.Context, AuthorizationInput) error
 }
 ```
 
-`subject`, `capability`, and `execution` are trusted. `arguments` is untrusted but canonical and schema-valid. Roles are sorted and duplicate-free. Attributes use canonical values and share strict size limits. The document excludes credentials, source, raw headers, SDK clients, intermediate results, and handler output.
+`Arguments` contains a fresh, canonical JSON-shaped projection from the binder: null, Boolean, string, signed integer, finite float, lists, and string-keyed objects. It is not a public framework value hierarchy. A recognized denial is distinct from an authorizer failure; both prevent dispatch, while only the safe classification crosses MCP.
 
-`version` changes only for a breaking policy-input contract. Additive fields within `v1` require adapters and policies to tolerate unknown fields; semantic changes require `v2`.
+## Capability and binding contract
 
-### 14.5 Optional embedded Rego adapter
+### Registration
 
-The `rego` package implements `authz.Authorizer` without changing the core. At construction it:
+A capability supplies a stable ID, dotted Starlark name, summary, description, and typed handler. Registration copies retained metadata and rejects empty or malformed identifiers, invalid names, nil handlers, unsupported types, and obvious duplicates. `Build` performs whole-catalog and namespace collision checks.
 
-1. loads policy modules and static data from Go-provided bytes or readers at the composition boundary;
-2. prepares a configured query once, defaulting to `data.codemode.authz.decision`;
-3. rejects compile errors before the server starts;
-4. restricts capabilities to an allow-list of pure builtins, excluding network and runtime introspection such as `http.send`;
-5. enables strict builtin errors.
+Capability names consist of Starlark identifier segments separated by dots. The final segment is the function; preceding segments form immutable namespaces. A function cannot also be a namespace.
 
-The prepared query is reused concurrently. Each evaluation receives the stable input above and the call context. The query must yield exactly one object of the form `{"allow": boolean, "reason": string?}`. Only `allow: true` permits the call. Undefined, empty, multiple, wrong-type, false, timeout, cancellation, or evaluation error denies. `reason` is bounded and available to trusted audit events; it is not returned verbatim to the model.
+Calling `Register` after `Build` fails and never mutates the live server.
 
-OPA remains optional: an application can supply a simple Go authorizer with no OPA dependency, and CodeMode never requires an OPA sidecar or remote policy service. If the OPA module’s size becomes material for library consumers, `rego` can become a separately versioned Go submodule without changing `authz.Authorizer`.
+### Restricted type plan
 
-## 15. Starlark sandbox and resource controls
+The first binder supports only the types required by the first real capabilities, beginning with:
 
-### 15.1 Available language surface
+- non-pointer structs as capability inputs;
+- Boolean, string, fixed-width signed integer, and finite float fields;
+- pointers for optional fields;
+- nested structs and bounded lists when the first slice needs them;
+- corresponding result structures;
+- `json` field names where they map to valid Starlark identifiers.
 
-The initial interpreter is Starlark-Go. A thread receives standard pure Starlark operations plus enabled CodeMode namespaces. CodeMode explicitly provides no `load` implementation, filesystem, environment, socket, HTTP, subprocess, reflection, unsafe, Go SDK client, credential, or dynamic builtin constructor.
+Non-pointer input fields are required. Pointer fields are optional. Omission and explicit `None` normalize identically to a nil pointer and an absent canonical key. The framework applies no defaults. Unknown tags or unsupported Go types fail registration rather than being ignored or routed through `any`.
 
-Registered outputs become only plain Starlark scalars, lists, tuples where appropriate, and string-keyed dictionaries. Namespace values are immutable. Mutable results are newly allocated per call and never shared between executions.
+Input is keyword-only. A generated signature is compact and comes directly from the runtime plan:
 
-Programs may define pure helpers, loops, comprehensions, and branches. They must define callable `main()` with no arguments. Capability calls during module initialization fail before authorization or side effects. Recursion remains disabled; CodeMode does not mutate Starlark-Go’s process-global resolver options after startup.
+```text
+github.list_repos(*, org: str, limit: int | None) -> list[Repository]
+```
 
-### 15.2 Default limits
+The notation is model documentation, not executable annotation syntax.
 
-The initial defaults are conservative hypotheses and are all validated at build time:
+The binder converts directly between Starlark and typed Go values; it does not marshal through JSON on every invocation. It produces authorization arguments during the same traversal. This removes schema/decoder drift without introducing dual schema-generation and validation dependencies.
 
-| Limit | Initial default | Enforcement point |
-|---|---:|---|
-| Source size | 64 KiB | Before parse |
-| Starlark execution steps | 1,000,000 | `Thread.SetMaxExecutionSteps` across load and `main` |
-| Overall execution time | 30 s | Derived context plus `Thread.Cancel` |
-| Per-capability call time | 10 s, capped by overall deadline | Before authorizer/handler |
-| Native call attempts | 64 | At builtin entry |
-| Concurrent executions | 32 | Server admission semaphore |
-| Canonical nesting depth | 32 | Input, handler output, and final result conversion |
-| Canonical nodes per value | 100,000 | Conversion traversal |
-| Canonical bytes per native input/output | 1 MiB | Conversion and schema validation |
-| Final result size | 1 MiB | Before MCP serialization |
-| Program print bytes | 16 KiB | Thread print callback |
-| Search results | 20 | Catalog query |
-| Described capabilities per call | 8 | Exact lookup |
+### Result conversion
 
-Raising a limit is explicit; zero does not mean unlimited. Per-call and policy deadlines are always clamped to the remaining overall execution time. Budget arithmetic uses checked counters to prevent overflow.
+Handler results can re-enter Starlark only as supported scalars, lists, and string-keyed objects. The final `main()` value is independently checked for supported types, nesting depth, and configured result size before MCP serialization. Functions, builtins, namespaces, non-string dictionary keys, non-finite floats, out-of-range integers, cycles, channels, SDK objects, and Go pointers do not cross the boundary.
 
-`print` is routed to a bounded execution observer and discarded by default. It is never returned in MCP success output. When an operator explicitly enables program-print logging, the documentation warns that a program can print intermediate API data; exceeding the print budget cancels the program.
+## MCP boundary contract
 
-### 15.3 Cancellation behavior
+### `search_api`
 
-A context cancellation callback calls `Thread.Cancel`. Starlark-Go observes cancellation between interpreter steps. Native builtins receive derived contexts and are expected to return promptly. The cancellation callback is always stopped when execution ends so executions do not leak goroutines or timers.
+Input is a bounded query string. The catalog performs a deterministic case-normalized linear scan of enabled capability names and summaries. Output is a bounded list of compact records:
 
-Starlark-Go documents that cancellation can be delayed while a Go builtin is running. CodeMode cannot safely preempt a Go handler, and synchronous dispatch intentionally avoids pretending that a timed-out side effect stopped. First-party handlers must use context-aware SDK methods and bounded clients.
+```json
+{"name": "github.list_repos", "signature": "...", "summary": "..."}
+```
 
-### 15.4 Memory and isolation limitations
+There are no keywords, weights, embeddings, external search service, or cache contract initially.
 
-Step, node, depth, byte, and concurrency limits reduce memory exposure, but they are not a hard heap ceiling. Starlark-Go has no supported per-thread allocator budget, and an in-process interpreter has no process boundary. A handler or interpreter allocation may occur before CodeMode can reject the resulting value. Go’s runtime also does not guarantee prompt return of RSS to the operating system.
+### `describe_api`
 
-The framework therefore promises **restricted capabilities and bounded accounting**, not hard memory or process isolation.
+Input is one exact capability name. Output is its name, compact signature, summary, description, and supported input/output shape. Missing and disabled names return the same safe not-found classification. Description does not perform fuzzy expansion.
 
-### 15.5 Containment decision gate
+### `execute`
 
-Before calling the runtime production-ready for mutually untrusted tenants, an adversarial prototype must run nested collections, large comprehensions, high-cardinality dictionaries, repeated executions, cancellation loops, large handler results, and deliberately blocked test builtins. It records peak live heap, retained heap after repeated runs, process RSS trend, step throughput, cancellation observation latency, and leaked goroutines.
+Input is one bounded Starlark program. It has no caller-controlled subject, credential, module path, capability allow-list, timeout, or budget fields. Successful output contains only the final result:
 
-In-process execution remains the default only if, at the proposed production limits:
+```json
+{"result": <supported value>}
+```
 
-- a single adversarial execution stays below a 64 MiB live-heap delta;
-- retained heap and goroutine counts stabilize across 10,000 executions;
-- interpreter-only cancellation is observed within 100 ms at p99;
-- every first-party builtin returns within one second of context cancellation;
-- the target deployment does not require a hard tenant memory boundary.
+Valid MCP tool calls whose program, authorization, handler, or budget fails return safe MCP tool errors. Malformed protocol envelopes remain protocol errors. The adapter follows the selected official SDK version rather than recreating MCP transport semantics.
 
-Failure of any condition, or a deployment requirement for hard hostile-tenant isolation, moves execution behind a supervised worker-process adapter before that deployment. The worker would preserve the same program-runner and invocation contracts, use a constrained IPC value protocol, enforce OS/container CPU and memory limits, and keep credentials in the worker’s trusted Go context. This is a measured decision point, not a claim that the first in-process version already provides those guarantees.
+## Authentication and authorization
 
-## 16. Errors and results
+### Invocation resolution
 
-### 16.1 Stable error codes
+`mcpserver.InvocationResolver` is a required host adapter:
 
-| Code | Meaning | Retryable by caller |
-|---|---|---:|
-| `invalid_request` | Invalid meta-tool arguments | No |
-| `unauthenticated` | Trusted invocation resolver could not establish a subject | Usually no |
-| `not_found` | Requested API name is absent from the enabled catalog | No |
-| `invalid_program` | Parse, resolution, `main`, top-level-call, or representability failure | No |
-| `invalid_arguments` | Capability arguments failed binding or schema validation | No |
-| `permission_denied` | Authorizer made a valid deny decision | No |
-| `policy_failure` | Authorizer errored, timed out, panicked, or returned a malformed decision | Operator-dependent; not automatically retried |
-| `resource_exhausted` | Step, call, size, depth, node, or print budget exceeded | No without changing the program |
-| `busy` | Execution concurrency capacity is full | Yes |
-| `deadline_exceeded` | Overall or per-call deadline elapsed | Only if the operation is known safe to retry |
-| `capability_failed` | Native handler returned a safe domain failure | Defined by the handler |
-| `result_not_representable` | Handler or `main` returned an unsupported value | No |
-| `internal` | Invariant violation or recovered panic | Usually no |
+```text
+Resolve(context.Context) -> authz.Subject or error
+```
 
-### 16.2 Safe error projection
+It reads identity established by trusted middleware or process composition. It never derives identity from program data. Resolver failure stops the request before discovery or execution.
 
-A handler may return a documented safe domain error containing a public code, public message, and retryability. Undeclared errors become an opaque `capability_failed` message. Wrapped causes, SDK payloads, policy reasons, source excerpts, and Go stacks go only to trusted observability with redaction.
+`Subject` starts with the minimum stable identity needed by the first policy. Tenant, issuer, roles, and trusted attributes are not frozen into a speculative versioned domain. They are added only when a real application authorizer demonstrates the need and their credential-exclusion rules are defined.
 
-Starlark locations may include synthetic filename, line, and column, but not the source line itself. Backtraces are bounded and include only Starlark function names and locations. Panic recovery exists at authorizer, handler, interpreter, and MCP adapter boundaries to preserve server availability; it cannot roll back a side effect that occurred before a panic.
+### Static deployment filtering
 
-### 16.3 Result conversion
+Filtering runs once during `Build`. The initial public configuration names capabilities to disable; it is not a callback or policy engine. The build rejects unknown configured IDs and creates a new catalog containing only enabled entries. Changing deployment visibility means constructing and deploying a new server.
 
-Capability results are validated and converted before re-entering Starlark. The final `main()` value is independently converted before MCP serialization. Dictionary keys must be strings; integers must fit signed 64-bit; floats must be finite; functions, builtins, namespaces, sets, and cyclic values are rejected.
+### Per-invocation authorization
 
-Objects serialize deterministically for tests and digests, though clients must not depend on JSON key order. `None` becomes JSON null. A missing optional field remains absent rather than becoming null unless its declared output contract explicitly permits null.
+`authz.Authorizer` is mandatory and called once for every valid native invocation. Its initial input contains:
 
-## 17. Configuration, lifecycle, concurrency, and observability
+- the trusted non-secret subject;
+- stable capability ID;
+- model-facing capability name;
+- canonical, validated keyword arguments.
 
-### 17.1 Configuration
+It excludes source, raw MCP data, transport headers, credentials, clients, intermediate values, and handler results. The contract is intentionally not labeled `codemode.authz/v1` before a real authorizer proves that it is sufficient.
 
-The core accepts typed programmatic `Options`; it does not read files, environment variables, or flags. A consuming application may add a focused configuration adapter. This avoids Viper precedence in the domain and makes the same server construction testable without process state.
+A recognized denial and every authorizer failure fail closed. The execution layer recovers an authorizer panic as policy failure. Denial reasons remain trusted diagnostic data and are not copied verbatim into model-facing errors. The framework does not cache decisions and does not retry an authorizer or handler automatically.
 
-Configuration groups are:
+The first vertical slice must include a denial test that observes **zero handler side effects**. Authorization is not a later hardening stage.
 
-- validated resource `Limits`;
-- deployment capability filter;
-- mandatory authorizer;
-- observer and optional program-print sink;
-- safe error mapper policy;
-- MCP adapter limits and invocation resolver;
-- Rego adapter modules, data, query, and pure builtin capabilities when used.
+### Rego
 
-Secrets are never configuration values accepted by the core. Native services and transport middleware own secret retrieval.
+Rego is not an initial dependency or package. A Go `Authorizer` proves the input contract first. An optional Rego adapter is justified only when a real consumer needs Rego and the required input has stabilized. It must remain outside the core dependency path, prepare policy before serving, restrict unsafe builtins, and preserve fail-closed behavior.
 
-### 17.2 Lifecycle
+## Execution safety and containment
 
-The builder has `registering`, `building`, and `built` states and is not concurrency-safe by design. `Build` is one-shot. The server is immutable and concurrency-safe.
+### Restricted interpreter
 
-The MCP transport owns listener/session lifecycle. Graceful shutdown follows this order:
+Every `execute` call creates a fresh Starlark-Go thread. Only pure language operations and immutable namespaces for enabled capabilities are installed. `load` is rejected. No filesystem, environment, network, subprocess, credential, client, module loader, or dynamic builtin factory is present.
 
-1. stop accepting new MCP work;
-2. reject new executions;
-3. cancel the server root context, which cancels active threads and cooperative builtins;
-4. wait for active executions up to the caller’s shutdown deadline;
-5. return any remaining blocked-handler condition to the host so process supervision can decide whether to terminate.
+Top-level evaluation and `main()` are separate phases. The capability builtins consult execution-owned phase state, so a top-level call cannot bypass the guard through a helper. `main()` must exist, be callable, and take no arguments. Helpers called from `main()` share the running phase and the same budgets.
 
-The core has no background catalog refresh and no persistent state to flush. A Rego prepared query and immutable search index require no shutdown hook.
+Program printing has no framework channel: it is discarded or unavailable, never returned in MCP output, and never forwarded to default logs.
 
-### 17.3 Concurrency
+### Minimal budgets
 
-Starlark execution is sequential within one program. CodeMode exposes no goroutine primitive. Separate MCP `execute` calls run concurrently up to the admission limit. The catalog, schemas, reference strings, namespace prototypes, and prepared Rego query are immutable and shared. Per-execution state, builtins, mutable Starlark results, contexts, and budgets are not shared.
+The first implementation has configurable, non-zero limits for:
 
-Registered handlers and application-defined authorizers must be safe for concurrent use. A non-concurrent external service belongs behind its own focused serialized adapter; CodeMode does not place a global lock around all capabilities. The race detector is part of CI.
+- source size;
+- Starlark execution steps;
+- elapsed execution time;
+- attempted native calls;
+- converted-value nesting depth;
+- final result size.
 
-### 17.4 Observability
+Defaults are development hypotheses, not production claims. Zero does not silently mean unlimited. The request context and execution deadline flow into authorizer and handler calls. Budget accounting uses checked counters. Raising a limit is an explicit host decision.
 
-The core accepts a narrow observer port and defaults to a no-op. A standard `log/slog` adapter is sufficient initially; OpenTelemetry is not a core dependency. Events include catalog build, search latency/result count, description size, execution admission/start/end, step count, native call count, authorization outcome, handler latency, error code, and budget exhaustion.
+The initial core does not add speculative queueing, admission protocols, per-namespace quotas, print budgets, or arbitrary concurrency controls. The host transport and deployment own request concurrency until measurement shows a framework-level control is needed.
 
-Events exclude source, arguments, results, credentials, raw subject attributes, policy documents, and SDK bodies by default. Subject IDs are omitted or transformed by an application-supplied audit adapter. Program `print` is a separate opt-in channel with its own byte budget.
+### Cancellation limitations
 
-## 18. Dependencies
+Thread cancellation is observed between Starlark steps. A Go builtin can delay it while blocked in an authorizer or handler. CodeMode passes cancellation to both but cannot safely preempt them or prove that a timed-out side effect stopped. Native adapters must use context-aware operations and bounded clients.
 
-| Dependency | Purpose and boundary | Decision |
-|---|---|---|
-| Go standard library | Contexts, HTTP composition, encoding, synchronization, structured logging | Preferred throughout. The repository currently targets Go 1.26.6. |
-| `go.starlark.net` / Starlark-Go | Interpreter adapter | Initial language runtime. Mature, embeddable, supports step counts and cancellation, with the documented limitations above. Pin a reviewed commit/version in `go.mod`; do not track an unpinned branch. |
-| `github.com/modelcontextprotocol/go-sdk` | MCP adapter | Use the official v1 API line. Its typed tool handlers and structured tool results keep protocol parsing out of the core. SDK churn is isolated in `mcpserver`. |
-| `github.com/invopop/jsonschema` | Standards-based schema derivation/rendering support | Use only inside schema compilation after verifying its tag semantics against CodeMode’s restricted type plan. Unsupported semantics fail build. |
-| `github.com/santhosh-tekuri/jsonschema/v6` | Compile and enforce generated Draft 2020-12 constraints | Mature validator isolated in `internal/schema`; schemas compile once at build, not per call. |
-| `github.com/open-policy-agent/opa/v1/rego` | Optional embedded Rego authorizer | Imported only by `rego`; never required by core construction or as a remote service. Review binary/module weight after the authorization slice. |
-| `github.com/vektra/mockery` and Testify | Generated port mocks and behavior assertions | Development/test dependencies. No handwritten mocks. |
-| Testcontainers for Go | Deterministic live-service end-to-end tests | End-to-end test dependency, separately gated when Docker is required. |
+### Honest containment
 
-Cobra and Viper are not core dependencies. A consuming server may choose them, but the CodeMode framework has no flags or environment precedence to manage. A lexical in-memory search implementation avoids Bleve, embeddings, and external search infrastructure until measurements justify them.
+Step, time, call, depth, and result limits reduce exposure but do not impose a hard heap ceiling. Starlark-Go has no supported per-thread allocator budget, and an in-process interpreter shares the host process. A large allocation can occur before conversion rejects its value.
 
-## 19. Testing strategy
+Before claiming suitability for mutually untrusted tenants, an adversarial workload must measure large comprehensions and collections, repeated executions, cancellation loops, large native results, and blocked test handlers. The decision record must include peak and retained heap, RSS trend, cancellation behavior, goroutine stability, and the target deployment’s threat model.
 
-Testing follows the repository’s required three layers and tests observable behavior rather than implementation plumbing.
+A supervised worker process is introduced only if those measurements are unacceptable or the deployment requires a hard tenant memory/process boundary. No fixed MiB, percentile, or run-count threshold is part of this architecture; the production environment and measured baseline define the gate.
 
-### 19.1 Unit tests: pure domain behavior
+## Errors and lifecycle
 
-- Capability ID/name grammar, collision detection, namespace collision, deterministic catalog digest.
-- Type-plan compilation, tag validation, required/optional behavior, positional/keyword canonical equivalence, constraint enforcement, output validation, depth/node/byte accounting, and unsupported types.
-- Canonical value immutability and deterministic object ordering.
-- Search ranking, namespace filters, stable tie-breaking, result caps, and disabled-capability absence.
-- Deterministic reference generation and build-time example validation.
-- Error safe projection and source-location bounding.
-- Budget transitions, checked arithmetic, execution phases, and state invariants.
-- Policy input normalization, role ordering, and exclusion of secret-bearing fields.
+### Safe errors
 
-### 19.2 Integration tests: core plus generated mock adapters
+The first public taxonomy stays small:
 
-Every narrow port has a `mockery`-generated mock in a `mocks/` subpackage under its primary package. Handwritten mocks are prohibited.
+- invalid registration or build;
+- unauthenticated;
+- not found;
+- invalid program or arguments;
+- permission denied or policy failure;
+- resource limit or deadline;
+- capability failure;
+- internal failure.
 
-- Program service with a generated runner mock verifies fresh execution state, admission, cancellation, and final conversion.
-- Invocation service with generated authorizer and handler mocks proves validation-before-authorization, authorization-before-handler, fail-closed errors, no handler call after denial, and call-budget charging.
-- Starlark adapter with a generated invoker mock executes real programs covering loops, helpers, branches, top-level-call rejection, missing/invalid `main`, disabled `load`, recursion rejection, step limits, cancellation, and final value conversion.
-- MCP adapter with a generated service/resolver mock uses the official SDK’s in-memory or HTTP test transport to verify the exact three tool schemas, structured success, tool-error versus protocol-error behavior, authentication failure, and output caps.
-- Rego adapter compiles and evaluates real local policies, including undefined, false, malformed, strict-builtin, cancellation, and concurrent evaluation cases.
-- Adapter contract suites run against each real adapter and its port expectations.
+Sentinel or typed errors exist only where callers need control flow. The trusted cause may be wrapped for host diagnostics, but the MCP projection contains a stable coarse classification, bounded safe message, and optional capability name or Starlark location. It excludes source excerpts, arguments, results, credentials, headers, SDK bodies, policy documents, denial reasons, and Go stacks.
 
-### 19.3 End-to-end tests: actual surface and live services
+A handler error is opaque by default. The framework recovers panics at authorizer, handler, interpreter, and MCP boundaries to preserve availability, but recovery cannot roll back a side effect.
 
-A compiled test server registers several native capabilities backed by a deterministic containerized service. An official MCP client connects over Streamable HTTP and, where supported reliably, stdio. The scenario:
+### Failure behavior
 
-1. calls `search_api` and observes only enabled capabilities;
-2. calls `describe_api` and uses the returned signature;
-3. sends one Starlark program that branches, loops, and makes several native calls;
-4. verifies the external service’s real state and the single final MCP result;
-5. repeats with another subject and proves denial occurs with zero external side effects;
-6. cancels an execution and observes cooperative handler shutdown.
-
-Container-required tests use an explicit end-to-end build tag or Moon task rather than making ordinary unit tests nondeterministic. A small full-surface smoke test remains in CI. Live third-party API tests, if added, run separately with scoped credentials and are not required for contributor unit tests.
-
-### 19.4 Security, fuzz, race, and performance evidence
-
-- Fuzz Starlark-to-canonical decoding, schema tags, names, nested values, and error projection.
-- Maintain adversarial programs for step, call, depth, node, source, output, and print limits.
-- Include a credential canary in trusted Go context and prove it never appears in discovery, reference, policy arguments, default logs, Starlark globals, or MCP results.
-- Run `go test -race` over concurrency-sensitive packages and integration suites.
-- Benchmark catalog build, search, describe, builtin binding/decoding, policy input construction, and interpreter overhead separately from external API latency.
-- Record initial MCP tool-schema bytes, average search/description response bytes, model round trips per composed task, peak live heap, cancellation latency, and native-call throughput. These measurements drive later stages rather than speculative optimization.
-
-All packages receive `doc.go`. Every function, type, and struct field—exported or unexported—receives Godoc as required by `AGENTS.md`; public boundaries also receive examples. User-visible documentation is updated in the same change under `docs/` using Diátaxis.
-
-## 20. Failure modes and handling
-
-| Failure mode | Boundary behavior |
+| Failure | Behavior |
 |---|---|
-| Invalid registration, duplicate name/ID, unsupported schema, invalid example | `Register` or `Build` fails; no server is returned. |
-| Deployment filter error or unknown configured ID | Build fails closed. |
-| Authentication/resolver failure | Meta-tool returns `unauthenticated`; no catalog or execution work proceeds. |
-| Search miss | Empty ranked results; this is not confused with an authentication empty state because authentication already succeeded. |
-| Describe miss | Per-name `not_found`; no fuzzy substitution. |
-| Parse/resolution error, missing `main`, wrong arity | `invalid_program` with bounded location. |
-| Capability call during module initialization | `invalid_program`; authorizer and handler are not called. |
-| Invalid capability arguments | `invalid_arguments`; authorizer and handler are not called. |
-| Policy deny | `permission_denied`; reason is audit-only; handler is not called. |
-| Policy error, timeout, malformed output, or panic | `policy_failure`; fail closed; handler is not called. |
-| Handler transient failure | Safe handler classification is returned; framework does not retry automatically. |
-| Step/call/value/print budget exceeded | Thread is cancelled and returns `resource_exhausted`. |
-| Overall deadline | Thread cancellation plus context cancellation; blocked builtin limitation is reported to trusted observer. |
-| Handler ignores context | Request may remain blocked until handler/transport/process ends; no false claim of successful cancellation. |
-| Output conversion or validation failure | `result_not_representable`; value does not enter Starlark or MCP. |
-| Execution saturation | Immediate retryable `busy`; no unbounded queue. |
-| Panic | Boundary recovery, safe `internal`/`policy_failure` error, trusted stack logging; no rollback guarantee. |
-| MCP disconnect | Execution context is cancelled; cooperative handlers stop. |
-| Graceful-shutdown deadline expires | Shutdown reports remaining active work; process supervisor decides termination. |
+| Invalid registration, unsupported type, duplicate ID/name, or namespace collision | `Register` or `Build` fails; no server is returned. |
+| Unknown disabled capability | Build fails closed. |
+| Resolver failure | Request fails unauthenticated before catalog or execution work. |
+| Search miss | Empty result list. |
+| Exact description miss | Safe not-found error. |
+| Parse failure, missing or invalid `main`, or top-level capability call | Invalid-program error; no native handler runs for the rejected call. |
+| Invalid capability arguments | Invalid-arguments error; authorizer and handler are not called. |
+| Policy deny, error, timeout, cancellation, or panic | Safe denial/policy failure; handler is not called. |
+| Handler error or panic | Safe capability/internal failure; no automatic retry or rollback claim. |
+| Step, time, call, depth, or final-result limit | Execution stops with a safe limit/deadline error. |
+| Handler ignores context | Request or shutdown may remain blocked; the limitation is not hidden. |
+| Unsupported handler or final result | Value does not cross into Starlark or MCP. |
 
-## 21. Tradeoffs and rejected alternatives
+### Lifecycle and concurrency
 
-| Alternative | Why rejected |
-|---|---|
-| One MCP tool per native capability | Reintroduces large initial context and repeated model round trips. |
-| Downstream MCP client/proxy or schema importer | Contradicts the native capability model and creates a second authorization/schema boundary. |
-| Generic `call_tool`, raw HTTP, generic SQL, or raw SDK access | Lets untrusted code choose operations dynamically and bypass stable policy identity. |
-| Source parsing as authorization | Positional forms, aliases, helpers, dataflow, and runtime values make it incomplete and bypassable. Authorization belongs at the builtin callback. |
-| Mutable runtime registry or hot reload | Creates discovery/binding races and partial policy states. Immutable rebuild/deploy is simpler and safer. |
-| Mandatory remote OPA | Adds availability, latency, credential, and network dependencies to every side effect. |
-| Mandatory embedded OPA | Makes a large policy dependency unavoidable for applications with simple Go policy. |
-| Full arbitrary JSON Schema and `any` inputs | Produces ambiguous Starlark bindings, weak typed handlers, and difficult canonical policy input. A documented subset is safer. |
-| JSON marshal/unmarshal between every Starlark and Go call | Simple but adds avoidable allocations and number ambiguities on a repeated execution path. Compiled type plans perform direct conversion. |
-| Automatic generic retries | Can duplicate non-idempotent side effects. Focused capability adapters own retry semantics. |
-| Vector/semantic search initially | Adds nondeterminism and infrastructure before catalog measurements show lexical search is insufficient. |
-| Worker process for every execution immediately | Stronger containment, but adds IPC, startup latency, credential propagation, lifecycle, and deployment complexity before prototype evidence. It remains the defined escalation path. |
-| A generic Cobra/Viper CodeMode binary | Cannot provide compiled native capabilities without becoming a dynamic plugin/proxy platform. Consumers own their composition root. |
-| Returning prints, traces, or per-call results from `execute` | Violates the final-result-only context-efficiency promise and risks leaking intermediate data. |
-| Detached goroutine timeout around handlers | Returns control while a side effect may still run, leaks resources, and gives a false cancellation guarantee. |
+The builder is mutable, single-threaded, and one-shot. `Build` closes registration. The server shares only the immutable catalog and compiled plans; every execution has its own context, thread, phase, and counters.
 
-## 22. Resolved decisions
+The consuming host and official MCP SDK own listeners, sessions, signal handling, and graceful transport shutdown. CodeMode exposes no framework shutdown choreography and starts no catalog-refresh or policy-refresh goroutines. Request cancellation flows into active executions. Registered handlers and authorizers must be safe for the concurrency permitted by the host.
 
-- The repository is a Go library first; the template CLI and binary/image release assumptions do not define the product.
-- Starlark-Go is the initial interpreter.
-- The official MCP Go SDK is the only MCP implementation dependency and is isolated at the boundary.
-- `search_api`, `describe_api`, and `execute` are the complete initial MCP surface.
-- Registration is typed, build-time, immutable, and the sole origin of catalog/reference/runtime behavior.
-- Capability ID is distinct from model-facing name and is the policy identity.
-- The initial value/schema contract is restricted and deterministic.
-- Deployment filtering is build-time; per-call authorization is runtime and fail-closed.
-- Authentication comes from trusted Go context and is never selected by tool arguments.
-- OPA/Rego is an optional embedded adapter using a prepared local query and restricted builtins.
-- Programs define zero-argument `main`; module initialization cannot perform native calls.
-- No module loading, ambient I/O, dynamic dispatch capability, generic retries, or intermediate MCP results are provided.
-- Execution is synchronous within a thread and bounded across requests by an admission semaphore.
-- In-process Starlark is not described as hard memory or process isolation.
+## Dependencies
 
-## 23. Unresolved decisions and open questions
-
-These decisions require evidence or a product requirement; none blocks the first working vertical slice.
-
-1. **Containment mode.** The adversarial prototype and deployment threat model determine whether in-process execution is sufficient or a worker-process adapter is required. The quantitative gate is defined in §15.5.
-2. **Subject-specific discovery visibility.** The initial contract exposes deployment-enabled metadata to every authenticated subject while authorizing actual calls per argument. If capability existence is tenant-sensitive, introduce a separate visibility port; do not overload the per-call authorizer with fabricated arguments.
-3. **Schema breadth.** Real capability sets will determine whether tagged unions, arbitrary-precision numbers, byte strings, richer time types, or opaque resource handles deserve explicit codecs. Unsupported types fail clearly until then.
-4. **Search sophistication.** Lexical ranking remains until measured failed discovery queries show a repeatable recall gap. Any replacement must remain bounded, deterministic enough to test, and free of mandatory external I/O.
-5. **OPA packaging weight.** Build size and dependency analysis will determine whether `rego` stays a package in the main module or becomes a separately versioned optional submodule. The `authz.Authorizer` contract is unchanged either way.
-6. **MCP transport policy.** The first implementation supports official stdio and Streamable HTTP composition. Session persistence, resumability, CORS/origin defaults, and authentication middleware examples must follow the exact official SDK/spec version selected during implementation rather than being reimplemented in the core.
-7. **Large results.** The initial 1 MiB final-result ceiling intentionally rejects large materialized data. If real workflows require larger artifacts, the product must choose an explicit, authorized resource-reference capability rather than silently raising memory limits or exposing generic storage.
-
-## 24. Risks
-
-| Risk | Consequence | Mitigation |
+| Dependency | Initial purpose | Boundary |
 |---|---|---|
-| A trusted handler leaks a credential in its output | Secret reaches Starlark or MCP | Focused handlers, output schemas, credential canary tests, safe logging defaults, and security review. The framework cannot defend against malicious trusted Go code. |
-| A handler ignores context | Cancellation and shutdown can block | Require context-aware SDK methods, per-client timeouts, conformance tests, observability, and worker-process escalation where necessary. |
-| Starlark allocation exceeds practical memory before a size check | Process memory pressure or crash | Steps, concurrency, node/depth/output caps, adversarial measurement, and explicit worker decision gate. |
-| Schema/reference/decoder drift | Model writes calls that runtime interprets differently | One compiled type plan, build-time validation, golden reference tests, and positional/keyword equivalence tests. |
-| Policy identity changes accidentally | Authorization gap or outage | Stable explicit ID distinct from name, duplicate checks, policy-input contract tests, and release review for ID changes. |
-| Optional Rego enables unsafe builtins | Policy evaluation performs unexpected I/O | Prepare with restricted capabilities, exclude network/runtime introspection, use strict builtin errors, and test forbidden builtins. |
-| Search returns poor matches | More discovery calls and model context | Instrument failed/empty searches and reference follow-through; change ranking only from measured workloads. |
-| Official MCP SDK evolves | Adapter churn or protocol mismatch | Pin a reviewed v1 release and isolate all SDK types in `mcpserver`. |
-| Large OPA/schema dependencies burden consumers | Build time and binary size | Keep adapters isolated, measure, and split optional module if warranted. |
-| Metadata visibility is too broad for a deployment | Subject learns that a capability exists | Deployment partitioning now; separate visibility policy only when required. |
-| Model retries a timed-out side effect | Duplicate external mutation | Safe retryability metadata, no automatic retries, focused adapters with idempotency keys where supported, and documentation. |
+| Go standard library | Context, reflection, encoding, synchronization, and errors | Preferred throughout. |
+| Starlark-Go | Restricted interpreter | Used by `internal/binding` and `internal/execution`; pin a reviewed version. |
+| Official MCP Go SDK | Three-tool inbound adapter and actual MCP tests | Isolated in `mcpserver`; pin a reviewed v1 release. |
+| Mockery | Generated mocks for actual interfaces | Development dependency only. |
+| Testify, where already conventional | Behavior assertions | Test dependency only. |
 
-## 25. Agile staged delivery
+The initial module does not depend on Cobra, Viper, OPA/Rego, JSON Schema generation or validation libraries, Testcontainers, an observability SDK, a search engine, or an IPC framework. A dependency is added only with a working consumer and a demonstrated need.
 
-Each stage ends with a runnable server and direct evidence from the actual MCP surface. A stage does not create unused extension frameworks for later stages.
+## Testing and documentation
 
-### Stage 1: Minimal native vertical slice
+Testing follows the repository’s required layers and defends observable contracts.
 
-- Perform the repository cutover from `template-go` to the library layout.
-- Implement immutable registration for a narrow scalar/struct/list codec subset.
-- Implement one deployment filter, explicit allow-all authorizer, catalog, lexical search, deterministic reference, fresh-thread Starlark execution, `main()`, step/time/call limits, and one native test capability.
-- Expose the three meta-tools through the official MCP SDK over stdio or an in-memory transport.
-- Prove end to end that a client searches, describes, and executes one program containing multiple native calls, receiving one final result.
-- Record tool-schema bytes, search/description bytes, model round trips, execution overhead, and initial heap behavior.
+### Unit
 
-The stage is useful as a local code-native server; it is not presented as hostile multi-tenant isolation.
+- Capability ID/name validation and collision behavior.
+- Restricted type-plan compilation and unsupported-type rejection.
+- Keyword-only binding, required/optional behavior, unknown keywords, and canonical argument projection.
+- Signature generation from the same plan used at runtime.
+- Result conversion, depth enforcement, and final-result bounds.
+- Static filtering, disabled-capability absence, exact lookup, and deterministic linear search.
+- Execution phase transitions and budget accounting.
+- Safe error projection and secret-field exclusion.
 
-### Stage 2: Canonical contracts and authorization
+### Integration
 
-- Complete the restricted type plan, constraints, output validation, canonical immutable values, stable IDs, and safe errors.
-- Add trusted invocation resolution, the versioned policy input, per-call application-defined authorizer, build-time deployment filtering, and audit-safe events.
-- Add positional/keyword equivalence, denied-side-effect, disabled-capability, credential-canary, fuzz, and race coverage.
-- Run a full MCP scenario with two subjects and a real containerized backing service.
-- Measure authorization overhead, codec allocations, catalog build time, and context savings with a representative multi-capability catalog.
+- Real Starlark execution with a generated `Authorizer` mock proves canonical arguments, authorization ordering, fail-closed behavior, and zero handler calls after denial.
+- Real execution covers helpers, loops, branches, multiple native calls, top-level-call rejection, missing or invalid `main`, disabled `load`, step/time/call limits, cancellation, and final-result-only behavior.
+- The MCP adapter uses generated `Service` and `InvocationResolver` mocks to verify exactly three tools, resolver ordering, request/result mapping, and safe tool errors.
+- Static filtering is exercised across search, description, and runtime binding in one contract test.
 
-This stage is a complete secure application-defined-policy server without OPA.
+### Actual MCP end to end
 
-### Stage 3: Runtime hardening and containment decision
+The first slice includes a compiled native test server and an official MCP client using a real supported transport. The scenario must:
 
-- Add complete source/value/print/concurrency controls, module-loading rejection, module-phase side-effect guard, cancellation accounting, panic boundaries, and graceful shutdown.
-- Run the adversarial corpus and 10,000-execution soak described in §15.5.
-- Compare actual results to the containment gate and record the decision: retain the in-process adapter with documented limits, or implement the supervised worker adapter before multi-tenant production.
-- Tune defaults only from measured behavior; do not raise limits merely to make adversarial tests pass.
+1. search and describe an enabled capability;
+2. execute one program that makes multiple native calls and returns one final result;
+3. prove a disabled capability is absent from all three surfaces;
+4. execute as a denied subject and prove a side-effect counter remains unchanged;
+5. carry a credential canary in trusted context and prove it is absent from Starlark globals, discovery, description, authorization arguments, default errors, and MCP results;
+6. exercise cancellation against a cooperative native handler.
 
-This stage produces an honestly characterized execution envelope and a concrete containment choice.
+The first end-to-end capability may use a deterministic in-process application service. Testcontainers is added only when a real capability needs a live external service. Broad fuzzing begins only after binder contracts stabilize. Benchmarks are written only for measured questions. The race detector covers concurrency-sensitive packages and the actual MCP scenario.
 
-### Stage 4: Production adapters
+Every package has `doc.go`. Every function, type, and struct field receives Godoc, including unexported declarations. Public API boundaries receive fuller examples where useful. User documentation is added under `docs/` only for shipped behavior; no empty documentation hierarchy is created in advance.
 
-- Add the optional prepared-query Rego adapter with restricted pure builtins and fail-closed decision parsing.
-- Complete `mcpserver` composition for Streamable HTTP and stdio using the pinned official SDK.
-- Exercise authentication middleware, disconnect cancellation, saturation, graceful shutdown, concurrent Rego evaluation, and actual transport error semantics.
-- Measure binary size with and without Rego, p95/p99 latency, cancellation lag, and maximum sustainable concurrent executions.
+## Tradeoffs and rejected alternatives
 
-The core remains usable without Rego and without HTTP.
+| Alternative | Decision |
+|---|---|
+| One MCP tool per native capability | Rejected because it expands model context and round trips. |
+| Downstream MCP proxy/import layer | Rejected because it contradicts the native-capability trust boundary and creates another schema and authorization boundary. |
+| Dynamic `call_tool`, raw HTTP, generic SQL, or SDK access | Rejected because untrusted code could select operations outside stable policy identity. |
+| Authorization by source inspection | Rejected because helpers, control flow, and runtime arguments make it incomplete and bypassable. |
+| Three-package collapse | Rejected because the facade, policy domain, MCP adapter, binding, catalog, and execution each have distinct contracts and dependency directions. |
+| Separate `value`, `schema`, `reference`, `invoke`, `program`, and `starlark` packages | Deferred because the first implementation has no second implementation or independent consumer to justify them. |
+| Public canonical values and `Codec[T]` | Deferred because they freeze a broad extension contract before real capabilities prove it. |
+| Capability JSON Schema generation plus runtime schema recompilation | Rejected initially because the binder can supply signatures, validation, canonical arguments, and typed decoding from one plan without two dependencies. |
+| Positional arguments | Rejected initially because keyword-only calls remove field-order compatibility and canonicalization complexity. |
+| Weighted indexes, keywords, digests, and caches | Rejected initially because immutable maps, a slice, and linear name/summary search satisfy the first catalog. |
+| Mandatory or first-slice Rego | Deferred until a Go authorizer proves the input contract and a consumer requires Rego. |
+| Worker process for every execution | Deferred because IPC, lifecycle, and credential propagation are substantial; measurement or a hard-isolation requirement must trigger it. |
+| Detached goroutine timeout around handlers | Rejected because it can return while a side effect continues. |
+| Automatic generic retries | Rejected because they can duplicate non-idempotent effects. |
+| Custom observer, print channel, framework shutdown, or admission framework | Deferred until operating evidence gives each one a concrete consumer. |
 
-### Stage 5: Authoring and release quality
+## Risks
 
-- Validate the API against several focused native capabilities backed by different kinds of ports: an HTTP SDK, a database service, and an application service.
-- Refine schema features and search ranking only where those capabilities expose concrete gaps.
-- Publish Diátaxis documentation under `docs/`: a first-server tutorial, capability/authentication/Rego how-to guides, generated API and limit reference, and explanations of trust boundaries and containment.
-- Add public Godoc examples, compatibility policy for capability names/IDs/policy input, full Moon/CI tasks, and the appropriate library release workflow.
-- Run the final end-to-end, race, fuzz, adversarial, docs, and release rehearsal paths before the first stable tag.
+| Risk | Consequence | Current mitigation |
+|---|---|---|
+| A trusted handler returns a credential | Secret reaches Starlark or MCP | Focused handlers, restricted outputs, credential-canary tests, and review. The framework cannot defend against malicious trusted Go code. |
+| The authorizer sees arguments different from handler input | Authorization gap | One compiled binder traversal creates both values; no post-authorization defaults or transformations. |
+| A handler ignores context | Cancellation and host shutdown can block | Require context-aware native adapters and bounded clients; document the limitation and use containment escalation where required. |
+| Starlark allocates heavily before a limit is checked | Host memory pressure | Step/time/depth/result limits, adversarial measurement, host concurrency controls, and a worker-process evidence gate. |
+| Capability ID changes accidentally | Policy outage or authorization gap | Explicit stable ID distinct from name, collision checks, contract tests, and release review. |
+| Deployment filtering drifts across surfaces | Disabled operation remains discoverable or callable | One filtered immutable catalog feeds search, description, and namespace construction. |
+| Metadata visibility is too broad | An authenticated subject learns a capability exists | Separate deployments now; add subject-specific visibility only from a demonstrated requirement. |
+| Official MCP SDK or Starlark-Go changes | Boundary churn or semantic drift | Pin reviewed versions and isolate them in `mcpserver`, `binding`, and `execution`. |
+| A model retries an uncertain side effect | Duplicate mutation | No framework retries; capability adapters own idempotency and safe retry semantics. |
 
-At every stage, the server remains a native Go capability host with the same three MCP tools. Later work deepens evidence and adapters; it does not change the product into a proxy, compatibility layer, or speculative plugin platform.
+## Evidence-gated decisions
+
+Deferred work is not a backlog to implement automatically. Each item requires the stated evidence and a fresh architecture decision.
+
+| Deferred decision | Evidence required before adding it |
+|---|---|
+| Broader binder types, tags, constraints, or custom codecs | At least one real capability cannot be expressed safely by the restricted plan. |
+| Public canonical value domain | More than one public consumer needs stable value construction or inspection outside `authz.AuthorizationInput`. |
+| JSON Schema generation or runtime validation library | A real machine-readable consumer needs capability schemas, or binder validation cannot express a required contract. |
+| Rego adapter | A real deployment requires Rego and the Go authorizer has proved the authorization input fields and semantics. |
+| Worker-process execution | Adversarial measurements are unacceptable, or the deployment threat model requires a hard tenant boundary. |
+| Framework admission/concurrency control | Measured overload cannot be controlled adequately by the host transport or deployment. |
+| Richer search | Representative discovery queries show repeatable failures that linear name/summary search cannot fix. |
+| Subject-specific discovery policy | Capability existence is demonstrably sensitive within one deployment. |
+| Rich subject or execution metadata | A real authorization rule cannot be expressed with the minimal trusted subject and capability arguments. |
+| Structured safe handler errors | Real capabilities need model-actionable domain failures that cannot be represented safely as results. |
+| Testcontainers | A real native capability needs a live service to defend its integration contract. |
+| Fuzz suites | Binder and error contracts are stable enough that fuzz findings will defend a lasting boundary. |
+| Benchmarks | A profile, latency target, allocation question, or containment decision identifies a specific measurement. |
+| Custom observability port | Operators demonstrate required signals that cannot be obtained at the host, MCP, authorizer, or native-adapter boundary. |
+
+## Open questions
+
+These questions do not weaken the first slice and do not authorize speculative implementation:
+
+- Which real capability first requires subject fields beyond an opaque stable ID?
+- Which official MCP transport provides the smallest reliable actual end-to-end path for the first repository cutover?
+- What deployment threat model and measured baseline will govern the in-process containment decision?
+- Will real model workflows need machine-readable capability schemas beyond generated Starlark signatures and descriptions?
+
+## Agile vertical-slice plan
+
+### First slice: secure native capability end to end
+
+The first mergeable product slice performs the repository cutover and ships one complete path rather than an unauthenticated scaffold:
+
+- the six-package layout;
+- stable `CapabilityID` and `CapabilityName`;
+- typed registration and the restricted keyword-only binder;
+- static deployment filtering and immutable catalog;
+- deterministic linear search, exact description, and generated compact signatures;
+- required trusted `InvocationResolver`;
+- required fail-closed `Authorizer` with explicit `AllowAll`;
+- denial before handler dispatch with zero observed side effects;
+- fresh restricted Starlark execution, rejected `load`, loading/running phase guard, and zero-argument `main()`;
+- source, step, time, call, depth, and final-result limits;
+- direct typed handler dispatch and final-result-only MCP output;
+- credential-canary evidence;
+- unit, integration, and actual MCP end-to-end coverage of the entire path.
+
+The slice is complete when an official MCP client can search, describe, and run one program containing multiple native calls; a denied subject produces no handler side effect; a disabled capability is absent everywhere; and the credential canary never crosses a boundary.
+
+### Subsequent slices
+
+After the first slice, work is selected from observed product needs:
+
+1. Add real native capabilities one at a time and widen binding or error contracts only where they cannot be expressed safely.
+2. Exercise real authentication middleware and focused credential-selecting services without changing the Starlark boundary.
+3. Measure adversarial execution and record the in-process-versus-worker containment decision for the intended deployment.
+4. Add Rego, richer search, schemas, live-service tests, observability, or admission controls only when their evidence gates are met.
+5. Add user documentation alongside each shipped behavior and rehearse the library release path only when the public API is ready to publish.
+
+Every slice preserves the same product: a native Go capability framework with three MCP meta-tools, per-invocation authorization, trusted credential isolation, restricted Starlark execution, and no downstream MCP behavior.
