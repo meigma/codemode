@@ -23,3 +23,8 @@ The feasible runtime shapes are in-process CPython through cgo, CPython in a chi
 FastMCP added experimental Code Mode in 3.1.0. It does have the LLM write async Python using only an injected `call_tool(name, params)` function, but it does not execute that code in CPython. The default `MontySandboxProvider` uses Pydantic Monty, a deliberately incomplete Rust Python interpreter built for agent-generated code.
 
 FastMCP defaults to a 30-second wall-clock limit, 100 MB memory ceiling, and 50 tool calls per execution; discovery and schemas remain request/auth scoped. FastMCP 3.4.7 pins Monty 0.0.17, which is patched after Monty's first public sandbox escape but still executes in a native worker thread. Current Monty development has moved Python bindings to worker subprocesses for crash isolation. Both FastMCP Code Mode and Monty remain explicitly experimental.
+
+## 2026-08-22 19:20 — Selected Starlark starting point
+Decision: use Starlark-Go as the initial code runtime. The Go host will create a fresh Starlark thread for each execution and inject only explicit Go-backed builtins. The simplest vertical slice should expose one generic `call_tool(name, params)` builtin; per-tool functions or a `tools` namespace can follow only if model ergonomics justify them.
+
+The LLM cannot learn those runtime bindings through introspection before generating code. The MCP-facing surface should therefore expose discovery/schema meta-tools plus `execute`: discovery returns selected tool metadata rendered as Starlark-oriented signatures and examples, while the execute description defines the supported Starlark dialect, result convention, and `call_tool` contract. Runtime authorization remains independent of discovery and is enforced by the Go host.
