@@ -193,3 +193,10 @@ Next: after PR #10 checks pass, merge it and remove the integrated worktree. Inc
 
 ## 2026-08-23 13:29 — Increment 5 CI passed
 PR #10's CI, GitHub Pages, and Kusari Inspector checks passed. The Pages deployment job skipped as expected for a pull request. PR #10 is ready for review and squash merge.
+
+## 2026-08-23 13:52 — Increment 6 started
+Merged PR [#10](https://github.com/meigma/codemode/pull/10) by squash as `81a2a9137854f1062b14db54f54a4375da926d62`, removed the integrated Increment 5 worktree, and created `docs/increment-6-public-convergence` from fetched `origin/master` at `.wt/docs-increment-6-public-convergence`.
+
+Scope: execute Increment 6's concise public convergence. Add compile-checked root registration and official in-memory MCP transport examples, then organize the user surface into a first-server tutorial, a static-filter how-to, public API and exact MCP tool references, and an honest security-model explanation. Update README, MkDocs navigation, and contributor guidance without adding APIs, aliases, transport ownership, or speculative features.
+
+Acceptance: a consumer can copy the examples, register a typed capability with explicit authorization, build the immutable server, construct the MCP adapter with a trusted context resolver, and connect an official transport using only exported APIs. Documentation covers only the shipped type matrix, three tools, static filtering, authorization order, final-result-only behavior, cancellation limits, and in-process containment.
