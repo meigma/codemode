@@ -122,3 +122,10 @@ Verification:
 - PR #8 was open at commit `edd8995027d65488ef5589c5a85dc31e2f41a029`; GitHub checks had started and were still in progress when recorded.
 
 Next: after PR #8 checks pass, merge it, remove the integrated worktree, and begin Increment 4's exact three-tool MCP adapter and actual in-memory client/server tests.
+
+## 2026-08-23 12:04 — Increment 4 started
+Merged PR [#8](https://github.com/meigma/codemode/pull/8) by squash as `0f3044e4c118ec09342bdb44c3411ceadce12c1e`, removed the integrated Increment 3 worktree, and created `feat/increment-4-mcp-adapter` from fetched `origin/master` at `.wt/feat-increment-4-mcp-adapter`.
+
+Scope: implement the real `mcpserver` inbound adapter with exactly `search_api`, `describe_api`, and `execute`; resolve a trusted subject from server-owned typed context before every operation; project only stable coarse tool errors; and prove the boundary through the official MCP SDK's in-memory client/server transport.
+
+Dependency contract: pin the reviewed official MCP Go SDK `github.com/modelcontextprotocol/go-sdk v1.7.0`. The actual MCP evidence must prove exact discovery, hidden-capability absence, misleading client metadata rejection, trusted context and canary propagation, canonical authorization arguments, side-effect-free denial, deterministic structured output, final-result-only execution, and no canary disclosure.
