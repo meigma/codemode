@@ -43,3 +43,8 @@ The internal catalog should pair schemas and documentation with Go functions. Th
 CodeMode is strictly a framework for authoring new code-native MCP servers in Go. It will not import, proxy, translate, or otherwise provide compatibility for existing MCP servers. Developers register native Go capabilities backed by existing APIs, SDKs, databases, and services.
 
 The product addresses four traditional MCP problems: progressive discovery reduces context usage; Go handlers own authentication without exposing credentials to Starlark; Starlark composes multiple capability calls without model round trips; and native Go adapters speak established service protocols directly without a downstream MCP middleman. The only MCP surface is the small client-facing set of discovery and execution meta-tools.
+
+## 2026-08-22 19:59 — Defined authorization seam
+Authorization should be enforced at every native Starlark builtin invocation, after arguments are decoded and normalized but before the Go handler runs. No Starlark source translation or AST policy analysis is required: each builtin closure already knows the trusted capability identity and can combine it with trusted request identity plus untrusted canonical arguments to form a policy input.
+
+Use two layers initially. A deployment-level capability filter removes disabled functions from discovery, API documentation, and runtime bindings. A runtime `Authorizer` evaluates argument-aware invocation records and defaults to deny on policy failure. Keep the core engine-agnostic; an embedded OPA/Rego adapter can compile a prepared query at startup. Credentials and subject identity come only from trusted Go context, and policy denials occur before any external side effect.
