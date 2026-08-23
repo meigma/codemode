@@ -8,3 +8,8 @@ started: 2026-08-22
 Goal for the session: Create the public `meigma/codemode` repository from `meigma/template-go`, initialize the session journal, and start the first session.
 Current state of the world: The repository exists publicly and is cloned on `master`; session setup created and pushed `journal/jmgilman` in `.wt/journal-jmgilman`.
 Plan: Use this session for the initial codemode work and record meaningful checkpoints as it develops.
+
+## 2026-08-22 18:56 — Reviewed reference article
+Reviewed Ralf Schmid's “Code Mode for Tool Calling in Go” and its linked implementation. The core pattern is MCP catalog discovery through a single search tool, followed by model-generated synchronous JavaScript that orchestrates selected helpers inside QuickJS and returns only the final value.
+
+The prototype clearly demonstrates reduced prompt surface and fewer LLM round trips for dependent tool workflows. Production concerns identified: the example forces an initial search even for no-tool requests, exposes the full catalog inside QuickJS rather than only discovered helpers, relies on domain-specific lexical search, executes helper calls synchronously, and needs capability, call-count, output, and whole-run budgets beyond VM memory and evaluation limits.
