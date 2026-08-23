@@ -28,3 +28,8 @@ FastMCP defaults to a 30-second wall-clock limit, 100 MB memory ceiling, and 50 
 Decision: use Starlark-Go as the initial code runtime. The Go host will create a fresh Starlark thread for each execution and inject only explicit Go-backed builtins. The simplest vertical slice should expose one generic `call_tool(name, params)` builtin; per-tool functions or a `tools` namespace can follow only if model ergonomics justify them.
 
 The LLM cannot learn those runtime bindings through introspection before generating code. The MCP-facing surface should therefore expose discovery/schema meta-tools plus `execute`: discovery returns selected tool metadata rendered as Starlark-oriented signatures and examples, while the execute description defines the supported Starlark dialect, result convention, and `call_tool` contract. Runtime authorization remains independent of discovery and is enforced by the Go host.
+
+## 2026-08-22 19:29 — Corrected tool binding direction
+Correction to the preceding checkpoint: a generic `call_tool(name, params)` reproduces MCP's RPC envelope inside Starlark and discards Code Mode's central advantage. Cloudflare's design converts MCP schemas into a native language API because models are better at ordinary function calls than synthetic tool-call envelopes.
+
+The Starlark runtime should therefore expose one Go-backed native function per selected MCP tool, preferably namespaced by server, for example `github.search_code(query="...", page=1)`. Discovery should return generated Starlark API reference from the same binding descriptors used at runtime. The spike may use a tiny hard-coded catalog, but it should prove native bindings rather than a generic dispatcher.
