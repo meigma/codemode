@@ -200,3 +200,22 @@ Merged PR [#10](https://github.com/meigma/codemode/pull/10) by squash as `81a2a9
 Scope: execute Increment 6's concise public convergence. Add compile-checked root registration and official in-memory MCP transport examples, then organize the user surface into a first-server tutorial, a static-filter how-to, public API and exact MCP tool references, and an honest security-model explanation. Update README, MkDocs navigation, and contributor guidance without adding APIs, aliases, transport ownership, or speculative features.
 
 Acceptance: a consumer can copy the examples, register a typed capability with explicit authorization, build the immutable server, construct the MCP adapter with a trusted context resolver, and connect an official transport using only exported APIs. Documentation covers only the shipped type matrix, three tools, static filtering, authorization order, final-result-only behavior, cancellation limits, and in-process containment.
+
+## 2026-08-23 14:26 — Increment 6 PR opened
+
+Completed Increment 6 on `docs/increment-6-public-convergence` at commit `dbd009ccdc33be6545529e14fa5454fdca798c5e` and opened [PR #11](https://github.com/meigma/codemode/pull/11).
+
+Implemented the exact ten-file public convergence: compile-checked root and official MCP transport examples; a copyable first-server tutorial; a static-filter how-to; public Go API, MCP wire-contract, and security-model documentation; and converged README, contributor guidance, and MkDocs navigation. No production API changed. The docs cover only the shipped type matrix, exact three tools, trusted typed-context resolver, bind/authorize/handler order, build-time filtering by stable ID, final-value-only results, cancellation limits, host lifecycle ownership, and honest in-process containment.
+
+Verification:
+- `go test ./... -count=1` passed after the final example correction.
+- The tutorial's complete Go program was copied into a fresh temporary module and ran successfully through `search_api`, `describe_api`, and `execute`.
+- `moon run docs:build` passed in strict mode.
+- The rendered docs home and all five new pages were exercised in Chromium; the final static-filter caveat was rendered and visually inspected after review.
+- `moon run root:check` passed: format, lint, build, actual MCP smoke, race tests, and documentation build.
+- `git diff --cached --check` passed before commit.
+- Independent implementation-plan conformance reported PASS. Independent code/documentation review reported PASS after restoring the README security-boundary heading and clarifying that the unchanged tutorial client exits on the expected `describe_api` tool error before reaching `execute` when its only capability is disabled.
+
+PR #11's CI, GitHub Pages, and Kusari checks started and were still in progress when recorded.
+
+Next: after PR #11 checks pass, merge it and remove the integrated Increment 6 worktree. Increment 6 completes the settled implementation plan.
