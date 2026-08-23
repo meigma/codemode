@@ -17,11 +17,14 @@ var (
 
 	// ErrUnknownDisabledCapability classifies a disabled ID absent from the validated registration set.
 	ErrUnknownDisabledCapability = errors.New("unknown disabled capability")
+
+	// ErrInputTypeMismatch classifies an erased handler argument that cannot be the compiled input type.
+	ErrInputTypeMismatch = errors.New("capability input type mismatch")
 )
 
-// candidate is one fully validated and compiled registration before static filtering.
+// candidate is one fully validated registration before static filtering.
 type candidate struct {
-	// entry contains copied metadata, the compiled plan, and the handler adapter.
+	// entry contains copied metadata, the supplied plan, and the handler adapter.
 	entry Entry
 }
 
@@ -38,7 +41,7 @@ func Build(registrations []Registration, options Options) (*Catalog, error) {
 	ids := make(map[string]struct{}, len(registrations))
 	names := make(map[string]struct{}, len(registrations))
 	for index, registration := range registrations {
-		if err := validateRegistration(registration); err != nil {
+		if err := ValidateRegistration(registration); err != nil {
 			return nil, fmt.Errorf("%w: registration %d: %w", ErrInvalidRegistration, index, err)
 		}
 		if _, duplicate := ids[registration.ID]; duplicate {
@@ -47,10 +50,6 @@ func Build(registrations []Registration, options Options) (*Catalog, error) {
 		if _, duplicate := names[registration.Name]; duplicate {
 			return nil, fmt.Errorf("%w: duplicate name %q", ErrInvalidRegistration, registration.Name)
 		}
-		plan, err := binding.Compile(registration.InputType, registration.OutputType)
-		if err != nil {
-			return nil, fmt.Errorf("%w: capability %q: %w", ErrInvalidRegistration, registration.Name, err)
-		}
 		ids[registration.ID] = struct{}{}
 		names[registration.Name] = struct{}{}
 		candidates = append(candidates, candidate{entry: Entry{
@@ -58,13 +57,13 @@ func Build(registrations []Registration, options Options) (*Catalog, error) {
 			Name:          registration.Name,
 			Summary:       registration.Summary,
 			Description:   registration.Description,
-			Plan:          plan,
+			Plan:          registration.Plan,
 			Invoke:        registration.Invoke,
-			signature:     plan.Signature(registration.Name),
+			signature:     registration.Plan.Signature(registration.Name),
 			searchName:    strings.ToLower(registration.Name),
 			searchSummary: strings.ToLower(registration.Summary),
-			inputShape:    plan.InputShape(),
-			outputShape:   plan.OutputShape(),
+			inputShape:    registration.Plan.InputShape(),
+			outputShape:   registration.Plan.OutputShape(),
 		}})
 	}
 	if err := validateNamespaceCollisions(names); err != nil {
@@ -107,8 +106,8 @@ func Build(registrations []Registration, options Options) (*Catalog, error) {
 	return catalog, nil
 }
 
-// validateRegistration checks metadata and handler presence before any filtering occurs.
-func validateRegistration(registration Registration) error {
+// ValidateRegistration reports whether one copied registration has valid metadata, a compiled plan, and a handler.
+func ValidateRegistration(registration Registration) error {
 	if registration.ID == "" || registration.ID != strings.TrimSpace(registration.ID) {
 		return errors.New("ID must be non-empty without surrounding whitespace")
 	}
@@ -120,6 +119,9 @@ func validateRegistration(registration Registration) error {
 	}
 	if registration.Description == "" || registration.Description != strings.TrimSpace(registration.Description) {
 		return errors.New("description must be non-empty without surrounding whitespace")
+	}
+	if registration.Plan == nil {
+		return errors.New("plan must not be nil")
 	}
 	if registration.Invoke == nil {
 		return errors.New("handler must not be nil")
