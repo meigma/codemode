@@ -18,3 +18,8 @@ The prototype clearly demonstrates reduced prompt surface and fewer LLM round tr
 Confirmed that Go can embed the workstation's CPython 3.13.3 through cgo: a temporary Go probe initialized CPython, evaluated generated Python, and printed the expected result `30`.
 
 The feasible runtime shapes are in-process CPython through cgo, CPython in a child process, CPython compiled to WASI and hosted by wazero, or a Python-like/pure-Go interpreter such as Starlark or gpython. In-process CPython provides full compatibility but is not a security boundary and complicates distribution, GIL handling, and interpreter lifecycle. A subprocess is operationally simpler to isolate but requires an RPC bridge. WASI offers a stronger embedded boundary but needs substantially more integration work. gpython is only a partial Python 3.4 implementation; Starlark is intentionally not Python.
+
+## 2026-08-22 19:12 — Reviewed FastMCP Code Mode
+FastMCP added experimental Code Mode in 3.1.0. It does have the LLM write async Python using only an injected `call_tool(name, params)` function, but it does not execute that code in CPython. The default `MontySandboxProvider` uses Pydantic Monty, a deliberately incomplete Rust Python interpreter built for agent-generated code.
+
+FastMCP defaults to a 30-second wall-clock limit, 100 MB memory ceiling, and 50 tool calls per execution; discovery and schemas remain request/auth scoped. FastMCP 3.4.7 pins Monty 0.0.17, which is patched after Monty's first public sandbox escape but still executes in a native worker thread. Current Monty development has moved Python bindings to worker subprocesses for crash isolation. Both FastMCP Code Mode and Monty remain explicitly experimental.
