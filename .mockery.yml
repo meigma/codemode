@@ -1,0 +1,16 @@
+all: false
+dir: '{{.InterfaceDir}}/mocks'
+filename: authorizer.go
+formatter: goimports
+generate: true
+include-auto-generated: false
+log-level: info
+pkgname: mocks
+require-template-schema-exists: true
+structname: 'Mock{{.InterfaceName}}'
+template: testify
+template-schema: '{{.Template}}.schema.json'
+packages:
+  github.com/meigma/codemode/authz:
+    interfaces:
+      Authorizer:

@@ -2,7 +2,6 @@ package catalog
 
 import (
 	"context"
-	"reflect"
 	"sync"
 	"testing"
 
@@ -10,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/meigma/codemode/authz"
+	"github.com/meigma/codemode/internal/binding"
 )
 
 // testInput is the catalog test capability input.
@@ -30,13 +30,13 @@ type testOutput struct {
 // TestBuildValidatesEveryRegistrationBeforeFiltering proves disabled entries cannot hide invalid contracts.
 func TestBuildValidatesEveryRegistrationBeforeFiltering(t *testing.T) {
 	registration := validRegistration("cap.bad", "records.bad", "Bad record")
-	registration.InputType = reflect.TypeFor[int]()
+	registration.Plan = nil
 
 	_, err := Build([]Registration{registration}, testOptions("cap.bad"))
 
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrInvalidRegistration)
-	assert.Contains(t, err.Error(), "binding plan")
+	assert.Contains(t, err.Error(), "plan")
 }
 
 // TestBuildRejectsInvalidMetadataDuplicatesAndNamespaceCollisions proves initialization fails closed.
@@ -268,15 +268,14 @@ func TestCatalogSupportsConcurrentReadOnlyUse(t *testing.T) {
 	assert.Equal(t, "records.alpha", catalog.Entries()[0].Name)
 }
 
-// validRegistration constructs one valid test registration.
+// validRegistration constructs one valid test registration from the once-compiled plan.
 func validRegistration(id string, name string, summary string) Registration {
 	return Registration{
 		ID:          id,
 		Name:        name,
 		Summary:     summary,
 		Description: summary + " full description.",
-		InputType:   reflect.TypeFor[testInput](),
-		OutputType:  reflect.TypeFor[testOutput](),
+		Plan:        mustCompileTestPlan(),
 		Invoke: func(context.Context, authz.Subject, any) (any, error) {
 			return testOutput{Name: name}, nil
 		},
@@ -320,4 +319,13 @@ func withSummary(registration Registration, summary string) Registration {
 func withDescription(registration Registration, description string) Registration {
 	registration.Description = description
 	return registration
+}
+
+// mustCompileTestPlan compiles the catalog test input and output types.
+func mustCompileTestPlan() *binding.Plan {
+	plan, err := binding.CompileFor[testInput, testOutput]()
+	if err != nil {
+		panic(err)
+	}
+	return plan
 }

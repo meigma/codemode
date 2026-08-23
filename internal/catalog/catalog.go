@@ -2,7 +2,6 @@ package catalog
 
 import (
 	"context"
-	"reflect"
 	"slices"
 
 	"github.com/meigma/codemode/authz"
@@ -12,7 +11,7 @@ import (
 // Invoker is a type-erased adapter around one registered typed capability handler.
 type Invoker func(context.Context, authz.Subject, any) (any, error)
 
-// Registration contains one capability before validation, compilation, and static filtering.
+// Registration contains one capability before validation and static filtering.
 type Registration struct {
 	// ID is the stable deployment and policy identity.
 	ID string
@@ -26,11 +25,8 @@ type Registration struct {
 	// Description is the full exact-description text.
 	Description string
 
-	// InputType is the exact typed handler input.
-	InputType reflect.Type
-
-	// OutputType is the exact typed handler output.
-	OutputType reflect.Type
+	// Plan is the caller-compiled input, output, canonical-argument, and signature plan.
+	Plan *binding.Plan
 
 	// Invoke calls the registered typed handler through its registration-time adapter.
 	Invoke Invoker
