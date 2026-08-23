@@ -42,3 +42,8 @@ Verification completed once from the disposable module:
 ## 2026-08-23 08:54 — Increment 0 complete
 Deleted `/tmp/codemode-increment0-spike`, `/tmp/codemode-increment0-mcp-probe`, and `/tmp/codemode-increment0-starlark-probe` after verification. A glob for `/tmp/codemode-increment0-*` returned no files. Increment 0 changed no production repository files and requires no PR.
 Next: use the selected dependency revisions and observed contracts when beginning Increment 1's repository cutover.
+
+## 2026-08-23 09:01 — Increment 1 started
+Created the isolated implementation branch `chore/increment-1-module-cutover` from fetched `origin/master` at `.wt/chore-increment-1-module-cutover`.
+Scope: remove the template command, CLI, config, and template-info packages; rename the Go module; pin only the MCP and Starlark revisions reviewed in Increment 0; update `.golangci.yml` and `moon.yml`; leave release, image, documentation, script, mise, and unrelated CI files unchanged.
+Acceptance: `go mod tidy`, `go list ./...`, and `go build ./...` succeed, then push the branch and open a PR.
