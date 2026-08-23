@@ -129,3 +129,30 @@ Merged PR [#8](https://github.com/meigma/codemode/pull/8) by squash as `0f3044e4
 Scope: implement the real `mcpserver` inbound adapter with exactly `search_api`, `describe_api`, and `execute`; resolve a trusted subject from server-owned typed context before every operation; project only stable coarse tool errors; and prove the boundary through the official MCP SDK's in-memory client/server transport.
 
 Dependency contract: pin the reviewed official MCP Go SDK `github.com/modelcontextprotocol/go-sdk v1.7.0`. The actual MCP evidence must prove exact discovery, hidden-capability absence, misleading client metadata rejection, trusted context and canary propagation, canonical authorization arguments, side-effect-free denial, deterministic structured output, final-result-only execution, and no canary disclosure.
+
+## 2026-08-23 12:45 — Increment 4 PR opened
+Completed Increment 4 on commit `958be9d` and opened PR [#9](https://github.com/meigma/codemode/pull/9), `feat: add MCP server adapter`, from `feat/increment-4-mcp-adapter`.
+
+Changes:
+- Added the `mcpserver` inbound adapter with adapter-owned `Service` and `InvocationResolver` ports and an official MCP SDK server exposing exactly `search_api`, `describe_api`, and `execute`.
+- Every tool resolves a non-empty trusted subject from host-owned Go context before service work. MCP `_meta` is ignored, resolver errors and empty subjects fail closed, and client inputs contain no identity, credential, budget, module, or allow-list controls.
+- Typed SDK handlers return the direct search list, direct description object, and exact `{"result": finalValue}` execute envelope. Known domain failures project to stable coarse text, resource-limit timeouts retain the resource classification, unknown failures become internal failures, and boundary panics are sanitized.
+- Added generated Mockery ports under `mcpserver/mocks` and retained the existing generated authorization mock configuration.
+- Added focused typed-input validation, ordering, nil-dependency, metadata, error-projection, and panic tests.
+- Added `TestActualMCPSecureLoop` through the official in-memory MCP client/server transport. It proves exact tool discovery, disabled-capability absence, trusted subject and credential-canary propagation, canonical authorization inputs, misleading metadata rejection, side-effect-free denial, exact structured and text output, and no canary, print, or intermediate-value disclosure.
+- Pinned `github.com/modelcontextprotocol/go-sdk v1.7.0`.
+- Replaced the placeholder documentation landing page and site identity with the current CodeMode three-tool MCP boundary and integration outline.
+
+Verification:
+- `go test ./mcpserver -run '^TestActualMCPSecureLoop$' -count=1` passed.
+- `go test ./mcpserver/... -count=1` passed.
+- `go test -race ./... -count=1` passed.
+- `moon run root:lint` passed.
+- `go build ./...` passed.
+- `moon run docs:build` passed.
+- The rendered MkDocs page was browser-verified for the CodeMode identity, three-tool table, execute envelope, and trusted-context guidance.
+- `git diff --check` passed.
+- Independent code review and implementation-plan conformance review reported PASS after resource classification, output-shape, malformed-input, and documentation corrections.
+- PR #9 was open at commit `958be9ddf4680041781ef30e13a9296a496e72ac`; GitHub CI, Pages, and Kusari checks had started and were still in progress when recorded.
+
+Next: after PR #9 checks pass, merge it, remove the integrated worktree, and execute Increment 5's remaining template and release/image cutover without adding a replacement command package.
