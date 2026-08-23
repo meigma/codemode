@@ -163,3 +163,30 @@ Merged PR [#9](https://github.com/meigma/codemode/pull/9) by squash as `5eb0b1f4
 Scope: complete the source-library cutover by removing binary, OCI image, and container-scan assets; pruning their mise tools and generated lock state while pinning Mockery; making Moon and hardened CI run the actual MCP smoke and race suite; retaining only source versioning through Release Please; resolving the completed repository bootstrap surface; and removing stale template branding from repository and user documentation.
 
 Acceptance: no template application, artifact publication path, obsolete tool pin, or stale template identity remains; normal local and CI entrypoints exercise the library and actual-MCP boundary; the package list remains the six substantive packages plus generated mock subpackages; no replacement command package is added.
+
+## 2026-08-23 13:28 — Increment 5 PR opened
+Completed Increment 5 on commit `99663addeea78fefce791d1b917c6659d3631c23` and opened [PR #10](https://github.com/meigma/codemode/pull/10), `chore(repo): complete source-only cutover`.
+
+Implemented:
+- Removed the former GoReleaser, Melange, apko, OCI release, container-scan, and local image-build paths, including obsolete repository-local skills and generated lock entries.
+- Retained only the Go, Python, golangci-lint, Mockery, uv, Moon, and GitHub CLI toolchain; regenerated `mise.lock` across the four supported platforms.
+- Reworked the root Moon graph as a library: `root:mcp-smoke` runs the real official-MCP secure loop, `root:race` runs the full race suite, and `root:check` includes format, lint, build, MCP smoke, race, and docs.
+- Preserved the hardened `moon ci --summary minimal` entrypoint, source-only Release Please automation, and GitHub Pages documentation deployment; removed binary and image publication.
+- Set repository settings to `is_template = false`, retargeted bootstrap fixtures to `meigma/codemode`, reset the pre-release changelog/manifest baseline, and removed the completed bootstrap checklist.
+- Replaced template documentation with the CodeMode package, MCP, trust, limits, development, release, and containment contracts.
+- Added the canonical Meigma Apache-2.0 license and documented it after independent review identified the unresolved license checklist item.
+- Confirmed there is no `cmd`, `package main`, Cobra/Viper dependency, stale template identity, or obsolete publication tool. The final package list is the six substantive packages plus the two generated mock subpackages.
+
+Verification:
+- `go mod tidy` completed.
+- `go list ./...` returned only `codemode`, `authz`, `internal/binding`, `internal/catalog`, `internal/execution`, and `mcpserver`, plus `authz/mocks` and `mcpserver/mocks`.
+- `go test -race ./... -count=1` passed.
+- `go build ./...` passed.
+- `moon run root:check` passed.
+- `moon ci --summary minimal` passed, including the standalone test task.
+- The rendered MkDocs site was browser-verified for package roles, the exact three-tool MCP surface, trust model, runtime limits, and the non-isolation warning.
+- `git diff --check` passed.
+- Independent review reported PASS after the Apache-2.0 license correction; Increment 5 plan conformance reported PASS with no exceptions.
+- PR #10 was open at commit `99663addeea78fefce791d1b917c6659d3631c23`; GitHub CI, Pages, and Kusari checks had started and were still in progress when recorded.
+
+Next: after PR #10 checks pass, merge it and remove the integrated worktree. Increment 5 completes the planned secure MVP and repository cutover.
