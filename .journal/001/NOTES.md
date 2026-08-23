@@ -38,3 +38,8 @@ The Starlark runtime should therefore expose one Go-backed native function per s
 Correction: CodeMode itself should be the MCP server. MCP is needed only for the small model-facing meta-tool surface such as API discovery and execution. Functions visible inside Starlark are native CodeMode capabilities backed directly by Go handlers, not MCP tools and not internal MCP round trips.
 
 The internal catalog should pair schemas and documentation with Go functions. The same descriptors generate model-facing Starlark API reference and runtime builtins; builtin callbacks invoke the registered Go handlers directly. Handlers may call real HTTP APIs, SDKs, databases, or other application services. An adapter for importing an external MCP server could exist later for interoperability, but it is not part of the core architecture and is generally inferior to a native API adapter when one is available.
+
+## 2026-08-22 19:51 — Locked product scope
+CodeMode is strictly a framework for authoring new code-native MCP servers in Go. It will not import, proxy, translate, or otherwise provide compatibility for existing MCP servers. Developers register native Go capabilities backed by existing APIs, SDKs, databases, and services.
+
+The product addresses four traditional MCP problems: progressive discovery reduces context usage; Go handlers own authentication without exposing credentials to Starlark; Starlark composes multiple capability calls without model round trips; and native Go adapters speak established service protocols directly without a downstream MCP middleman. The only MCP surface is the small client-facing set of discovery and execution meta-tools.
