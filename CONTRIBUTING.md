@@ -15,6 +15,17 @@ Open a GitHub issue for non-security bugs. Include:
 - the expected and actual behavior
 - relevant error classifications or logs with credentials and sensitive arguments removed
 
+## Write documentation
+
+User documentation lives under `docs/docs/` and follows the Diátaxis layout:
+
+- `tutorials/` teaches through a complete, guided path.
+- `how-to/` gives task-focused procedures.
+- `reference/` describes the public Go API and MCP tool contracts.
+- `explanation/` describes the security model and other design context.
+
+Keep the root [README](README.md) concise and link to the detailed pages instead of duplicating them. Use plain language, keep examples consistent with shipped APIs, and add compile-checked Go examples to [`example_test.go`](example_test.go) or [`mcpserver/example_test.go`](mcpserver/example_test.go) when they document executable integration code.
+
 ## Prepare a change
 
 1. Install the pinned tools:
@@ -24,7 +35,15 @@ Open a GitHub issue for non-security bugs. Include:
    ```
 
 2. Keep the change focused. Add or update behavior tests when a public contract changes. Update the user documentation when behavior visible through the root, `authz`, or `mcpserver` packages changes.
-3. Before requesting review, run:
+3. Validate compile-checked examples and documentation directly when either changes:
+
+   ```sh
+   go test ./... -count=1
+   moon run docs:build
+   ```
+
+   `go test` compiles and runs the Go examples with the package tests. `docs:build` runs the strict MkDocs build with the locked documentation environment.
+4. Before requesting review, run the complete repository check:
 
    ```sh
    moon run root:check
@@ -32,7 +51,7 @@ Open a GitHub issue for non-security bugs. Include:
 
    `root:check` includes formatting, linting, compilation, the official MCP secure-loop test, the race detector, and the documentation build.
 
-For focused investigation, the security-boundary checks are available separately:
+For focused security-boundary investigation, run:
 
 ```sh
 moon run root:mcp-smoke

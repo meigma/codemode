@@ -35,6 +35,15 @@ theme:
 
 nav:
   - Home: index.md
+  - Tutorial:
+      - Build your first server: tutorials/first-server.md
+  - How-to guides:
+      - Disable capabilities: how-to/disable-capabilities.md
+  - Reference:
+      - Public API: reference/public-api.md
+      - MCP tools: reference/mcp-tools.md
+  - Explanation:
+      - Security model: explanation/security-model.md
 
 plugins:
   - search
