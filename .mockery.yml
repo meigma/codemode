@@ -1,6 +1,6 @@
 all: false
 dir: '{{.InterfaceDir}}/mocks'
-filename: authorizer.go
+filename: '{{.InterfaceName | snakecase}}.go'
 formatter: goimports
 generate: true
 include-auto-generated: false
@@ -14,3 +14,7 @@ packages:
   github.com/meigma/codemode/authz:
     interfaces:
       Authorizer:
+  github.com/meigma/codemode/mcpserver:
+    interfaces:
+      Service:
+      InvocationResolver:

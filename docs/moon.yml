@@ -7,8 +7,8 @@ tags:
   - 'uv'
 
 project:
-  title: 'template-go docs'
-  description: 'MkDocs documentation site for the Meigma Go repository template.'
+  title: 'CodeMode docs'
+  description: 'MkDocs documentation for the CodeMode Go library.'
   owner: 'meigma'
   maintainers:
     - 'meigma'
