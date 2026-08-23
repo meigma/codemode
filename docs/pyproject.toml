@@ -1,7 +1,7 @@
 [project]
-name = "template-go-docs"
+name = "codemode-docs"
 version = "0.0.0"
-description = "MkDocs documentation site for the Meigma Go repository template."
+description = "Reference documentation for the CodeMode Go library."
 requires-python = ">=3.14"
 dependencies = [
     "mkdocs-material>=9.7.0",

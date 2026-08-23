@@ -1,50 +1,52 @@
 # Contributing
 
-Thank you for your interest in contributing.
-This repository is a Go project template, so changes should keep the generated-project path simple and predictable.
-For private vulnerability reporting, use [SECURITY.md](SECURITY.md) instead of public channels.
+Contributions should preserve CodeMode's public package boundaries, typed capability binding, per-call authorization, bounded Starlark execution, and exact three-tool MCP surface.
 
-## Reporting Bugs
+Report suspected vulnerabilities through the private process in [SECURITY.md](SECURITY.md), not through public GitHub channels.
 
-Report non-security bugs through GitHub issues.
-Include the following details when possible:
+## Report a bug
 
-- version, commit, or environment details
-- steps to reproduce
-- expected behavior
-- actual behavior
-- logs, screenshots, or a minimal reproduction
+Open a GitHub issue for non-security bugs. Include:
 
-If you are reporting a security issue, stop and follow [SECURITY.md](SECURITY.md) instead.
+- the CodeMode commit or version you used
+- your Go version and relevant environment details
+- a minimal capability registration or Starlark program that reproduces the problem
+- the steps you followed
+- the expected and actual behavior
+- relevant error classifications or logs with credentials and sensitive arguments removed
 
-## Pull Requests
+## Prepare a change
 
-Contributors should:
+1. Install the pinned tools:
 
-1. Keep changes focused and scoped to a single problem.
-2. Add or update tests when behavior changes.
-3. Update documentation when user-facing behavior changes.
-4. Use Conventional Commit subjects, such as `feat: add config loader` or `fix: handle empty input`.
-5. Make sure `moon run root:check` passes before requesting review.
+   ```sh
+   mise install
+   ```
 
-## Local Setup
+2. Keep the change focused. Add or update behavior tests when a public contract changes. Update the user documentation when behavior visible through the root, `authz`, or `mcpserver` packages changes.
+3. Before requesting review, run:
 
-```sh
-mise install         # provision the pinned toolchain (Go, Moon, the dev CLIs)
-moon run root:check
-```
+   ```sh
+   moon run root:check
+   ```
 
-Useful project commands:
+   `root:check` includes formatting, linting, compilation, the official MCP secure-loop test, the race detector, and the documentation build.
+
+For focused investigation, the security-boundary checks are available separately:
 
 ```sh
-moon run root:format
-moon run root:lint
-moon run root:build
-moon run root:test
-go run ./cmd/template-go --version
+moon run root:mcp-smoke
+moon run root:race
 ```
 
-## Release Changes
+`root:mcp-smoke` runs `TestActualMCPSecureLoop` through the official in-memory MCP transport. `root:race` runs all Go packages with the race detector and disables cached test results.
 
-Release Please reads Conventional Commit subjects to build changelogs and release PRs.
-Keep release-impacting commits clear; routine docs, CI, and maintenance commits should use the appropriate non-release type.
+## Submit a pull request
+
+- Explain the user-visible or security-relevant behavior that changed.
+- Keep capability metadata, authorization behavior, MCP output, tests, and documentation consistent.
+- Do not expose credentials, policy diagnostics, handler failures, Starlark source, or arguments in client-facing errors.
+- Ensure `moon run root:check` passes before requesting review.
+- Use a Conventional Commit subject, for example `feat(mcpserver): add trusted invocation resolver` or `fix(authz): stop dispatch after denial`.
+
+Release Please uses Conventional Commit subjects to prepare source version changes, tags, changelog entries, and draft GitHub releases. Use the commit type that matches the change; routine documentation, CI, and maintenance changes should use the corresponding non-feature type.

@@ -1,5 +1,5 @@
 site_name: CodeMode
-site_description: Code-native MCP servers with bounded Go capabilities
+site_description: Reference for bounded Starlark access to registered Go capabilities over MCP
 site_url: https://meigma.github.io/codemode/
 repo_name: meigma/codemode
 repo_url: https://github.com/meigma/codemode

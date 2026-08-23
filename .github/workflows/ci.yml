@@ -78,5 +78,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-uv-docs-
 
-      - name: Run Moon CI
+      # Single CI gate. `root:check` fans out to format, lint, build, the MCP
+      # transport smoke test (root:mcp-smoke), the race-detector suite
+      # (root:race), and the docs build.
+      - name: Run Moon CI (root:check — includes MCP smoke and race)
         run: moon ci --summary minimal

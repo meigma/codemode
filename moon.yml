@@ -1,10 +1,10 @@
 language: 'go'
-layer: 'application'
+layer: 'library'
 stack: 'backend'
 
 project:
-  title: 'template-go'
-  description: 'Meigma Go repository template.'
+  title: 'codemode'
+  description: 'Go library for running MCP tool calls through bounded Starlark programs.'
   owner: 'meigma'
   maintainers:
     - 'meigma'
@@ -31,11 +31,6 @@ fileGroups:
     - '.golangci.yml'
     - 'mise.toml'
     - 'mise.lock'
-  releaseConfig:
-    - '.goreleaser.yaml'
-    - 'release-please-config.json'
-    - '.release-please-manifest.json'
-    - '.github/workflows.disabled/**/*.yml'
 
 workspace:
   inheritedTasks:
@@ -70,17 +65,40 @@ tasks:
     options:
       cache: false
 
+  # End-to-end guard for the real MCP transport loop: an actual MCP server, the
+  # real client session, and the bounded Starlark runtime wired together.
+  #
+  # `script` (not `command`) because moon's argument normalizer rewrites a
+  # trailing single-dash `-flag=value` into two arguments; `script` runs the line
+  # through the shell verbatim.
+  mcp-smoke:
+    script: "go test ./mcpserver -run '^TestActualMCPSecureLoop$' -count=1"
+    inputs:
+      - '@group(goSources)'
+    options:
+      cache: false
+
+  # Concurrency guard: the library is used from concurrent MCP sessions, so the
+  # whole suite runs under the race detector. `script` for the same reason as
+  # `mcp-smoke`.
+  race:
+    script: 'go test -race ./... -count=1'
+    inputs:
+      - '@group(goSources)'
+    options:
+      cache: false
+
   check:
     deps:
       - 'root:format'
       - 'root:lint'
       - 'root:build'
-      - 'root:test'
+      - 'root:mcp-smoke'
+      - 'root:race'
       - 'docs:build'
     inputs:
       - '@group(goSources)'
       - '@group(lintConfig)'
-      - '@group(releaseConfig)'
     options:
       cache: false
       runInCI: true

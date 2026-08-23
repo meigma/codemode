@@ -8,7 +8,7 @@ tags:
 
 project:
   title: 'CodeMode docs'
-  description: 'MkDocs documentation for the CodeMode Go library.'
+  description: 'Reference documentation for the CodeMode Go library.'
   owner: 'meigma'
   maintainers:
     - 'meigma'
