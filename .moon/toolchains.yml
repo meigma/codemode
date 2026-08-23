@@ -1,4 +1,4 @@
-# Toolchains for the current template.
+# Toolchains for CodeMode.
 #
 # Tool versions (Go, Python, uv, and the CLIs) are managed by mise (mise.toml +
 # mise.lock); moon runs every task against `system` binaries that mise puts on
@@ -9,7 +9,7 @@
 #   version: 'REPLACE_ME_RUST_VERSION'
 #   components: ['clippy', 'rustfmt']
 
-# JavaScript ecosystems can be added later if a generated project needs them.
+# JavaScript ecosystems can be added later if this repository ever needs them.
 # javascript:
 #   packageManager: 'pnpm'
 #   inferTasksFromScripts: true

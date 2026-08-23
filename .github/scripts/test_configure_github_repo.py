@@ -103,7 +103,7 @@ build_type = "branch"
         plan = configure.build_plan(
             api,
             "meigma",
-            "template-go",
+            "codemode",
             base_config({"build_type": "workflow", "https_enforced": True}),
             mode="plan",
             hostname="github.com",
@@ -120,7 +120,7 @@ build_type = "branch"
         plan = configure.build_plan(
             api,
             "meigma",
-            "template-go",
+            "codemode",
             base_config({"build_type": "workflow", "https_enforced": True}),
             mode="plan",
             hostname="github.com",
@@ -133,7 +133,7 @@ build_type = "branch"
     def test_apply_create_pages_runs_follow_up_update(self) -> None:
         api = FakeGitHubApi()
         plan = configure.PlanResult(
-            repo="meigma/template-go",
+            repo="meigma/codemode",
             hostname="github.com",
             mode="apply",
             changes=[
@@ -153,7 +153,7 @@ build_type = "branch"
             warnings=[],
         )
 
-        applied = configure.apply_plan(api, "meigma", "template-go", plan)
+        applied = configure.apply_plan(api, "meigma", "codemode", plan)
 
         self.assertEqual(applied, ["Create GitHub Pages site"])
         self.assertEqual(api.created_pages, [{"build_type": "workflow"}])

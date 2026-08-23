@@ -1,128 +1,146 @@
-# template-go
+# CodeMode
 
-`template-go` is the reusable Go repository starter for Meigma projects.
-It includes a small Go CLI skeleton, Moon tasks, pinned CI, Dependabot, baseline repository security settings, and Release Please plus the reusable `meigma/release` release unit.
+CodeMode is a source-only Go library for exposing typed Go capabilities to Model Context Protocol (MCP) clients through bounded Starlark programs. A host registers capabilities, applies a static deployment filter, and authorizes each validated native call.
 
-## Local Bootstrap
+CodeMode does not start a transport, authenticate callers, open listeners, or manage shutdown. The host application owns those responsibilities. The module has no executable entry point and no generic downstream MCP proxy.
 
-Prerequisites:
+## MCP tools
 
-- [mise](https://mise.jdx.dev) — provisions every pinned tool from `mise.toml` +
-  `mise.lock`: Go, Moon, Python + uv, `golangci-lint`, GoReleaser, GitHub CLI,
-  Syft, Cosign, Melange, and apko. Run `mise install` once; there is nothing
-  else to install by hand.
+The `mcpserver` package constructs an official Go SDK server with exactly three tools:
 
-Tool versions live in `mise.toml`; `mise.lock` records a per-platform download URL
-and checksum for each (and, for the aqua-backed CLIs, cosign/SLSA/GitHub-attestation
-verification). `mise install` runs with `locked = true`, so it **fails closed** if a
-tool lacks a pre-resolved, checksummed entry for the current platform. Moon runs every
-task against these tools as `system` binaries on PATH and manages no toolchain itself.
-To bump a tool, edit its version in `mise.toml`, run
-`mise lock --platform linux-x64,linux-arm64,macos-x64,macos-arm64`, and commit
-`mise.toml` + `mise.lock`.
+| Tool | Input | Successful structured output |
+| --- | --- | --- |
+| `search_api` | `{"query": string}` | A bounded array of enabled capability names, generated signatures, and summaries |
+| `describe_api` | `{"name": string}` for one exact capability name | The capability name, signature, summary, description, and supported input and output fields |
+| `execute` | `{"source": string}` containing one bounded Starlark program | `{"result": <main return value>}` |
 
-After creating a new repository from this template, replace the placeholder names before doing feature work:
+Every tool resolves an authenticated `authz.Subject` from host-owned Go context before discovery or execution. Tool arguments and MCP `_meta` are untrusted and cannot supply identity, credentials, limits, modules, or capability visibility.
+
+Each `execute` call uses a fresh interpreter. The program must define a zero-argument `main()` function. CodeMode returns only the converted value from `main`; it does not separately expose printed text, globals, or intermediate values.
+
+## Prerequisites
+
+- Go 1.26.6, as declared by `go.mod`
+- [mise](https://mise.jdx.dev) for repository development; `mise install` installs the pinned Go, Python, `golangci-lint`, uv, Moon, GitHub CLI, and mockery versions
+
+CodeMode has no released version yet. To evaluate the current `master` branch from another Go module, run:
 
 ```sh
-go mod edit -module github.com/meigma/YOUR_REPO
-mv cmd/template-go cmd/YOUR_BINARY
+go get github.com/meigma/codemode@master
 ```
 
-Then update `template-go` references in the Moon tasks, GoReleaser, Melange and apko configurations, README, and package docs.
+## Integrate CodeMode
 
-## Common Tasks
+The following outline assembles a root CodeMode server and the MCP adapter. Replace the example policy and context plumbing with host-specific authentication and authorization.
 
-Moon is the standard task front door:
+```go
+package integration
+
+import (
+	"context"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/meigma/codemode"
+	"github.com/meigma/codemode/authz"
+	"github.com/meigma/codemode/mcpserver"
+)
+
+type lookupInput struct {
+	Key string `json:"key"`
+}
+
+type lookupOutput struct {
+	Key string `json:"key"`
+}
+
+type policy struct{}
+
+func (policy) Authorize(_ context.Context, input authz.AuthorizationInput) error {
+	if input.CapabilityID != "records.entry.lookup" {
+		return authz.ErrDenied
+	}
+	return nil
+}
+
+type subjectKey struct{}
+
+type subjectResolver struct{}
+
+func (subjectResolver) Resolve(ctx context.Context) (authz.Subject, error) {
+	subject, ok := ctx.Value(subjectKey{}).(authz.Subject)
+	if !ok || subject.ID == "" {
+		return authz.Subject{}, codemode.ErrUnauthenticated
+	}
+	return subject, nil
+}
+
+// withSubject is called by trusted host middleware after authentication.
+func withSubject(ctx context.Context, subject authz.Subject) context.Context {
+	return context.WithValue(ctx, subjectKey{}, subject)
+}
+
+func newMCPServer() (*mcp.Server, error) {
+	builder := codemode.New(codemode.Options{
+		Authorizer: policy{},
+		Limits:     codemode.DefaultLimits(),
+	})
+
+	err := codemode.Register(builder, codemode.Capability[lookupInput, lookupOutput]{
+		ID:          "records.entry.lookup",
+		Name:        "records.lookup",
+		Summary:     "Look up one record by key.",
+		Description: "Returns the record identified by key.",
+		Handler: func(_ context.Context, _ authz.Subject, input lookupInput) (lookupOutput, error) {
+			return lookupOutput{Key: input.Key}, nil
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	root, err := builder.Build()
+	if err != nil {
+		return nil, err
+	}
+	return mcpserver.New(root, subjectResolver{})
+}
+```
+
+Connect the returned `*mcp.Server` to a transport only after the host has authenticated the request and placed the non-secret subject in trusted context. The host must also manage listener lifecycle, request cancellation, and shutdown.
+
+## Security boundary
+
+Capability input is converted to the registered Go type before authorization. The authorizer receives the trusted subject, stable capability ID, exposed capability name, and a fresh JSON-shaped copy of the validated arguments. A recognized denial prevents the handler from running. Capabilities disabled at build time are absent from search, description, and execution.
+
+The Starlark runtime bounds source bytes, interpreter steps, elapsed time, native calls, value depth, result bytes, search query bytes, and search results. Module loading is disabled. These in-process controls reduce the reachable surface; they are not a hard isolation boundary between mutually untrusted tenants. Authorizers and handlers run as Go code in the host process and must honor context cancellation. See [SECURITY.md](SECURITY.md) for vulnerability reporting and containment limits.
+
+## Repository checks
+
+Moon is the task entry point after `mise install`:
 
 ```sh
-moon run root:format
-moon run root:lint
-moon run root:build
-moon run root:test
+moon run root:mcp-smoke
+moon run root:race
 moon run root:check
 ```
 
-CI runs the same aggregate check:
+`root:mcp-smoke` runs the official MCP secure-loop test. `root:race` runs all Go packages with the race detector. `root:check` depends on format, lint, build, MCP smoke, race, and `docs:build`.
+
+CI runs Moon's affected-task graph, including `root:check` and the standalone `root:test` task:
 
 ```sh
 moon ci --summary minimal
 ```
 
-The starter CLI is intentionally small:
-
-```sh
-go run ./cmd/template-go --version
-go run ./cmd/template-go --message "hello from cobra"
-go test ./...
-```
-
-The CLI entrypoint uses Cobra and Viper in the same shape as other Meigma CLIs: `cmd/template-go` stays thin, `internal/cli` owns command construction, and Viper-backed flags can also be supplied through `TEMPLATE_GO_*` environment variables.
-
-## Container Image
-
-The image is built without a Dockerfile. GoReleaser produces the canonical Linux
-binaries. [Melange](https://github.com/chainguard-dev/melange) packages those
-exact bytes into signed [Wolfi](https://github.com/wolfi-dev) APKs, and
-[apko](https://github.com/chainguard-dev/apko) assembles a minimal,
-multi-architecture, nonroot image. The runtime uses UID/GID 65532 and includes
-CA certificates and timezone data.
-
-Build and run a host-architecture image locally with Docker:
-
-```sh
-mise run image-local
-docker run --rm template-go:dev --version
-docker run --rm template-go:dev --message "hello from container"
-```
-
-The Wolfi base resolves current packages during each build. The generated SBOM
-and provenance record the resolved contents. GoReleaser stamps `version`,
-`commit`, and `date` into the release binary; `mise run image-local` uses
-development values.
-
-## CI and Security
-
-The default CI workflow keeps permissions minimal, pins external actions, disables checkout credential persistence, and delegates checks to Moon.
-It uses GitHub-hosted dependency caches for Go, golangci-lint, and uv download artifacts while leaving Moon remote caching as an optional follow-up for repositories that need a shared task-output cache.
-The docs workflow builds the MkDocs site on pull requests and deploys `docs/build` to GitHub Pages from the default branch.
-The scheduled security scan workflow builds the local container image weekly, scans it for high/critical fixed vulnerabilities, and uploads SARIF results to GitHub code scanning.
-Dependabot covers GitHub Actions, the root Go module, and the docs uv project.
-
-Repository settings live in `.github/repository-settings.toml`.
-They default to immutable releases, private vulnerability reporting, signed commits, squash-only merges, GitHub Pages workflow publishing, and protected tags.
-
-## Release Layer
-
-Release automation is enabled for the template application so the template
-proves the binary and OCI paths before generated projects inherit them.
-
-The release path is:
-
-- Release Please maintains the release PR and creates a stable `vMAJOR.MINOR.PATCH`
-  tag plus a draft GitHub Release after merge.
-- `.github/workflows/release.yml` calls one immutable
-  [`meigma/release`](https://github.com/meigma/release) release unit pinned by
-  full commit SHA.
-- The release unit builds and verifies archives, native packages, checksums,
-  SBOMs, and the checksum Sigstore bundle.
-- The same canonical Linux binaries become a signed, attested
-  `ghcr.io/meigma/template-go` image for `amd64` and `arm64`.
-- The release unit uploads the verified assets and publishes the GitHub Release
-  only after the OCI path succeeds.
-
-Generated repositories must update names and metadata, pin one reviewed
-`meigma/release` revision across every workflow and signer reference, and
-rehearse with both publication inputs disabled before their first public
-release. See [`DELETE_ME.md`](DELETE_ME.md) for the setup checklist.
-
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines, local setup expectations, and pull request workflow.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local checks and pull request expectations.
 
 ## Security
 
-See [SECURITY.md](SECURITY.md) for supported versions and the private vulnerability reporting path.
+Report vulnerabilities through the private process in [SECURITY.md](SECURITY.md), not through a public issue.
 
 ## License
 
-Add the repository license before publishing a project generated from this template.
+CodeMode is licensed under the [Apache License 2.0](LICENSE).

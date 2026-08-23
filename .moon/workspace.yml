@@ -1,6 +1,6 @@
-# Shared Moon workspace configuration for the repository template.
+# Shared Moon workspace configuration for CodeMode.
 # Keep the current projects explicit, then uncomment the discovery patterns
-# below as the template grows into apps, packages, services, or tools.
+# below if the repository grows beyond the root library and the docs site.
 
 projects:
   globs: []
@@ -15,7 +15,6 @@ projects:
   #   - 'services/*'
   #   - 'tools/*'
   #   - 'crates/*'
-  #   - 'cmd/*'
   #   - 'sdk/*'
   #
   # Uncomment if glob-discovered IDs are likely to collide.

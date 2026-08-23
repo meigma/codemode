@@ -1,32 +1,63 @@
 ---
 title: CodeMode
 slug: /
-description: Build MCP servers that expose bounded Go capabilities through Starlark.
+description: Reference for bounded Starlark access to registered Go capabilities over MCP.
 ---
 
 # CodeMode
 
-CodeMode is a Go library for building code-native Model Context Protocol (MCP) servers. An application registers typed Go capabilities, selects the capabilities enabled for one deployment, and exposes them through a restricted Starlark runtime.
+CodeMode is a Go library that exposes registered, typed Go capabilities to Model Context Protocol (MCP) clients through Starlark programs. The current implementation consists of an immutable capability server, an authorization interface, and an adapter for the official MCP Go SDK.
 
-## MCP boundary
+## Public packages
 
-The `mcpserver` package exposes exactly three tools:
+- `github.com/meigma/codemode` registers typed capabilities, filters disabled capabilities, searches and describes the enabled catalog, and executes bounded Starlark programs.
+- `github.com/meigma/codemode/authz` defines the trusted subject, canonical authorization input, authorizer interface, and recognized denial.
+- `github.com/meigma/codemode/mcpserver` binds a CodeMode service and trusted invocation resolver to an official MCP SDK server.
 
-| Tool | Input | Output |
+## MCP surface
+
+`mcpserver.New` exposes exactly three tools:
+
+| Tool | Required input | Successful structured output |
 | --- | --- | --- |
-| `search_api` | A bounded query string | Enabled capability names, signatures, and summaries |
-| `describe_api` | One exact capability name | Its signature, description, and supported input and output fields |
-| `execute` | One bounded Starlark program | `{"result": <main return value>}` |
+| `search_api` | `{"query": string}` | An array of `{name, signature, summary}` records for matching enabled capabilities |
+| `describe_api` | `{"name": string}` with one exact capability name | `{name, signature, summary, description, input, output}` |
+| `execute` | `{"source": string}` with one Starlark program | `{"result": <main return value>}` |
 
-Each tool call resolves an authenticated subject from trusted Go context before it reaches the CodeMode service. Tool arguments and MCP `_meta` cannot provide or replace identity, credentials, execution budgets, modules, or capability allow-lists.
+Search is case-normalized over capability names and summaries, returns name-sorted results, and returns an empty array for a blank query. Description uses exact names. A disabled capability is absent from search, description, the Starlark namespace, and execution.
 
-`execute` creates a fresh interpreter for each call. The program must define a zero-argument `main()` function. Only the value returned by `main()` crosses the MCP boundary; printed text and intermediate values do not.
+Each program must define a zero-argument `main()` function. CodeMode rejects native capability calls made while top-level source is loading. It discards printed text and returns only the converted value from `main` under the `result` key.
 
-## Integration outline
+## Trust model
 
-1. Build an immutable `codemode.Server` from typed capabilities and deployment options.
-2. Implement `authz.Authorizer` for each native capability call.
-3. Implement `mcpserver.InvocationResolver` to read the authenticated subject from host-owned typed context.
-4. Call `mcpserver.New` and connect the returned official MCP SDK server to the transport owned by the host application.
+The host authenticates the request and stores a non-secret `authz.Subject` in typed, host-owned Go context. An `mcpserver.InvocationResolver` reads that context for every tool call. Resolver failure or an empty subject stops the request before discovery or execution. Tool arguments and MCP `_meta` are untrusted and cannot replace the resolved subject or provide credentials, budgets, modules, or capability filters.
 
-Disabled capabilities are absent from search, description, and execution. Authorization denial stops the native handler from running. Public tool errors use coarse classifications and do not include source text, arguments, credentials, policy details, stack traces, or handler results.
+For a native capability call, CodeMode first binds the Starlark arguments to the registered Go input type. It then calls the host's `authz.Authorizer` with:
+
+- the resolved subject
+- the stable capability ID
+- the model-facing capability name
+- a fresh JSON-shaped copy of the validated arguments
+
+A recognized denial prevents handler dispatch. Client-facing MCP failures use coarse error classifications rather than forwarding source, arguments, credentials, policy diagnostics, stack traces, or handler error text.
+
+The host owns transport startup, authentication, listeners, request context, and shutdown. CodeMode has no executable entry point and no generic downstream MCP forwarding path.
+
+## Runtime limits
+
+`codemode.DefaultLimits()` currently sets:
+
+| Limit | Default |
+| --- | ---: |
+| Starlark source | 64 KiB |
+| Interpreter steps | 1,000,000 |
+| Elapsed execution time | 5 seconds |
+| Attempted native calls | 100 |
+| Converted-value depth | 32 |
+| Encoded final result | 1 MiB |
+| Search query | 256 bytes |
+| Search results | 20 |
+
+Every configured limit must be positive; zero does not mean unlimited. Each execution gets a fresh interpreter and its own budgets. Module loading is disabled, and only the frozen namespace built from enabled capabilities is predeclared.
+
+These are in-process restrictions, not a hard isolation boundary between mutually untrusted tenants. Authorizers and handlers run as Go code with the host process's privileges. They must honor context cancellation and return promptly because CodeMode cannot forcibly interrupt blocking Go code.

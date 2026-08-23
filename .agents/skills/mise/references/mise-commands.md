@@ -36,7 +36,7 @@ Usage:
 
 ```bash
 mise install                 # install everything in mise.toml (honors mise.lock)
-mise install go@1.26.4        # install a specific version
+mise install go@1.26.6        # install a specific version
 ```
 
 Flags that matter here:
@@ -129,7 +129,7 @@ Usage:
 
 ```bash
 mise exec -- golangci-lint version
-mise exec go@1.26.4 -- go version    # override one tool ad hoc
+mise exec go@1.26.6 -- go version    # override one tool ad hoc
 ```
 
 Flags that matter here:
@@ -142,14 +142,10 @@ Flags that matter here:
 
 ### `mise run` (alias `r`)
 
-Purpose: run mise tasks. In this repo only `image-local` exists (a local container
-convenience); day-to-day build/test/lint go through moon, not mise.
-
-Usage:
-
-```bash
-mise run image-local
-```
+Purpose: run mise tasks. **This repo defines no mise tasks** — build, lint, test,
+`mcp-smoke`, `race`, and `check` all go through moon (`moon run root:check`,
+`moon ci --summary minimal`). Listed only so the command is not mistaken for the
+project's entrypoint.
 
 Flags that matter here:
 

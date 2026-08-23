@@ -17,20 +17,6 @@
 mise.local.toml
 .mise.local.toml
 
-# Local container build artifacts (melange apks + ephemeral signing keys + apko
-# image tarballs/SBOMs from `mise run image-local`). melange.yaml/apko.yaml ARE committed.
-/packages/
-/sbom/
-melange*.rsa
-melange*.rsa.pub
-melange-vars.yaml
-.melange-vars.local.yaml
-.melange-vars.local.json
-.image-local/
-image.tar
-*.oci
-*.spdx.json
-
 # Go
 bin/
 cover.out
@@ -86,7 +72,7 @@ pnpm-debug.log*
 .svelte-kit/
 coverage/
 
-# Template repo outputs
+# Docs site outputs
 docs/build/
 docs/.venv/
 
