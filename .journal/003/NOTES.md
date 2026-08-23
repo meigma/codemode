@@ -19,3 +19,7 @@ The developer requested an architecture from a software-architecture agent, filt
 The complexity review returned `SIMPLIFY`. The consolidated design exports only `Authorizer`, `New(ctx, decision, modules)`, and `Authorize`; removes speculative option/domain types, a sentinel error, constructor probe evaluation, binding-query machinery, extra files, and redundant integration tests; and retains only meaningful capability controls: filter nondeterministic builtins, use empty `AllowNet`, fatal builtin errors, and no extension hooks.
 Implementation remains agile: first run and delete a narrow OPA mechanics/dependency spike, then add a three-file adapter, focused real-OPA tests, and concise how-to/reference/index/security documentation. Policy loading, data stores, bundles, reload, telemetry, structured decisions, custom builtins, subject expansion, discovery authorization, MCP changes, and hard-isolation claims remain deferred.
 Next: Present the complexity-filtered architecture for developer review; no repository implementation has started.
+
+## 2026-08-23 15:31 — Proposal stored
+Stored the complexity-reviewed proposal in `REGO_ADAPTER_ARCHITECTURE.md` in this session folder. The developer approved proceeding to the disposable spike, not production implementation.
+Next: Execute the external spike, record evidence for every named uncertainty, delete its artifacts, and return to architecture if any required assumption fails.
