@@ -48,3 +48,8 @@ The product addresses four traditional MCP problems: progressive discovery reduc
 Authorization should be enforced at every native Starlark builtin invocation, after arguments are decoded and normalized but before the Go handler runs. No Starlark source translation or AST policy analysis is required: each builtin closure already knows the trusted capability identity and can combine it with trusted request identity plus untrusted canonical arguments to form a policy input.
 
 Use two layers initially. A deployment-level capability filter removes disabled functions from discovery, API documentation, and runtime bindings. A runtime `Authorizer` evaluates argument-aware invocation records and defaults to deny on policy failure. Keep the core engine-agnostic; an embedded OPA/Rego adapter can compile a prepared query at startup. Credentials and subject identity come only from trusted Go context, and policy denials occur before any external side effect.
+
+## 2026-08-22 20:52 — Produced architecture
+A delegated software architect converted the settled product vision into `.journal/001/ARCHITECTURE.md`. The document defines the fixed three-meta-tool MCP boundary, typed native Go capability registry, generated searchable Starlark SDK, direct Go handlers, authentication and two-layer authorization, optional embedded Rego adapter, in-process Starlark safety limits, hexagonal package boundaries, testing strategy, risks, and an agile sequence of working vertical slices.
+
+Reviewed the 890-line document against `AGENTS.md`: it preserves strict hexagonal boundaries, direct Go APIs with no downstream MCP compatibility, generated mocks and three-layer testing, package/Godoc requirements, honest containment limitations, and protocol-aware retry ownership.
