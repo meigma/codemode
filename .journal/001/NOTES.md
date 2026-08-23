@@ -33,3 +33,8 @@ The LLM cannot learn those runtime bindings through introspection before generat
 Correction to the preceding checkpoint: a generic `call_tool(name, params)` reproduces MCP's RPC envelope inside Starlark and discards Code Mode's central advantage. Cloudflare's design converts MCP schemas into a native language API because models are better at ordinary function calls than synthetic tool-call envelopes.
 
 The Starlark runtime should therefore expose one Go-backed native function per selected MCP tool, preferably namespaced by server, for example `github.search_code(query="...", page=1)`. Discovery should return generated Starlark API reference from the same binding descriptors used at runtime. The spike may use a tiny hard-coded catalog, but it should prove native bindings rather than a generic dispatcher.
+
+## 2026-08-22 19:34 — Clarified the MCP boundary
+Correction: CodeMode itself should be the MCP server. MCP is needed only for the small model-facing meta-tool surface such as API discovery and execution. Functions visible inside Starlark are native CodeMode capabilities backed directly by Go handlers, not MCP tools and not internal MCP round trips.
+
+The internal catalog should pair schemas and documentation with Go functions. The same descriptors generate model-facing Starlark API reference and runtime builtins; builtin callbacks invoke the registered Go handlers directly. Handlers may call real HTTP APIs, SDKs, databases, or other application services. An adapter for importing an external MCP server could exist later for interoperability, but it is not part of the core architecture and is generally inferior to a native API adapter when one is available.
