@@ -92,3 +92,10 @@ Verification:
 - Independent code review and plan/rule conformance review reported no remaining findings after fixes.
 
 Next: merge PR #7, remove its integrated worktree, then begin Increment 3's immutable server builder and secure single-execution core.
+
+## 2026-08-23 11:07 — Increment 3 started
+Merged PR [#7](https://github.com/meigma/codemode/pull/7) by squash as `830d70dff955e286428c7de7a99b455417a14e1d`, removed the integrated Increment 2 worktree, and created `feat/increment-3-server-core` from fetched `origin/master` at `.wt/feat-increment-3-server-core`.
+
+Scope: implement Increment 3's one-shot mutable builder, immutable concurrency-safe server, and complete secure native Starlark execution path. The increment must enforce phase, source, step, elapsed-time, attempted-call, authorization, argument, panic, cancellation, value-depth, and final-result boundaries without exposing an authorization bypass.
+
+Acceptance: top-level native calls cannot run; valid builtins authorize before dispatch; malformed calls fail before authorization; denial and policy failures produce zero handler calls; each execution owns fresh interpreter state and budgets; and only `main()`'s bounded final value escapes.
