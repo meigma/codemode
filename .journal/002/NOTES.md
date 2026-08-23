@@ -190,3 +190,6 @@ Verification:
 - PR #10 was open at commit `99663addeea78fefce791d1b917c6659d3631c23`; GitHub CI, Pages, and Kusari checks had started and were still in progress when recorded.
 
 Next: after PR #10 checks pass, merge it and remove the integrated worktree. Increment 5 completes the planned secure MVP and repository cutover.
+
+## 2026-08-23 13:29 — Increment 5 CI passed
+PR #10's CI, GitHub Pages, and Kusari Inspector checks passed. The Pages deployment job skipped as expected for a pull request. PR #10 is ready for review and squash merge.
