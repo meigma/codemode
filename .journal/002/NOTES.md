@@ -67,3 +67,28 @@ Verification:
 ## 2026-08-23 09:12 — Increment 2 started
 Merged PR [#6](https://github.com/meigma/codemode/pull/6) by squash as `b2fda703c8f83086380f2e20cdecb280a5c35897`, removed the integrated Increment 1 worktree, and created `feat/increment-2-contracts` from fetched `origin/master` at `.wt/feat-increment-2-contracts`.
 Scope: implement the public capability and authorization contracts, restricted compiled binder, and immutable statically filtered catalog defined by Increment 2. Verification requires focused normal and race tests plus a full build before a new PR.
+
+## 2026-08-23 09:47 — Increment 2 PR opened
+Completed Increment 2 on commit `a07ae98` and opened PR [#7](https://github.com/meigma/codemode/pull/7), `feat: add capability contracts and catalog`, from `feat/increment-2-contracts` to `master`.
+
+Changes:
+- Added the public typed capability contract, stable capability and subject identifiers, explicit `authz.AllowAll`, classified framework errors, and positive defaults/validation for every planned execution, conversion, and search limit.
+- Added an immutable compiled binder for required strings, optional `*int64`, simple output structs, keyword-only calls, fresh canonical authorization maps, model-facing signatures and input/output shapes, handler-output conversion, and bounded final Starlark-to-JSON conversion.
+- Added a registration-time validated and statically filtered catalog. One name-sorted enabled slice now drives exact ID/name lookup, namespace bindings, bounded contiguous name/summary search, exact descriptions, and retained invokers.
+- Starlark-Go is now a live dependency and Testify `v1.12.1` is a direct test dependency. `go mod tidy` removed the still-unused MCP SDK; Increment 3 will make it live when the server and execution core import it.
+
+Review findings resolved:
+- Identifier validation now mirrors the pinned Starlark scanner's complete reserved-word set and ASCII-only digit rule through one shared binder function used by the catalog.
+- Final conversion applies a byte-derived total node budget before materialization, preventing compact shared-substructure DAGs from expanding without bound before exact encoded-size validation.
+- Nil and typed-nil Starlark values return a classified conversion error rather than panicking.
+- Catalog search uses one contiguous normalized substring against names and summaries independently; exact descriptions include cloned registration-time summary and input/output shape metadata.
+
+Verification:
+- `moon run root:lint` passed.
+- `go test ./...` passed.
+- `go test -race ./authz ./internal/binding ./internal/catalog ./` passed.
+- `go build ./...` passed.
+- `git diff --check` passed.
+- Independent code review and plan/rule conformance review reported no remaining findings after fixes.
+
+Next: merge PR #7, remove its integrated worktree, then begin Increment 3's immutable server builder and secure single-execution core.
