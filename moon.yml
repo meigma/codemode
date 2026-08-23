@@ -16,7 +16,9 @@ toolchains:
 
 fileGroups:
   goSources:
-    - 'cmd/**/*.go'
+    - '*.go'
+    - 'authz/**/*.go'
+    - 'mcpserver/**/*.go'
     - 'internal/**/*.go'
     - 'go.mod'
     - 'go.sum'
@@ -57,11 +59,9 @@ tasks:
       cache: false
 
   build:
-    command: 'go build -o bin/template-go ./cmd/template-go'
+    command: 'go build ./...'
     inputs:
       - '@group(goSources)'
-    outputs:
-      - 'bin/template-go'
 
   test:
     command: 'go test ./...'
