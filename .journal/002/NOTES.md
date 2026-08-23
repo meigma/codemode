@@ -38,3 +38,7 @@ Observed Starlark mechanics:
 Verification completed once from the disposable module:
 - `go test ./...` passed: `ok codemode-increment0-spike`.
 - `go run .` printed the exact tool list and successful structured results. The execute line was `execute={"result":{"context_marker":"server-connect","id":"alpha","name":"Alpha Record","status":"active"}}`, proving final-result-only projection and server-context propagation.
+
+## 2026-08-23 08:54 — Increment 0 complete
+Deleted `/tmp/codemode-increment0-spike`, `/tmp/codemode-increment0-mcp-probe`, and `/tmp/codemode-increment0-starlark-probe` after verification. A glob for `/tmp/codemode-increment0-*` returned no files. Increment 0 changed no production repository files and requires no PR.
+Next: use the selected dependency revisions and observed contracts when beginning Increment 1's repository cutover.
