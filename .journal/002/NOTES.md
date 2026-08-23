@@ -63,3 +63,7 @@ Verification:
 - `go build ./...` passed.
 - `moon run root:build` completed one task successfully.
 - `git ls-files .journal` returned no tracked journal paths in the implementation branch.
+
+## 2026-08-23 09:12 — Increment 2 started
+Merged PR [#6](https://github.com/meigma/codemode/pull/6) by squash as `b2fda703c8f83086380f2e20cdecb280a5c35897`, removed the integrated Increment 1 worktree, and created `feat/increment-2-contracts` from fetched `origin/master` at `.wt/feat-increment-2-contracts`.
+Scope: implement the public capability and authorization contracts, restricted compiled binder, and immutable statically filtered catalog defined by Increment 2. Verification requires focused normal and race tests plus a full build before a new PR.
