@@ -1,6 +1,6 @@
 ---
 title: MCP tool reference
-description: Exact inputs, successful structured outputs, discovery behavior, and errors for the three CodeMode MCP tools.
+description: Exact inputs, listed descriptions, successful structured outputs, discovery behavior, and errors for the three CodeMode MCP tools.
 ---
 
 # MCP tool reference
@@ -13,11 +13,11 @@ description: Exact inputs, successful structured outputs, discovery behavior, an
 
 Each input is an object with one required string property. Additional properties are rejected by the SDK before subject resolution or service work. Every valid call then resolves a trusted subject through `mcpserver.InvocationResolver` before it reaches the CodeMode service.
 
-On success, the official SDK returns the documented value in `CallToolResult.StructuredContent` and one JSON `TextContent` item that mirrors it. The schemas below describe the structured value, not the surrounding MCP result.
+On success, the official SDK returns the documented value in `CallToolResult.StructuredContent` and one JSON `TextContent` item that mirrors it. The schemas below describe the structured value, not the surrounding MCP result. Each tool's listed `tools/list` description is the model-facing authoring contract for that tool.
 
 ## `search_api`
 
-Search the names and summaries of enabled capabilities.
+Search enabled names and summaries with a short literal substring. Retry an empty result with a shorter term.
 
 ### Input
 
@@ -34,7 +34,7 @@ Search the names and summaries of enabled capabilities.
 }
 ```
 
-The raw query is limited by `MaxSearchQueryBytes` before trimming or case normalization. Whitespace padding counts. CodeMode then trims surrounding whitespace and normalizes case. Matching is a substring search over capability names and summaries. A blank normalized query returns an empty array.
+The raw query is limited by `MaxSearchQueryBytes` before trimming or case normalization. Whitespace padding counts. CodeMode then trims surrounding whitespace and normalizes case. Matching is a short literal substring over capability names and summaries. A blank normalized query or any other empty result is `[]`, not `null`. Retry an empty result with a shorter term. Search does not add fuzzy matching, aliases, or extra query rewriting.
 
 Results are sorted by exact dotted name and limited by `MaxSearchResults`. Static filtering happens before search, so disabled capabilities never appear.
 
@@ -66,7 +66,7 @@ The structured content itself is the array described above, not an object that w
 
 ## `describe_api`
 
-Describe one enabled capability by the exact dotted `name` returned by `search_api`.
+Describe one enabled capability by the exact name returned by search_api, without whitespace or case changes.
 
 ### Input
 
@@ -83,7 +83,7 @@ Describe one enabled capability by the exact dotted `name` returned by `search_a
 }
 ```
 
-Name lookup is exact. It neither trims nor case-folds, and it does not perform search, prefix expansion, or fuzzy matching. Clients must pass the exact `name` returned by `search_api`. An unknown or disabled name returns `capability not found`.
+Name lookup is exact. It neither trims nor case-folds, and it does not perform search, prefix expansion, or fuzzy matching. Pass the exact `name` returned by `search_api`, without whitespace or case changes. An unknown or disabled name returns `capability not found`.
 
 For the site-wide sample, the requested name is `records.lookup`. Its stable ID, `records.entry.lookup`, is intentionally not part of this tool input or output.
 
@@ -145,7 +145,7 @@ The sample capability therefore describes input fields `key` (`str`, required) a
 
 ## `execute`
 
-Execute one bounded Starlark program against the enabled capability namespace.
+Execute one Starlark program that defines def main(): with zero arguments, calls only names confirmed through search_api and describe_api inside main, and returns main's final result.
 
 ### Input
 
@@ -162,7 +162,7 @@ Execute one bounded Starlark program against the enabled capability namespace.
 }
 ```
 
-The source must define `main` as a function with no parameters. Source loading cannot call native capabilities; calls are accepted only while `main` runs. Module loading is disabled.
+The source must define `def main():` as a function with zero arguments. Source loading cannot call native capabilities; calls are accepted only while `main` runs, and only for names confirmed through `search_api` and `describe_api`. Module loading is disabled.
 
 Capabilities are available by dotted name. The sample native call is `records.lookup(key="alpha", limit=2)`. Native calls accept keyword arguments only. Duplicate keyword syntax is rejected by the Starlark parser as `invalid program` before authorization or handler dispatch. Positional, unknown, missing, incorrectly typed, and out-of-range arguments reach binding and map to `invalid capability arguments`. For the sample, `key` is required and `limit` can be omitted, `None`, or an integer in the signed 64-bit range.
 
@@ -194,6 +194,17 @@ The `result` property is the final converted return value from `main`. Its runti
 `MaxValueDepth` is inclusive. A scalar or `None` is depth 1. Each tuple, list, or dictionary wrapper adds one. A scalar with limit 1 succeeds, a one-level container with limit 2 succeeds, and one more wrapper with limit 2 fails. Nested values are subject to that limit, and the encoded `result` value is subject to `MaxResultBytes`. Starlark tuples and lists become arrays. `None` becomes `null`. Dictionaries must have string keys.
 
 Only the final converted value crosses the execution boundary. `print` output is discarded. Globals, source-loading values, intermediate expressions, and native results that are not included in the final return value are not added to structured output. The successful envelope contains only `result`.
+
+## Authoring and recovery
+
+The listed descriptions above are the model-facing contract. Recovery uses the same fixed coarse errors on this page. Error payloads stay non-disclosing; they do not gain diagnostic detail, aliases, or suggested alternate names.
+
+- Search with a short literal substring over enabled names and summaries. If the result is empty, retry with a shorter term.
+- Pass `describe_api` the exact `name` returned by `search_api`, without whitespace or case changes.
+- Compare native call arguments with the `describe_api` field shapes before `execute`.
+- Define `def main():` with zero arguments. Call only names confirmed through `search_api` and `describe_api` inside `main`. Return `main`'s final result.
+- After `resource limit exceeded`, reduce program or result complexity and retry.
+- `permission denied` and `authorization policy failure` are outcomes for that call only. They do not disclose policy rules.
 
 ## Errors
 
