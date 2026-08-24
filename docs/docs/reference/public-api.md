@@ -1,14 +1,15 @@
 ---
 title: Public API reference
-description: Exported contracts for CodeMode, authorization, and the MCP server adapter.
+description: Exported contracts for CodeMode, authorization, the in-process Rego authorizer, and the MCP server adapter.
 ---
 
 # Public API reference
 
-CodeMode has three public packages:
+CodeMode has four public packages:
 
 - `github.com/meigma/codemode` registers capabilities and runs bounded Starlark programs.
 - `github.com/meigma/codemode/authz` defines subjects and authorization decisions.
+- `github.com/meigma/codemode/authz/rego` implements the authorization interface with a prepared in-process Rego decision.
 - `github.com/meigma/codemode/mcpserver` exposes a CodeMode service through the official MCP Go SDK.
 
 ## `codemode`
@@ -236,6 +237,68 @@ Authorize(context.Context, AuthorizationInput) error
 Return `nil` to allow dispatch. Return an error that wraps `ErrDenied` for a recognized denial. Any other error is a policy evaluation failure. CodeMode maps these outcomes to `ErrPermissionDenied` and `ErrPolicyFailure`, respectively, without dispatching the handler.
 
 `AllowAllAuthorizer` permits every valid native call. `AllowAll()` constructs it explicitly. This policy is deliberate in the simple example so that the authorization choice is visible; production hosts normally supply policy that evaluates the trusted subject, stable capability ID, and canonical arguments.
+
+## `authz/rego`
+
+The optional `github.com/meigma/codemode/authz/rego` package implements `authz.Authorizer` with OPA's in-process Rego evaluator. Importing this package adds the OPA dependency; the core `codemode`, `authz`, and `mcpserver` packages do not import OPA.
+
+### `Authorizer`
+
+`Authorizer` is a concrete authorizer that holds one immutable prepared query. A successfully constructed `*Authorizer` is safe for concurrent calls.
+
+### `New`
+
+```text
+New(ctx context.Context, decision string, modules map[string]string) (*Authorizer, error)
+```
+
+`New` accepts one ground `data` reference, such as `data.codemode.authz.allow`, and one or more in-memory Rego modules keyed by non-blank filename. It validates the decision, sorts the filenames, compiles the modules with Rego v1 semantics, and prepares the direct decision query synchronously.
+
+`New` rejects a nil context, an already-canceled context, no modules, blank filenames, a non-ground or non-`data` decision, invalid Rego, and policy that uses an unavailable builtin. Context cancellation takes precedence over an OPA preparation error when they race. Other failures are ordinary constructor errors; this package defines no error sentinel.
+
+The prepared evaluator removes every builtin that OPA marks nondeterministic, sets `AllowNet` to a non-nil empty slice, enables `StrictBuiltinErrors(true)`, and uses `EnablePrintStatements(false)`. The package installs no custom builtins, hooks, tracer, store, resolver, or remote policy service.
+
+### `Authorize`
+
+```text
+Authorize(ctx context.Context, input authz.AuthorizationInput) error
+```
+
+`Authorize` evaluates the prepared decision once. A nil receiver or nil context returns an ordinary policy error instead of panicking. An already-canceled context, or cancellation that becomes visible during evaluation, returns `ctx.Err()`.
+
+The Rego input contains exactly these fields:
+
+```json
+{
+  "subject": {
+    "id": "subject-1"
+  },
+  "capability": {
+    "id": "records.entry.lookup",
+    "name": "records.lookup"
+  },
+  "arguments": {
+    "key": "alpha",
+    "limit": 2
+  }
+}
+```
+
+`subject.id` is the trusted subject ID. `capability.id` is the stable policy identity; `capability.name` is the dotted discovery and Starlark name. `arguments` is the canonical map from `AuthorizationInput`, borrowed read-only for the synchronous evaluation. An omitted optional argument is absent from the map.
+
+The direct decision result has this contract:
+
+| Result | Return value |
+| --- | --- |
+| Exactly one Boolean `true` | `nil` |
+| Exactly one Boolean `false` | `authz.ErrDenied` |
+| Undefined, non-Boolean, or multiple results | Ordinary policy error |
+| Evaluation or builtin failure | Ordinary policy error |
+| Canceled or expired context | `ctx.Err()` |
+
+Only Boolean `false` is a recognized denial. CodeMode maps it to `ErrPermissionDenied`; it maps the ordinary policy errors to `ErrPolicyFailure`. Define a total Boolean decision with `default allow := false` so that unmatched input is an intentional denial rather than an undefined policy failure.
+
+See [Use Rego for authorization](../how-to/use-rego-authorization.md) for server wiring and [Security model](../explanation/security-model.md#rego-policy-runs-in-process) for the in-process trust boundary.
 
 ## `mcpserver`
 

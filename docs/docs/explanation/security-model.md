@@ -42,6 +42,20 @@ Authorization is evaluated for every attempted native call whose arguments bind 
 
 `AllowAll` approves every valid native call for every resolved subject. It is not authentication and does not inspect capability identity or arguments. Production hosts normally supply an authorizer that evaluates the resolved subject, the stable capability ID, and the canonical arguments. A production host should use `AllowAll` only when unrestricted access to every enabled capability is the intended policy.
 
+## Rego policy runs in process
+
+The optional `authz/rego` adapter prepares trusted Rego module source as an OPA library inside the CodeMode host. It does not contact a remote OPA service. Module source must come from trusted deployment configuration, such as a compiled-in string or `go:embed` file. The adapter's restrictions reduce the policy evaluator's capabilities; they do not make policy from an untrusted author safe to run in the host process.
+
+The adapter starts with OPA's Rego v1 capabilities and removes every builtin that OPA marks nondeterministic. This removes `http.send` and the other OPA-declared sources of network, runtime, random, and current-time behavior before policy preparation. The adapter also sets `AllowNet` to a non-nil empty slice. That separate restriction rejects remote schema references and denies runtime network hosts; it is not the mechanism that makes `http.send` unavailable during preparation.
+
+`StrictBuiltinErrors(true)` makes builtin errors fatal. A failing builtin cannot become an undefined rule branch while another branch allows the call. `EnablePrintStatements(false)` erases print calls during compilation. The adapter installs no print hook, tracer, custom builtin, data store, resolver, or other policy hook.
+
+The configured decision is one direct, ground `data` reference. Exactly one Boolean `true` allows a call, and exactly one Boolean `false` is a recognized denial. Undefined, non-Boolean, and multi-result decisions are policy failures, as are evaluation and builtin errors. A total decision with `default allow := false` turns unmatched input into an intentional denial while still failing closed when the policy contract is broken.
+
+These controls restrict inputs and evaluator capabilities, not resource consumption or process authority. OPA, the Starlark interpreter, authorizers, and handlers all run inside the host process. A host that does not trust its policy authors needs an external process or container boundary.
+
+See [Use Rego for authorization](../how-to/use-rego-authorization.md) for configuration and the [`authz/rego` API reference](../reference/public-api.md#authzrego) for the exact input and result contracts.
+
 ## Static filtering reduces the exposed catalog
 
 `Options.DisabledCapabilities` removes capabilities by stable `CapabilityID` when the immutable server is built. Disabled entries are absent from search results, exact description, the Starlark namespace, and execution. An unknown disabled ID fails the build rather than silently leaving a capability exposed.
@@ -77,6 +91,8 @@ CodeMode derives an elapsed deadline from `MaxExecutionTime` and the request con
 
 Cancellation is cooperative once execution enters Go code. CodeMode calls authorizers and handlers synchronously and cannot forcibly interrupt them. A blocking authorizer or handler can therefore keep the `Execute` call blocked after the Starlark deadline or request cancellation.
 
+The Rego adapter passes the context into OPA evaluation and checks cancellation both before and after that call. The second check preserves `context.Canceled` or `context.DeadlineExceeded` when cancellation races with an OPA error. Cancellation remains cooperative; it does not impose a hard CPU limit or process boundary.
+
 Authorizers and handlers must:
 
 - honor the supplied context for I/O, locks, waits, and downstream calls
@@ -89,8 +105,8 @@ CodeMode recovers panics at selected boundaries and returns a coarse classificat
 
 ## In-process limits are not tenant isolation
 
-CodeMode's limits bound specific interpreter operations and final-value conversion. They do not establish a hard heap limit, a process boundary, or a security boundary between mutually untrusted tenants. The interpreter, authorizer, and handlers share the host process and its memory, CPU, file descriptors, credentials, and operating-system privileges.
+CodeMode's limits bound specific interpreter operations and final-value conversion. They do not establish a hard CPU or heap limit, a process boundary, or a security boundary between mutually untrusted tenants. The Starlark interpreter, embedded OPA evaluator, authorizers, and handlers share the host process and its memory, CPU, file descriptors, credentials, and operating-system privileges.
 
-A host that needs hard tenant or heap containment must supply it outside CodeMode, for example with separate processes or containers and operating-system resource controls. CodeMode's in-process budgets remain useful inside that boundary, but they are not a substitute for it.
+A host that needs hard tenant, CPU, or heap containment must supply it outside CodeMode, for example with separate processes or containers and operating-system resource controls. CodeMode's in-process budgets and Rego capability restrictions remain useful inside that boundary, but they are not a substitute for it.
 
 See [Public API reference](../reference/public-api.md) for the Go contracts and [MCP tool reference](../reference/mcp-tools.md) for the exact client-visible surface.

@@ -39,6 +39,7 @@ nav:
       - Build your first server: tutorials/first-server.md
   - How-to guides:
       - Disable capabilities: how-to/disable-capabilities.md
+      - Use Rego for authorization: how-to/use-rego-authorization.md
   - Reference:
       - Public API: reference/public-api.md
       - MCP tools: reference/mcp-tools.md
