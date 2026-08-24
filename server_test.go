@@ -14,6 +14,7 @@ import (
 	"github.com/meigma/codemode"
 	"github.com/meigma/codemode/authz"
 	authzmocks "github.com/meigma/codemode/authz/mocks"
+	"github.com/meigma/codemode/authz/rego"
 )
 
 // TestServerSearchAndDescribeExposeOnlyEnabledCapabilities proves public discovery uses the filtered catalog.
@@ -193,6 +194,50 @@ def main():
 
 			require.ErrorIs(t, err, tt.target)
 			assert.Equal(t, tt.target.Error(), err.Error())
+			assert.Zero(t, handlerCalls.Load())
+		})
+	}
+}
+
+// TestServerExecuteProjectsRegoDecisionFailuresWithoutTrustedDetail proves
+// undefined and non-Boolean ground decisions stay coarse at the root boundary.
+func TestServerExecuteProjectsRegoDecisionFailuresWithoutTrustedDetail(t *testing.T) {
+	tests := []struct {
+		// name identifies the broken ground decision.
+		name string
+
+		// module is the in-memory Rego source that produces that decision.
+		module string
+	}{
+		{
+			name:   "undefined ground decision",
+			module: undefinedRegoPolicy(),
+		},
+		{
+			name:   "non-boolean ground decision",
+			module: nonBooleanRegoPolicy(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			authorizer := mustRegoAuthorizer(t, tt.module)
+			var handlerCalls atomic.Int64
+			capability := validBuilderCapability("cap.lookup", "records.lookup")
+			capability.Handler = func(context.Context, authz.Subject, builderInput) (builderOutput, error) {
+				handlerCalls.Add(1)
+				return builderOutput{}, nil
+			}
+			server := buildTestServer(t, authorizer, codemode.DefaultLimits(), capability)
+
+			_, err := server.Execute(t.Context(), authz.Subject{ID: "subject-1"}, `
+def main():
+    return records.lookup(value="alpha")
+`)
+
+			require.ErrorIs(t, err, codemode.ErrPolicyFailure)
+			assert.Equal(t, codemode.ErrPolicyFailure.Error(), err.Error())
+			assertNoRegoDiagnostics(t, err.Error())
 			assert.Zero(t, handlerCalls.Load())
 		})
 	}
@@ -420,4 +465,49 @@ func buildTestServer(
 	server, err := builder.Build()
 	require.NoError(t, err)
 	return server
+}
+
+// mustRegoAuthorizer prepares one in-memory Rego authorizer or fails the test.
+func mustRegoAuthorizer(t *testing.T, module string) *rego.Authorizer {
+	t.Helper()
+	authorizer, err := rego.New(t.Context(), "data.codemode.authz.allow", map[string]string{
+		"authorization.rego": module,
+	})
+	require.NoError(t, err)
+	return authorizer
+}
+
+// undefinedRegoPolicy returns a partial decision with no default.
+func undefinedRegoPolicy() string {
+	return `
+package codemode.authz
+
+allow if input.subject.id == "nobody"
+`
+}
+
+// nonBooleanRegoPolicy returns a ground decision that is not Boolean.
+func nonBooleanRegoPolicy() string {
+	return `
+package codemode.authz
+
+allow := "yes"
+`
+}
+
+// assertNoRegoDiagnostics requires public error text to omit trusted Rego detail.
+func assertNoRegoDiagnostics(t *testing.T, text string) {
+	t.Helper()
+	for _, leaked := range []string{
+		"rego:",
+		"data.codemode.authz",
+		"authorization.rego",
+		"decision is undefined",
+		"decision must be boolean",
+		"decision must be a single boolean",
+		"evaluate decision",
+		"builtin",
+	} {
+		assert.NotContains(t, text, leaked)
+	}
 }

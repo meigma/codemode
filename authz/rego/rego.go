@@ -137,9 +137,13 @@ func (authorizer *Authorizer) Authorize(ctx context.Context, input authz.Authori
 		return fmt.Errorf("rego: evaluate decision: %w", err)
 	}
 
+	if len(results) == 0 {
+		return errors.New("rego: decision is undefined")
+	}
+
 	allowed, ok := oparego.ResultValue[bool](results)
 	if !ok {
-		return errors.New("rego: decision must be a single boolean")
+		return errors.New("rego: decision must be boolean")
 	}
 	if !allowed {
 		return authz.ErrDenied
