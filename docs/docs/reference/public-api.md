@@ -194,7 +194,7 @@ Printed text, globals, and intermediate values do not cross the execution bounda
 
 ### Error classifications
 
-Use `errors.Is` to inspect these exported sentinel errors. Client adapters can replace wrapped diagnostic detail with the sentinel text.
+Use `errors.Is` to inspect these exported sentinel errors. `Server.Execute` removes trusted wrapped causes and returns only the classifications below. Client adapters must not depend on diagnostic text or an unwrapped internal, policy, or handler error.
 
 | Error | Classification |
 | --- | --- |
@@ -210,6 +210,8 @@ Use `errors.Is` to inspect these exported sentinel errors. Client adapters can r
 | `ErrInternal` | Unexpected framework state, recovered handler panic, other recovered internal failure, or a nil `Execute` context. |
 
 Request cancellation returns `context.Canceled`. A deadline is classified as `ErrResourceLimit` and also wraps `context.DeadlineExceeded` at the root API.
+
+Internal packages and trusted authorizer and handler implementations can hold detailed causes before this projection. A direct `authz/rego.Authorize` call can return an ordinary error that names an undefined or non-Boolean decision or wraps an OPA evaluation failure. `Server.Execute` maps that error to `ErrPolicyFailure` without retaining the cause. If the host needs the detail, record it inside the trusted implementation before returning.
 
 ## `authz`
 

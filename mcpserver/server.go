@@ -198,7 +198,7 @@ func resolveSubject(ctx context.Context, resolver InvocationResolver) (authz.Sub
 	return subject, nil
 }
 
-// projectToolError maps a service failure to stable coarse tool-safe text.
+// projectToolError removes wrapped service detail and maps failures to fixed client-visible sentinels.
 func projectToolError(err error) error {
 	switch {
 	case errors.Is(err, codemode.ErrResourceLimit):

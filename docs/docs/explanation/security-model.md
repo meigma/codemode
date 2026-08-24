@@ -68,18 +68,17 @@ Static filtering is useful for deployment-wide availability, but it is not dynam
 
 ## Client errors are intentionally coarse
 
-The root API exposes stable sentinel classifications. The MCP adapter projects failures to short text such as `permission denied`, `capability failed`, `resource limit exceeded`, and `internal failure`.
+Detailed causes exist only on the trusted side of the public boundary. Internal packages and host authorizers, resolvers, and handlers can hold or log those causes. A direct call to `authz/rego.Authorize` can return an ordinary error that identifies an undefined or non-Boolean decision, or carries an OPA evaluation or builtin failure.
 
-This projection prevents trusted diagnostic detail from becoming model-visible. In particular, the MCP response does not forward:
+`codemode.Server.Execute` removes those trusted causes. It returns the documented public sentinel for execution, policy, handler, resource, and internal failures. Request cancellation returns `context.Canceled`. A deadline returns `ErrResourceLimit` and preserves `context.DeadlineExceeded` for `errors.Is`; no other execution cause remains wrapped at the root API.
 
-- resolver and authentication diagnostics
-- policy reasons
-- handler error text
-- panic values or stack details
-- credentials
-- source or argument values copied into wrapped errors
+The MCP adapter narrows the boundary again. It emits only the fixed error texts in the [MCP tool reference](../reference/mcp-tools.md#errors). Resolver and custom-service details and recovered panic values become coarse responses. SDK input-schema errors are different: they occur before trusted subject resolution and can identify malformed client-owned fields or values.
 
-The host can log trusted details on its side of the boundary if its authorizer, resolver, and handlers implement that logging. CodeMode's client response remains coarse. Unknown service errors and recovered adapter panics become `internal failure`. A nil `Server.Execute` context is a caller-contract violation and is currently classified as `ErrInternal`.
+This projection prevents trusted diagnostic detail from becoming model-visible. In particular, MCP responses do not expose budget values, filtered capability identities, unknown requested names, argument names or values, source locations or text, Rego decision paths or rule names, handler messages, credentials, panic values, or stack details.
+
+If a host needs detailed diagnostics, its trusted authorizer, resolver, or handler must record them before returning. CodeMode cannot recover a discarded cause after the root or MCP projection. Apply the host's normal access controls and redaction rules to those logs.
+
+An allowed or denied call proves only the result for that subject, capability, and canonical argument set. It does not show whether the policy is default-open, default-deny, complete, or incomplete. Treat an unexpected denial or policy failure as a reason to contact the host, not as evidence about the policy's rules or defaults.
 
 ## Execution state does not cross calls
 

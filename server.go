@@ -111,7 +111,8 @@ func (server *Server) Execute(ctx context.Context, subject authz.Subject, progra
 	return result, nil
 }
 
-// projectExecutionError converts trusted internal execution failures to the public safe taxonomy.
+// projectExecutionError removes trusted execution causes at the root boundary.
+// It preserves only safe sentinels and documented context cancellation and deadline wrapping.
 func projectExecutionError(err error) error {
 	switch {
 	case errors.Is(err, execution.ErrInvalidProgram):
