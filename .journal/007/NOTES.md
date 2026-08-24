@@ -28,3 +28,12 @@ The patches may overlap mechanically in `internal/binding/output.go` and `output
 Issue #23 exposes a separate unresolved resource decision. Current code and documentation define `MaxValueDepth` and `MaxResultBytes` only for the final value; `Plan.ConvertOutput` receives neither limit. Blindly applying `MaxResultBytes` to intermediate capability outputs would undermine issue #23's core use case of filtering a large intermediate collection to a small digest. Its generic Go-to-Starlark walker therefore needs an explicitly designed, request-scoped intermediate materialization bound and must preflight slice/map lengths before allocating. That budget should remain separate from the final-result converter and from hard process isolation.
 
 Recommended order: land issue #13 independently, then implement issue #23 on top of the hardened final converter while resolving the intermediate-output budget explicitly.
+
+## 2026-08-24 13:22 — Implemented issue 13 fix
+Created `fix/issue-13-result-allocation` from fetched `origin/master`. Two isolated Programmer agents implemented the production and regression slices, which were reviewed and cherry-picked. `finalConverter` now validates tuple, list, and dictionary child counts before proportional allocation, allocates only from the validated length, and streams dictionary keys instead of calling `Dict.Items()`.
+
+The regression prebuilds 128,000-element tuple, list, and dictionary values, measures only `ConvertFinal`, and caps conversion allocation at 1 MiB. On unchanged `master` it failed with 2,067,136 bytes for tuples, 2,064,480 bytes for lists, and 17,680,784 bytes for dictionaries. The integrated fix passes the regression and all `internal/binding` tests.
+
+The public four-million-element `Server.Execute` reproduction still returns `ErrResourceLimit` and now allocates 64,013,840 bytes instead of 128,034,304 bytes. `mise exec -- moon run root:check` passed after clearing a stale cross-worktree golangci-lint cache; format, lint, build, MCP smoke, race, and documentation build all completed. Gopls reports no diagnostics in either changed file. No user documentation changed because the public limits and error behavior are unchanged.
+
+Next: Push the feature branch, open the issue-closing PR, and inspect its checks.
