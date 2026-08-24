@@ -21,16 +21,17 @@ Use these public documents as the oracle:
 - `docs/docs/reference/mcp-tools.md`
 - `docs/docs/explanation/security-model.md`
 
-At execution time, record:
+At execution time, create one campaign manifest that records:
 
 - the CodeMode module version and commit
+- the matching public-documentation revision used as the oracle
 - whether the module came from `github.com/meigma/codemode@master` or a local candidate through a temporary `replace`
 - `go version`
 - `omp --version`
-- the OMP model used for each one-shot run
-- the SHA-256 digest of each harness source file and prompt
+- the default OMP model and any per-run model override
+- one immutable harness, configuration, and prompt revision, recorded as a temporary Git commit or archive manifest
 
-Run the clean-install and tutorial cases against `@master`, because that is the documented installation path. When testing an unmerged candidate, run the remaining cases against a temporary module whose `replace github.com/meigma/codemode => <candidate-worktree>` points at that candidate. Do not copy CodeMode source into the harness.
+Pair each binary under test with documentation from the same revision. Run the clean-install tutorial against `@master` and copy the tutorial from the exact master revision resolved by `go get`. When testing an unmerged candidate, run the remaining cases against a temporary module whose `replace github.com/meigma/codemode => <candidate-worktree>` points at that candidate and use that candidate's documentation as the oracle. Run a second candidate tutorial only when its tutorial differs materially. Do not copy CodeMode source into the harness.
 
 ## Boundaries
 
@@ -50,7 +51,7 @@ Run the clean-install and tutorial cases against `@master`, because that is the 
 - Claims that CodeMode explicitly does not make: hard tenant/heap/CPU isolation, forced interruption of blocking Go code, transport ownership, listener management, authentication, credential storage, or downstream MCP forwarding.
 - Exhaustive combinations of invalid Go field types. Use one representative for each documented rejection class.
 
-A case is in scope only when a public document makes an observable promise. For numeric limits, test below, exactly at, and above the boundary where the representation permits it. For concurrency, use a bounded stress probe rather than an open-ended soak.
+A case is in scope only when a public document makes an observable promise. Test below, exactly at, and above only externally controllable byte/count/depth boundaries. For elapsed time and interpreter steps, use one comfortably under-limit case and one reliably over-limit case; do not calibrate against private accounting. Allow ten minutes for clean dependency resolution/builds, two minutes for each direct or protocol probe, one minute for each isolated cancellation/concurrency probe, and ten minutes for each OMP assignment. Concurrency uses a barrier-synchronized bounded contention probe, not an open-ended soak.
 
 ## External harness
 
@@ -66,37 +67,34 @@ codemode-functional/
 ├── fixtures/                 # Public input/output structs and host adapters
 ├── policies/                 # Trusted Rego v1 modules
 ├── prompts/                  # One-shot OMP assignments
-├── .omp/mcp.json             # Project-local MCP server definitions
-└── evidence/                 # Commands, stdout, stderr, agent reports, and findings
+├── .omp/mcp.json             # One active project-local MCP server definition
+└── evidence/                 # Campaign manifest, coverage ledger, raw records, and findings
 ```
 
 ### `codemode-probe`
 
-A scenario runner that uses only exported APIs. Each invocation performs one named scenario and prints newline-delimited observation records. Records include the operation, supplied public inputs, returned public values, `errors.Is` classifications, handler/authorizer/resolver counters, and sanitized event order. The runner exits nonzero only when the harness itself cannot start; it does not encode pass/fail assertions for CodeMode behavior.
+A scenario runner that uses only exported APIs. It can run tagged groups for fast registration, catalog, execution, conversion, and Rego observations, while cancellation and concurrency remain isolated commands. A single-case selector supports anomaly reproduction. It prints newline-delimited observation records that include the case IDs satisfied, operation, supplied public inputs, returned public values, `errors.Is` classifications, handler/authorizer/resolver counters, and sanitized event order. The runner exits nonzero only when the harness itself cannot start; it does not encode pass/fail assertions for CodeMode behavior.
 
 Use host-side observer adapters to make otherwise hidden boundaries visible:
 
 - an authorizer that records subject, capability ID, capability name, canonical arguments, call count, and event order
 - handlers that record the typed subject/input and can return a value, error, panic, wait for cancellation, or mutate host state
 - a resolver that records calls and can return a subject, empty subject, diagnostic error, or panic
-- a custom `mcpserver.Service` that returns each documented error classification and a secret canary in wrapped diagnostics
+- a custom `mcpserver.Service` used only for adapter-only classifications that a root `*codemode.Server` cannot intentionally produce, such as a bare deadline or unknown service failure
 
 The observer must copy received values before recording them. It must not retain borrowed maps and accidentally create a false mutation result.
 
 ### `codemode-mcp`
 
-A real stdio MCP host built with the official MCP Go SDK. Select a deterministic fixture with `--fixture`; never expose a fixture-selection tool to the model. Every fixture writes host observations to its own file under `evidence/host/` and keeps stdout exclusively for MCP frames.
+A real stdio MCP host built with the official MCP Go SDK. Select a deterministic fixture mode with `--fixture`; never expose fixture selection to the model. Build the host once before OMP runs to avoid `go run` startup variance. Each run writes host observations to its own file and keeps stdout exclusively for MCP frames.
 
-Use these fixtures:
+Use these fixture modes:
 
 | Fixture | Purpose |
 | --- | --- |
 | `happy` | Several enabled capabilities covering all supported input/output fields, deterministic state, and explicit `AllowAll`. |
-| `filtered` | One enabled and one disabled capability under the same namespace. |
-| `deny` | Subject- and argument-aware recognized denials, with dispatch counters. |
-| `policy-failure` | Ordinary authorizer error and authorizer panic with secret canaries. |
-| `handler-failure` | Handler error, handler panic, and invalid/non-finite output with secret canaries. |
-| `resolver-failure` | Resolver error and empty-subject modes. |
+| `filter-deny` | One enabled and one disabled capability under the same namespace plus subject- and argument-aware recognized denials. |
+| `adapter-errors` | Launch-time submodes for resolver, policy, handler, panic, malformed output, bare deadline, and unknown-service projections with trusted secret canaries. |
 | `tight-limits` | Small positive limits that an MCP caller can cross quickly and safely. |
 | `rego` | Prepared total Boolean Rego policy plus separate undefined, non-Boolean, and builtin-failure modes. |
 
@@ -104,16 +102,16 @@ Keep all handlers deterministic. A stateful fixture may expose host-observed cal
 
 ### OMP configuration
 
-Use project-local `codemode-functional/.omp/mcp.json`, not the developer's shared `~/.omp/agent/mcp.json`. Give each fixture a unique stdio server name and an absolute `cwd`. A representative entry is:
+Use project-local `codemode-functional/.omp/mcp.json`, not the developer's shared `~/.omp/agent/mcp.json`. Keep exactly one active CodeMode server entry. Before each run, select the required fixture in that entry's arguments and archive the config with the raw run. A representative entry is:
 
 ```json
 {
   "$schema": "https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json",
   "mcpServers": {
-    "codemode-happy": {
+    "codemode-test": {
       "type": "stdio",
-      "command": "go",
-      "args": ["run", "./cmd/codemode-mcp", "--fixture", "happy"],
+      "command": "/absolute/path/to/codemode-functional/bin/codemode-mcp",
+      "args": ["--fixture", "happy"],
       "cwd": "/absolute/path/to/codemode-functional",
       "timeout": 30000
     }
@@ -122,7 +120,7 @@ Use project-local `codemode-functional/.omp/mcp.json`, not the developer's share
 }
 ```
 
-Before agent testing, open one interactive OMP session in the harness directory and run `/mcp list` and `/mcp test <name>` for every fixture. Record configuration, connection, initialization, and `tools/list` failures separately from CodeMode findings.
+Before agent testing, open one interactive OMP session with the representative `happy` fixture and run `/mcp list` and `/mcp test codemode-test` once. Bound the entire preflight to two minutes. On timeout or failure, preserve the evidence and block the OMP cases rather than retrying indefinitely. Each later one-shot run is the connection, initialization, and `tools/list` check for its selected fixture. Classify a fixture startup failure separately from a CodeMode finding.
 
 Run each test agent with an isolated profile and ephemeral session:
 
@@ -133,7 +131,7 @@ omp --profile codemode-functional \
   --auto-approve --max-time 10m -p @prompts/<assignment>.md
 ```
 
-Do not pass `--no-tools`; MCP tools must remain enabled. Capture stdout and stderr separately. Limit each assignment to 30 MCP calls and ten minutes. Restart the OMP process between assignments so each run rediscovers the MCP servers and does not retain conversation state.
+Do not pass `--no-tools`; MCP tools must remain enabled. Capture stdout and stderr separately. The filesystem, shell, and source-inspection restrictions are prompt-enforced, not an OMP tool allowlist. After a violation, allow at most one replacement run; after a second violation, mark the assignment blocked with an OMP/UX finding. Apply the same cap when a violation occurs during an anomaly repeat. The operator stops a run at MCP call 31 and records the assignment as blocked with a UX finding; `--max-time 10m` enforces the elapsed bound. Restart the OMP process between assignments so each run rediscovers only the selected MCP server and does not retain conversation state.
 
 ## Execution order
 
@@ -147,11 +145,11 @@ Do not pass `--no-tools`; MCP tools must remain enabled. Capture stdout and stde
 6. Record every copy/paste, compile, dependency, and runtime problem as product or documentation UX evidence.
 7. Build minimal external programs that import each public package. Confirm that CodeMode supplies a library and SDK server, while the harness must choose and own its transport lifecycle.
 
-Stop if the published onboarding path cannot produce a running server. Preserve the failure, then make the smallest harness-only correction needed to continue and label it clearly.
+Stop if the published onboarding path cannot produce a running server. Preserve the failure, then allow one harness-only correction attempt bounded to 30 minutes. Label the correction clearly. If it cannot restore the path, mark dependent rows blocked rather than continuing to troubleshoot.
 
 ### 2. Exercise the public Go API directly
 
-Run each `codemode-probe` case as a separate command. Preserve raw stdout and stderr before classifying the result.
+Run fast `codemode-probe` cases in tagged groups while preserving case IDs in every record. Run cancellation and concurrency cases separately so a hang cannot hide later observations. Apply an explicit wall-clock timeout to every command. Preserve raw stdout and stderr before classification.
 
 ### 3. Exercise the MCP surface with protocol probes
 
@@ -159,11 +157,11 @@ Use an official MCP SDK client for deterministic schema and envelope checks. Use
 
 ### 4. Exercise the MCP surface with one-shot OMP agents
 
-Run the blind UX assignment first, before prompts reveal expected names or workflows. Then run focused assignments against freshly started fixture servers. Agents may call only the assigned CodeMode MCP server; prompts must forbid filesystem reads, shell commands, and source inspection.
+Run the blind UX assignment first, before prompts reveal expected names or workflows. Then run focused assignments against freshly started fixture servers. Each `.omp/mcp.json` exposes only the selected `codemode-test` fixture. Prompts forbid filesystem reads, shell commands, and source inspection; use the one-replacement-run cap above for violations.
 
 ### 5. Reproduce and triage every anomaly
 
-Re-run each anomaly once with the same harness and prompt. If it reproduces, reduce it to one direct probe or one MCP transcript. Distinguish CodeMode defect, documentation mismatch, poor UX, OMP/client behavior, and harness defect. Do not change library source during this test campaign.
+Coalesce identical failures into one signature. Re-run each unique anomaly once with the same harness and prompt, then make one time-boxed reduction attempt to obtain a direct probe or minimal MCP transcript. If reduction exceeds 30 minutes, preserve the original external reproduction and mark reduction blocked. Distinguish CodeMode defect, documentation mismatch, poor UX, OMP/client behavior, and harness defect. Do not change library source during this test campaign.
 
 ## Coverage matrix
 
@@ -173,13 +171,13 @@ Re-run each anomaly once with the same harness and prompt. If it reproduces, red
 | --- | --- | --- |
 | C01 | Clean `@master` install and unchanged first-server tutorial | Dependency resolution succeeds under documented Go version; all three tools run and `execute` returns the documented record. |
 | C02 | Register one capability containing required `string`, optional `*int64`, and output `string`, `int64`, `bool`, `float64` fields | Registration and build succeed; generated signatures and shapes use the documented field names, types, required flags, and declaration order. |
-| C03 | Metadata rejection variants | Empty or whitespace-padded ID, invalid dotted name, empty or padded summary/description, nil handler, duplicate ID/name, and namespace/name collision each classify as `ErrInvalidRegistration`. |
+| C03 | Metadata rejection variants | Empty or whitespace-padded ID, invalid dotted name, empty or padded summary/description, nil handler, and duplicate ID/name each classify as `ErrInvalidRegistration`. |
 | C04 | Binding-shape rejection representatives | Pointer input/output structs, unexported or embedded fields, unsupported tags/options, input `string` with `omitempty`, unsupported scalar/container/pointer fields, and output `omitempty` classify as invalid registration. |
-| C05 | Nil/closed builder registration | Nil builder and registration after any build attempt classify as invalid registration without panic. |
-| C06 | Build validation | Nil and typed-nil authorizer, zero/non-positive limits, duplicate disabled IDs, and unknown disabled IDs classify as invalid registration. |
+| C05 | Nil builder registration | Nil builder registration classifies as invalid registration without panic. |
+| C06 | Build validation | Nil and typed-nil authorizer, zero/non-positive limits, namespace/name collisions, duplicate disabled IDs, and unknown disabled IDs classify as invalid registration. |
 | C07 | One-shot builder lifecycle | The first build closes the builder even when validation fails; later register/build operations classify as invalid registration. |
 | C08 | Option-copy probe | Mutating caller-owned disabled-ID and limits values after `New` does not alter the built server. |
-| C09 | Immutable concurrent server | 32 goroutines perform 20 mixed search/describe/execute operations each without inconsistent results, panic, deadlock, or shared interpreter state. Host adapters are concurrency-safe. |
+| C09 | Immutable concurrent server | Eight barrier-synchronized goroutines perform five mixed search/describe/execute operations each within a fixed wall-clock timeout, without inconsistent results, panic, deadlock, or shared interpreter state. Host adapters are concurrency-safe. |
 
 ### Catalog and static filtering
 
@@ -210,23 +208,23 @@ Re-run each anomaly once with the same harness and prompt. If it reproduces, red
 | E11 | Final-value matrix | `None`, bool, string, signed 64-bit int, finite float, tuple, list, and string-keyed dictionary convert as documented. Non-string dictionary keys, out-of-range integers, non-finite floats, functions, and other unsupported values classify as invalid program. |
 | E12 | Final-only output | Printed text, globals, intermediate expressions, and unused native results are absent; root result contains only the converted final value. |
 | E13 | Fresh state | A second execute cannot observe globals or mutable Starlark state from the first, and budgets restart. |
-| E14 | Resource limits | Source bytes, steps, elapsed time, native calls, converted depth, and encoded result each succeed below/at the boundary and classify as `ErrResourceLimit` above it. Use tight positive limits to avoid expensive cases. |
+| E14 | Resource limits | Source bytes, native calls, converted depth, and encoded result succeed below/exactly at their controllable boundaries and classify as `ErrResourceLimit` above them. Steps and elapsed time each use one comfortably under-limit and one reliably over-limit case without exact-threshold calibration. Use tight positive limits. |
 | E15 | Request cancellation | Pre-canceled and cooperatively canceled executions return `context.Canceled`; handler/authorizer observers show prompt cancellation handling. |
-| E16 | Deadline classification | Root execution budget or request deadline classifies as `ErrResourceLimit` and wraps `context.DeadlineExceeded`. A blocking host-adapter demonstration is time-boxed in a child process and confirms only the documented limitation: CodeMode cannot forcibly stop non-cooperative Go code. |
-| E17 | Sentinel coverage | Every exported root sentinel is observed through a public operation and matches through `errors.Is`; wrapped diagnostic text remains available only at the root Go API where documented. |
+| E16 | Deadline classification | A cooperative root execution budget or request deadline classifies as `ErrResourceLimit` and wraps `context.DeadlineExceeded`. Non-cooperative host interruption remains an explicit exclusion, not a test. |
+| E17 | Sentinel coverage ledger | Map every exported root sentinel to the first substantive public operation that observes it through `errors.Is`. Execute a dedicated probe only for a sentinel not reached by another row. Record wrapped diagnostic detail only where the root API documents it. |
 
 ### `authz` and Rego
 
 | ID | Manual scenario | Expected observation |
 | --- | --- | --- |
-| A01 | `authz.AllowAll()` with several valid subjects/calls | Every valid call is allowed; invalid binding still fails before authorization. |
-| A02 | Subject and canonical argument data | Subject contains only the stable non-secret ID; canonical arguments contain only documented JSON-shaped values. |
+| A01 | `authz.AllowAll()` | Record that several valid subjects/calls are allowed. Reference E05 and E07 for invalid-binding-before-authorization evidence instead of rerunning those calls. |
+| A02 | Subject and canonical argument data | Record that `Subject` and `AuthorizationInput` were exercised, then reference E06–E08 for the stable non-secret ID and documented JSON-shaped canonical values. |
 | R01 | Valid total Boolean Rego policy | Trusted subject, stable ID, dotted name, supplied arguments, and omitted optional argument produce the documented allow/deny decisions. |
 | R02 | Constructor validation | Nil/already-canceled context, no modules, blank filename, invalid Rego, non-ground or non-`data` decision, and unavailable builtin return constructor errors without a package sentinel. |
 | R03 | Decision result matrix | Exactly one Boolean true allows; false returns `authz.ErrDenied`; undefined, non-Boolean, multi-result, evaluation failure, and strict builtin failure return ordinary policy errors. |
 | R04 | Restricted evaluator behavior | Nondeterministic builtins and remote schema/network references are unavailable; print does not appear in host or client output. No claim of hard isolation is made. |
 | R05 | Nil and cancellation behavior | Nil receiver and nil context return ordinary errors without panic; canceled/expired evaluation returns `ctx.Err()`. |
-| R06 | Rego immutability and concurrency | After successful synchronous preparation, 32 goroutines perform 20 decisions each with stable results; replacing module strings afterward has no effect. |
+| R06 | Rego immutability and concurrency | After successful synchronous preparation, eight barrier-synchronized goroutines perform five decisions each within a fixed wall-clock timeout with stable results; replacing module strings afterward has no effect. |
 
 ### MCP adapter and wire contract
 
@@ -239,11 +237,11 @@ Re-run each anomaly once with the same harness and prompt. If it reproduces, red
 | M05 | Resolver ordering | Every well-formed call resolves a subject first. Resolver error, panic, or empty subject prevents service work and returns coarse `unauthenticated` or recovered `internal failure` as documented by the observed boundary. |
 | M06 | Discovery semantics over MCP | Search normalization/sorting/limit and exact describe behavior match root operations; disabled capabilities remain absent. |
 | M07 | Execute semantics over MCP | Namespaced calls, optional values, final-value conversion, final-only envelope, fresh state, and tight limits match root operations. |
-| M08 | Coarse error projection | Produce every documented adapter text: unauthenticated, not found, invalid program, invalid arguments, permission denied, policy failure, resource limit, capability failure, canceled, bare deadline, and internal failure. `isError` is set. |
-| M09 | Diagnostic non-disclosure | Resolver, policy, handler, panic, source, and argument canaries never appear in MCP structured content, text content, or agent transcript. |
+| M08 | Coarse error projection ledger | Map every documented adapter text to existing root, resolver, or protocol evidence: unauthenticated, not found, invalid program, invalid arguments, permission denied, policy failure, resource limit, capability failure, canceled, bare deadline, and internal failure. Use a custom service only for adapter-only cases. Verify `isError` on each response. |
+| M09 | Response diagnostic non-disclosure ledger | Review the M05/M08 responses once. Trusted resolver, policy, handler, and panic canaries must be absent from response content. Source and argument markers may appear in the request but must not be echoed in the response. |
 | M10 | Identity spoof attempts | Subject-like tool properties are schema-rejected; subject strings in source, values, and MCP `_meta` cannot replace the resolver subject or alter authorization input. Use the raw SDK probe for `_meta`. |
-| M11 | Static-filter no-backdoor check | Search, describe, and execute all fail to expose the disabled capability; observer logs show no resolver-independent dispatch path. |
-| M12 | Transport ownership and teardown | The external host starts stdio, OMP connects through the official protocol, and terminating the one-shot OMP session permits clean host shutdown without CodeMode claiming listener/process ownership. |
+| M11 | Static-filter cross-reference | Use D07 for root filtering and M06/M07 for MCP discovery, execution, and dispatch-suppression evidence; do not run a separate duplicate scenario. |
+| M12 | Transport lifecycle cross-reference | The first successful OMP stdio transcript plus host shutdown observation proves real transport use and clean teardown. C01 records that the external host selected and owned the transport; do not infer broader conceptual negatives from the transcript. |
 
 ## One-shot OMP assignments
 
@@ -254,20 +252,19 @@ Run six assignments. The first three use no expected tool or capability names in
 | U01 Blind onboarding | `happy` | Discover what the server can do and complete a natural record lookup task. | Whether exactly three generic tools are discoverable, understandable, and sufficient without documentation. |
 | U02 Multi-capability composition | `happy` | Find relevant APIs, inspect only what is needed, then write one Starlark program combining several native calls and return a nested result. | Search quality, signature clarity, description usefulness, namespace ergonomics, result predictability, unnecessary calls. |
 | U03 Error recovery | `happy` | Complete a task after deliberately receiving one unknown-capability, one bad-argument, and one invalid-program response. | Whether coarse errors support recovery or force guesswork; agent retry quality. |
-| U04 Filtering and spoofing | `filtered` and `deny` | Attempt to discover/call the disabled capability and bypass subject/argument policy through source or tool data. | Hidden-surface integrity, denial clarity, accidental leakage or bypass. |
-| U05 Limits and isolation | `tight-limits` | Trigger each safe execution limit, then run a valid request and try to observe prior Starlark state. | Limit clarity, recovery after failure, fresh budgets/state. |
+| U04 Filtering and spoofing | `filter-deny` | Attempt to discover/call the disabled capability and bypass subject/argument policy through source or tool data. | Hidden-surface integrity, denial clarity, accidental leakage or bypass. |
+| U05 Limits and isolation | `tight-limits` | Trigger one deterministic representative resource limit, then run a valid request and try to observe prior Starlark state. | Client-visible limit clarity, recovery after failure, and fresh budgets/state; E14/M07 cover each limit origin deterministically. |
 | U06 Rego outcomes | `rego` | Exercise allowed, denied, unmatched, and broken-decision inputs. | Whether policy outcomes map consistently and whether failures expose policy detail. |
 
-Each prompt requires the agent to report:
+Each prompt asks the agent to report:
 
-- every MCP tool called and the intent, not hidden chain-of-thought
-- observed success/error content
-- whether the next action was obvious
+- whether it completed the assigned task
+- whether the next action after each success or failure was obvious
 - surprising schema, naming, signature, error, or result behavior
-- the minimum reproduction for each suspected defect
-- a final task-success verdict separate from a CodeMode-contract verdict
+- suspected problems with the smallest request-side context needed to identify them
 
-The operator compares the agent report with the raw OMP transcript and host observer log. Agent interpretation alone is not proof.
+Derive the tool-call list and wire content from the raw transcript. The operator, not the agent, owns contract classification and bounded reproduction. The operator compares the report with the raw OMP transcript and host observer log; agent interpretation alone is not proof.
+
 
 ## UX review questions
 
@@ -284,22 +281,28 @@ For every case, answer only when direct evidence exists:
 - Does an optional `None` behave consistently in Starlark, typed Go input, canonical policy input, description, and JSON output?
 - After failures, does the next independent request behave normally?
 - Does the host-observed bind/authorize/dispatch order match the security promise?
-- Does any result or error contain source, arguments, credentials, policy diagnostics, handler text, panic values, or stack details that should remain host-side?
+- Does any error response echo source or arguments, or contain credentials, trusted resolver/policy/handler diagnostics, panic values, or stack details that should remain host-side?
 
 ## Evidence and finding format
 
-Create one evidence folder per case or OMP assignment:
+Preserve one immutable harness/config/prompt revision and one campaign-level environment manifest. Maintain a coverage ledger that maps every matrix ID to exact file paths and, for shared NDJSON or protocol captures, record ranges. One observation may satisfy several rows when the ledger names each relationship.
 
 ```text
-evidence/<ID>/
-├── command.txt
-├── environment.txt
-├── stdout.txt
-├── stderr.txt
-├── host-events.jsonl
-├── agent-report.txt          # OMP assignments only
-└── finding.md                # only when behavior is unexpected or poor UX
+evidence/
+├── CAMPAIGN.json              # Oracle, module, tool versions, model, harness revision
+├── COVERAGE.md                # Matrix ID → raw evidence and verdict
+├── runs/
+│   └── <run-id>/
+│       ├── command.txt
+│       ├── stdout.txt
+│       ├── stderr.txt
+│       ├── host-events.jsonl  # only when the fixture emits host events
+│       └── agent-report.txt   # OMP assignments only
+└── findings/
+    └── <finding-id>.md
 ```
+
+Do not create empty placeholder files or repeat unchanged environment data per run. Preserve stdout and stderr separately wherever process boundaries matter, especially stdio MCP.
 
 A finding contains:
 
@@ -309,9 +312,8 @@ A finding contains:
 - exact external-harness reproduction
 - expected and observed behavior
 - raw evidence paths
-- whether the issue reproduced twice
+- whether the issue reproduced twice and whether the single bounded reduction attempt succeeded
 - classification: library defect, documentation mismatch, UX problem, OMP/client behavior, or harness defect
-- smallest plausible product change; do not implement it during the campaign
 
 Treat a contract mismatch as a defect even when the behavior seems reasonable. Treat a confusing but conforming result as UX evidence, not a contract failure.
 
@@ -319,14 +321,14 @@ Treat a contract mismatch as a defect even when the behavior seems reasonable. T
 
 The campaign is complete when:
 
-- every matrix row has raw external evidence or an explicit blocked reason
+- every matrix row maps to raw external evidence, a cross-reference to shared evidence, or an explicit blocked reason
 - every public package has been imported and exercised by a standalone consumer
 - all three MCP tools have been used through an official transport and by one-shot OMP agents
-- every root sentinel and every documented MCP coarse error has been observed
-- every configured limit has a boundary observation
-- authorization order, dispatch suppression, canonical inputs, filtering, fresh state, and diagnostic non-disclosure have host-side evidence
+- every root sentinel and every documented MCP coarse error appears in its coverage ledger
+- byte/count/depth limits have below/exact/above observations; step/time limits have reliable under/over observations
+- authorization order, dispatch suppression, canonical inputs, filtering, fresh state, and response diagnostic non-disclosure have host-side evidence
 - Rego constructor, decision, restriction, cancellation, and concurrent-use promises have external evidence
-- all anomalies have one repeat run and one reduced reproduction
+- every unique anomaly has one repeat run and one reduction attempt bounded to 30 minutes, or an explicit blocked reduction
 - the final report separates product defects, documentation defects, UX findings, OMP/client findings, and blocked coverage
 
 Do not declare CodeMode functionally verified when any contract row is unobserved. A blocked row is an honest test result, not a pass.
