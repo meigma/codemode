@@ -46,3 +46,7 @@ Next: Wait for developer review before squash-merging PR #14.
 The developer approved PR #14. Squash-merged it on GitHub as `aac86bc` (`feat(authz): add Rego authorizer adapter (#14)`), fast-forwarded local `master` to the same commit, and removed the integrated `feat/rego-authorizer` branch and worktree with Worktrunk.
 The `master` worktree is clean, matches `origin/master`, and tracks no `.journal` files. Only `master` and the personal journal worktree remain.
 Next: Rego adapter implementation and integration are complete. Keep session 003 open until the developer requests session close.
+
+## 2026-08-23 17:26 — Post-merge workflows checked
+Post-merge CI passed on `aac86bc`. GitHub Pages failed because repository Pages is not enabled for GitHub Actions, and Release Please failed because its GitHub App client ID secret is empty. Both failures predate the Rego change and failed identically on prior `master` commit `bf7ca67`; they are repository-configuration work outside this adapter implementation.
+Next: Adapter work remains complete. Surface the two pre-existing automation blockers separately; do not attribute them to PR #14.
