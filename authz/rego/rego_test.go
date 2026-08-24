@@ -338,8 +338,8 @@ func TestNewRejectsNondeterministicBuiltins(t *testing.T) {
 	}
 }
 
-// TestNewRejectsRemoteSchemas proves empty AllowNet blocks remote schema loading.
-func TestNewRejectsRemoteSchemas(t *testing.T) {
+// TestNewRejectsMetadataWithExternalRef proves metadata containing an external $ref is rejected.
+func TestNewRejectsMetadataWithExternalRef(t *testing.T) {
 	module := `
 package codemode.authz
 
@@ -351,13 +351,38 @@ allow if {
 }
 `
 	authorizer, err := rego.New(t.Context(), allowDecision, map[string]string{authorizationModule: module})
-	require.Error(t, err, "expected a remote schema reference to fail preparation")
-	assert.Nil(t, authorizer, "expected no authorizer when remote schema loading is denied")
+	require.Error(t, err, "expected an external schema $ref to fail preparation")
+	assert.Nil(t, authorizer, "expected no authorizer when remote reference loading is disabled")
 	assert.Contains(
 		t,
 		err.Error(),
 		"remote reference loading disabled",
-		"expected empty AllowNet to deny the schema host",
+		"expected an external $ref to be rejected because remote reference loading is disabled",
+	)
+}
+
+// TestNewAcceptsUnconfiguredSchemaAnnotation proves schema["https://example.invalid/schema.json"] is accepted and ignored.
+func TestNewAcceptsUnconfiguredSchemaAnnotation(t *testing.T) {
+	authorizer := mustNew(t, `
+package codemode.authz
+
+# METADATA
+# schemas:
+# - input: schema["https://example.invalid/schema.json"]
+default allow := false
+
+allow if {
+	input.subject.id == "subject-1"
+	input.capability.id == "records.entry.lookup"
+	input.arguments.key == "alpha"
+	input.arguments.limit == 42
+}
+`)
+
+	require.NoError(
+		t,
+		authorizer.Authorize(t.Context(), matchingInput()),
+		"expected an unconfigured schema annotation to be ignored",
 	)
 }
 
