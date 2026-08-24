@@ -42,3 +42,6 @@ Next: Push the feature branch, open the issue-closing PR, and inspect its checks
 Pushed `fix/issue-13-result-allocation` and opened PR #26, `fix(binding): reject oversized final-value allocations`, closing issue #13. The PR is mergeable with a clean merge state. CI, GitHub Pages, and Kusari Inspector passed; the GitHub Pages deployment job was correctly skipped for the pull request.
 
 Next: Await review and squash merge on GitHub. Keep the implementation and supporting agent worktrees until the PR is merged or abandoned.
+
+## 2026-08-24 13:27 — Close
+PR #26 was squash-merged to `master` as `e2b1e5641bd0800e2f88667e294debe69d84f5f7`, closing issue #13. Local `master` was fast-forwarded to the merge commit, and the feature plus supporting Programmer worktrees and branches were removed. The final handoff is the merged allocation hardening, its three-container regression, and issue #23's still-open requirement for a separate intermediate-output materialization budget.
