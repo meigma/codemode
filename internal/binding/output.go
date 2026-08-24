@@ -160,9 +160,21 @@ func convertFloat(value starlark.Float) (any, error) {
 	return float, nil
 }
 
+// containerLength returns length when that many child nodes fit the remaining budget.
+func (converter *finalConverter) containerLength(length int) (int, error) {
+	if length > converter.remainingNodes {
+		return 0, fmt.Errorf("%w: value exceeds byte-derived node budget", ErrValueLimit)
+	}
+	return length, nil
+}
+
 // convertTuple recursively converts an immutable sequence.
 func (converter *finalConverter) convertTuple(value starlark.Tuple, depth int) ([]any, error) {
-	items := make([]any, len(value))
+	length, err := converter.containerLength(len(value))
+	if err != nil {
+		return nil, err
+	}
+	items := make([]any, length)
 	for index, item := range value {
 		converted, err := converter.convert(item, depth+1)
 		if err != nil {
@@ -181,7 +193,11 @@ func (converter *finalConverter) convertList(value *starlark.List, depth int) ([
 	}
 	defer converter.leave(key)
 
-	items := make([]any, 0, value.Len())
+	length, err := converter.containerLength(value.Len())
+	if err != nil {
+		return nil, err
+	}
+	items := make([]any, 0, length)
 	iterator := value.Iterate()
 	defer iterator.Done()
 	var item starlark.Value
@@ -203,13 +219,27 @@ func (converter *finalConverter) convertDict(value *starlark.Dict, depth int) (m
 	}
 	defer converter.leave(key)
 
-	object := make(map[string]any, value.Len())
-	for _, item := range value.Items() {
-		name, ok := starlark.AsString(item[0])
+	length, err := converter.containerLength(value.Len())
+	if err != nil {
+		return nil, err
+	}
+	object := make(map[string]any, length)
+	iterator := value.Iterate()
+	defer iterator.Done()
+	var dictKey starlark.Value
+	for iterator.Next(&dictKey) {
+		name, ok := starlark.AsString(dictKey)
 		if !ok {
 			return nil, fmt.Errorf("%w: dictionary key must be a string", ErrUnsupportedValue)
 		}
-		converted, err := converter.convert(item[1], depth+1)
+		item, found, err := value.Get(dictKey)
+		if err != nil {
+			return nil, fmt.Errorf("%w: dictionary lookup: %w", ErrUnsupportedValue, err)
+		}
+		if !found {
+			return nil, fmt.Errorf("%w: missing dictionary value", ErrUnsupportedValue)
+		}
+		converted, err := converter.convert(item, depth+1)
 		if err != nil {
 			return nil, err
 		}
