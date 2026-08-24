@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/meigma/codemode"
@@ -66,19 +67,64 @@ func New(service Service, resolver InvocationResolver) (*mcp.Server, error) {
 		return nil, fmt.Errorf("%w: invocation resolver is required", codemode.ErrInvalidRegistration)
 	}
 
+	searchOutputSchema, schemaErr := jsonschema.For[[]codemode.SearchResult](nil)
+	if schemaErr != nil {
+		return nil, fmt.Errorf("%w: search_api output schema: %w", codemode.ErrInvalidRegistration, schemaErr)
+	}
+	schemaErr = requireNonNullArray(searchOutputSchema)
+	if schemaErr != nil {
+		return nil, fmt.Errorf("%w: search_api output schema: %w", codemode.ErrInvalidRegistration, schemaErr)
+	}
+	schemaErr = requireResolvedSchema(searchOutputSchema)
+	if schemaErr != nil {
+		return nil, fmt.Errorf("%w: search_api output schema: %w", codemode.ErrInvalidRegistration, schemaErr)
+	}
+
+	describeOutputSchema, schemaErr := jsonschema.For[codemode.Description](nil)
+	if schemaErr != nil {
+		return nil, fmt.Errorf("%w: describe_api output schema: %w", codemode.ErrInvalidRegistration, schemaErr)
+	}
+	if describeOutputSchema == nil || describeOutputSchema.Properties == nil {
+		return nil, fmt.Errorf("%w: describe_api output schema: missing properties", codemode.ErrInvalidRegistration)
+	}
+	schemaErr = requireNonNullArray(describeOutputSchema.Properties["input"])
+	if schemaErr != nil {
+		return nil, fmt.Errorf("%w: describe_api output schema: input: %w", codemode.ErrInvalidRegistration, schemaErr)
+	}
+	schemaErr = requireNonNullArray(describeOutputSchema.Properties["output"])
+	if schemaErr != nil {
+		return nil, fmt.Errorf("%w: describe_api output schema: output: %w", codemode.ErrInvalidRegistration, schemaErr)
+	}
+	schemaErr = requireResolvedSchema(describeOutputSchema)
+	if schemaErr != nil {
+		return nil, fmt.Errorf("%w: describe_api output schema: %w", codemode.ErrInvalidRegistration, schemaErr)
+	}
+
+	executeOutputSchema, schemaErr := jsonschema.For[executeOutput](nil)
+	if schemaErr != nil {
+		return nil, fmt.Errorf("%w: execute output schema: %w", codemode.ErrInvalidRegistration, schemaErr)
+	}
+	schemaErr = requireResolvedSchema(executeOutputSchema)
+	if schemaErr != nil {
+		return nil, fmt.Errorf("%w: execute output schema: %w", codemode.ErrInvalidRegistration, schemaErr)
+	}
+
 	bound := &adapter{service: service, resolver: resolver}
 	server := mcp.NewServer(&mcp.Implementation{Name: "codemode", Version: "1"}, nil)
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "search_api",
-		Description: "Search enabled names and summaries with a short literal substring. Retry an empty result with a shorter term.",
+		Name:         "search_api",
+		Description:  "Search enabled names and summaries with a short literal substring. Retry an empty result with a shorter term.",
+		OutputSchema: searchOutputSchema,
 	}, bound.search)
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "describe_api",
-		Description: "Describe one enabled capability by the exact name returned by search_api, without whitespace or case changes.",
+		Name:         "describe_api",
+		Description:  "Describe one enabled capability by the exact name returned by search_api, without whitespace or case changes.",
+		OutputSchema: describeOutputSchema,
 	}, bound.describe)
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "execute",
-		Description: "Execute one Starlark program that defines def main(): with zero arguments, calls only names confirmed through search_api and describe_api inside main, and returns main's final result.",
+		Name:         "execute",
+		Description:  "Execute one Starlark program that defines def main(): with zero arguments, calls only names confirmed through search_api and describe_api inside main, and returns main's final result.",
+		OutputSchema: executeOutputSchema,
 	}, bound.execute)
 	return server, nil
 }
@@ -95,8 +141,8 @@ func (bound *adapter) search(
 		}
 		return bound.service.Search(input.Query)
 	})
-	if outcome.value == nil && outcome.err == nil {
-		outcome.value = []codemode.SearchResult{}
+	if outcome.err == nil {
+		outcome.value = nonNilSlice(outcome.value)
 	}
 	return nil, outcome.value, outcome.err
 }
@@ -113,6 +159,10 @@ func (bound *adapter) describe(
 		}
 		return bound.service.Describe(codemode.CapabilityName(input.Name))
 	})
+	if outcome.err == nil {
+		outcome.value.Input = nonNilSlice(outcome.value.Input)
+		outcome.value.Output = nonNilSlice(outcome.value.Output)
+	}
 	return nil, outcome.value, outcome.err
 }
 
@@ -207,4 +257,52 @@ func isNil(value any) bool {
 		kind == reflect.Pointer ||
 		kind == reflect.Slice
 	return nilable && reflected.IsNil()
+}
+
+// nonNilSlice returns values, or an empty slice when values is nil.
+func nonNilSlice[T any](values []T) []T {
+	if values == nil {
+		return []T{}
+	}
+	return values
+}
+
+// jsonSchemaArrayType is the JSON Schema name for an array.
+const jsonSchemaArrayType = "array"
+
+// requireNonNullArray narrows a nullable JSON Schema slice node to type array.
+func requireNonNullArray(schema *jsonschema.Schema) error {
+	if schema == nil {
+		return errors.New("schema is required")
+	}
+	if schema.Type == jsonSchemaArrayType && schema.Types == nil {
+		return nil
+	}
+	hasArray := false
+	hasNull := false
+	for _, typ := range schema.Types {
+		switch typ {
+		case jsonSchemaArrayType:
+			hasArray = true
+		case "null":
+			hasNull = true
+		default:
+			return fmt.Errorf("schema type includes %q", typ)
+		}
+	}
+	if schema.Type != "" || !hasArray || !hasNull {
+		return errors.New("schema must be a nullable array")
+	}
+	schema.Type = jsonSchemaArrayType
+	schema.Types = nil
+	return nil
+}
+
+// requireResolvedSchema reports whether schema can be used as a tool output schema.
+func requireResolvedSchema(schema *jsonschema.Schema) error {
+	if schema == nil {
+		return errors.New("inferred schema is nil")
+	}
+	_, err := schema.Resolve(nil)
+	return err
 }
