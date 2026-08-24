@@ -205,19 +205,19 @@ Only the final converted value crosses the execution boundary. `print` output is
 
 ## Authoring and recovery
 
-The listed descriptions above are the model-facing contract. Recovery uses the same fixed coarse errors on this page. Error payloads stay non-disclosing; they do not gain diagnostic detail, aliases, or suggested alternate names.
+The listed descriptions above are the model-facing contract. Recovery uses the same fixed coarse errors on this page. When recording or reporting a failed call, keep the coarse text and the recovery action; do not echo the failed source, arguments, credentials, or unknown requested name.
 
 - Search with a short literal substring over enabled names and summaries. If the result is empty, retry with a shorter term.
-- Pass `describe_api` the exact `name` returned by `search_api`, without whitespace or case changes.
-- Compare native call arguments with the `describe_api` field shapes before `execute`.
+- After `capability not found`, search again and pass `describe_api` an exact returned `name`, without whitespace or case changes.
+- After `invalid capability arguments`, compare the call with the published `signature` and `input` field shapes.
+- After `invalid program`, use a zero-argument `def main():`, call only names confirmed through search and description inside `main`, and return the final value.
 - Use `describe_api.output` as the result contract. Do not parse a type name from `signature`.
-- Define `def main():` with zero arguments. Call only names confirmed through `search_api` and `describe_api` inside `main`. Return `main`'s final result.
-- After `resource limit exceeded`, reduce program or result complexity and retry.
-- `permission denied` and `authorization policy failure` are outcomes for that call only. They do not disclose policy rules.
+- After `resource limit exceeded`, reduce source or result complexity and retry.
+- After `permission denied` or `authorization policy failure`, contact the host if the access was expected. One allowed or denied input cannot establish whether the policy is default-open, default-deny, complete, or incomplete.
 
 ## Errors
 
-After a well-formed call reaches the adapter, a resolver or service failure becomes a successful MCP protocol response with `isError` set and one coarse text item. The adapter does not expose wrapped policy diagnostics, handler errors, panic values, stack details, credentials, source, or arguments.
+After a well-formed call reaches the adapter, a resolver or service failure becomes a successful MCP protocol response with `isError` set and one of the eleven fixed text values below. The adapter removes resolver and custom-service details and recovered panic values. It does not expose budget values, filtered capability identities, unknown requested names, argument names or values, source locations or text, Rego decision paths or rule names, handler messages, credentials, panic values, or stack details.
 
 | Text | Meaning |
 | --- | --- |
@@ -233,6 +233,6 @@ After a well-formed call reaches the adapter, a resolver or service failure beco
 | `context deadline exceeded` | A service returned a bare deadline error. Root CodeMode execution deadlines are normally projected as `resource limit exceeded`. |
 | `internal failure` | Any unknown service error or recovered adapter failure. |
 
-Malformed MCP arguments are rejected by the SDK's input-schema validation and do not call the invocation resolver. For well-formed inputs, resolver failure stops the request before search, description, or execution.
+Malformed MCP arguments are rejected by the SDK's input-schema validation and do not call the invocation resolver. These errors can identify malformed client-owned fields or values because validation occurs before trusted resolution. For well-formed inputs, resolver failure stops the request before search, description, or execution and becomes `unauthenticated` without resolver detail.
 
 See [Public API reference](public-api.md) for Go contracts and [Security model](../explanation/security-model.md) for the resolver and execution trust boundaries.
