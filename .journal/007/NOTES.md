@@ -37,3 +37,8 @@ The regression prebuilds 128,000-element tuple, list, and dictionary values, mea
 The public four-million-element `Server.Execute` reproduction still returns `ErrResourceLimit` and now allocates 64,013,840 bytes instead of 128,034,304 bytes. `mise exec -- moon run root:check` passed after clearing a stale cross-worktree golangci-lint cache; format, lint, build, MCP smoke, race, and documentation build all completed. Gopls reports no diagnostics in either changed file. No user documentation changed because the public limits and error behavior are unchanged.
 
 Next: Push the feature branch, open the issue-closing PR, and inspect its checks.
+
+## 2026-08-24 13:24 — Pull request ready
+Pushed `fix/issue-13-result-allocation` and opened PR #26, `fix(binding): reject oversized final-value allocations`, closing issue #13. The PR is mergeable with a clean merge state. CI, GitHub Pages, and Kusari Inspector passed; the GitHub Pages deployment job was correctly skipped for the pull request.
+
+Next: Await review and squash merge on GitHub. Keep the implementation and supporting agent worktrees until the PR is merged or abandoned.
