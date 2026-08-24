@@ -15,3 +15,10 @@ Fast-forwarded repo master aac86bc -> 8b5302b (5 commits: invalid-Rego-decision 
 Read: capability/builder/server/limits/errors + example, internal/binding (plan, signature), internal/catalog (search, describe), internal/execution (engine, execute, namespace), mcpserver adapter, README, first-server tutorial, mcp-tools reference.
 Key findings forming: safety layer is the strongest dimension; binding matrix (string + *int64 in, flat scalar structs out, no lists) undercuts the core Code Mode composition thesis; coarse error taxonomy discards model-supplied diagnostics (Starlark parse position, failing argument name) that could be safely echoed; host boilerplate (resolver pattern, per-Register error checks) is repetitive.
 Next: deliver review in chat; no code changes this checkpoint.
+
+## 2026-08-24 10:31 — Issues filed
+Filed the two review outcomes as GitHub issues:
+- #23 Widen the capability binding matrix: composite outputs and richer scalar inputs — keep Capability[Input, Output] API, replace fieldKind whitelist with generic Go->Starlark walker (ConvertFinal proves the pattern), inputs widen but stay typed pre-authorization, describe_api shapes stay reflection-derived. Non-goals: JSON text passthrough, starlarkjson exposure.
+- #24 Echo model-derived diagnostics through the coarse error taxonomy — type-selective pass-through of syntax positions, binding argument names, optional call-site line; host-derived text (handler/policy/panic) stays hidden; sentinel text kept as stable prefix. Danger note recorded: EvalError.Msg embeds wrapped handler cause, so no blanket pass-through.
+Discussion context: user challenged whether typed output translation is unnecessary given JSON at the MCP boundary; conclusion was the whitelist is the dispensable part, not the translation (Starlark needs values, not JSON text; no json module predeclared; describe_api schema derivation depends on typed Output).
+Next: await direction on whether to implement either issue this session.
