@@ -13,7 +13,7 @@ description: Exact inputs, listed descriptions, successful structured outputs, d
 
 Each input is an object with one required string property. Additional properties are rejected by the SDK before subject resolution or service work. Every valid call then resolves a trusted subject through `mcpserver.InvocationResolver` before it reaches the CodeMode service.
 
-On success, the official SDK returns the documented value in `CallToolResult.StructuredContent` and one JSON `TextContent` item that mirrors it. The schemas below describe the structured value, not the surrounding MCP result. Each tool's listed `tools/list` description is the model-facing authoring contract for that tool.
+On success, `CallToolResult.StructuredContent` contains the value described by the tool's `outputSchema`, and one JSON `TextContent` item mirrors the same value. The schemas below are the `outputSchema` values advertised by `tools/list`; they describe the successful value itself, not the surrounding MCP result. Each tool's listed `tools/list` description is the model-facing authoring contract for that tool.
 
 ## `search_api`
 
@@ -131,6 +131,8 @@ For the site-wide sample, the requested name is `records.lookup`. Its stable ID,
   }
 }
 ```
+
+The required `input` and `output` properties are always arrays. A capability with no input or output fields uses `[]`, not `null`.
 
 `input` and `output` preserve Go field declaration order. Field-shape types have these values:
 

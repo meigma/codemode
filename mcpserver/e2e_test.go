@@ -244,6 +244,9 @@ func TestActualMCPSecureLoop(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	assert.ElementsMatch(t, []string{"search_api", "describe_api", "execute"}, names)
+	requireSearchAPIOutputSchema(t, listedOutputSchema(t, listed.Tools, "search_api"))
+	requireDescribeAPIOutputSchema(t, listedOutputSchema(t, listed.Tools, "describe_api"))
+	requireExecuteOutputSchema(t, listedOutputSchema(t, listed.Tools, "execute"))
 
 	searched, err := session.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      "search_api",
@@ -258,6 +261,8 @@ func TestActualMCPSecureLoop(t *testing.T) {
 	assert.Equal(t, "records.lookup(*, key: str, limit: int | None)", searchResults[0].Signature)
 	assert.Equal(t, "Look up one record by key.", searchResults[0].Summary)
 	assertDiscoveryOmitsGoTypeNames(t, searched, "lookupResult", "StatusResult")
+	requireNonNullJSONArray(t, searched.StructuredContent)
+	requireJSONTextMirror(t, searched, searchResults)
 
 	described, err := session.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      "describe_api",
@@ -284,6 +289,7 @@ func TestActualMCPSecureLoop(t *testing.T) {
 	assert.Equal(t, "int", description.Output[1].Type)
 	assert.True(t, description.Output[1].Required)
 	assertDiscoveryOmitsGoTypeNames(t, described, "lookupResult", "StatusResult")
+	requireNonNullDescribeFieldArrays(t, described)
 
 	statusSearch, err := session.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      "search_api",
@@ -297,6 +303,8 @@ func TestActualMCPSecureLoop(t *testing.T) {
 	assert.Equal(t, "health.status", statusResults[0].Name)
 	assert.Equal(t, "health.status()", statusResults[0].Signature)
 	assertDiscoveryOmitsGoTypeNames(t, statusSearch, "lookupResult", "StatusResult")
+	requireNonNullJSONArray(t, statusSearch.StructuredContent)
+	requireJSONTextMirror(t, statusSearch, statusResults)
 
 	statusDescribed, err := session.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      "describe_api",
@@ -312,6 +320,17 @@ func TestActualMCPSecureLoop(t *testing.T) {
 	require.Len(t, statusDescription.Output, 1)
 	assert.Equal(t, "state", statusDescription.Output[0].Name)
 	assertDiscoveryOmitsGoTypeNames(t, statusDescribed, "lookupResult", "StatusResult")
+	requireNonNullDescribeFieldArrays(t, statusDescribed)
+	require.Empty(t, requireJSONObject(t, statusDescribed.StructuredContent)["input"])
+
+	emptySearch, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      "search_api",
+		Arguments: map[string]any{"query": "zzzz-no-match"},
+	})
+	require.NoError(t, err)
+	assertSuccessfulTool(t, emptySearch)
+	assertNoCanary(t, emptySearch)
+	requireSuccessfulStructuredValue(t, emptySearch, []any{})
 
 	hidden, err := session.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      "describe_api",
@@ -506,4 +525,13 @@ func assertDiscoveryOmitsGoTypeNames(t *testing.T, result *mcp.CallToolResult, f
 		assert.NotContains(t, string(structured), name)
 		assert.NotContains(t, text.Text, name)
 	}
+}
+
+// requireNonNullDescribeFieldArrays requires describe structured content to carry
+// non-null input and output arrays.
+func requireNonNullDescribeFieldArrays(t *testing.T, result *mcp.CallToolResult) {
+	t.Helper()
+	object := requireJSONObject(t, result.StructuredContent)
+	requireNonNullJSONArray(t, object["input"])
+	requireNonNullJSONArray(t, object["output"])
 }
