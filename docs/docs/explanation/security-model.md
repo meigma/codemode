@@ -26,7 +26,7 @@ Credentials stay in the host's authentication layer. They are not fields on `aut
 
 A native capability call crosses three boundaries in a fixed order:
 
-1. **Exact binding and canonicalization.** CodeMode rejects positional, missing, duplicate, unknown, incorrectly typed, and out-of-range arguments. It creates the exact registered Go input and a fresh JSON-shaped argument map.
+1. **Exact binding and canonicalization.** Duplicate keyword syntax is rejected by the Starlark parser as `ErrInvalidProgram` before this step. Positional, missing, unknown, incorrectly typed, and out-of-range arguments reach binding and map to `ErrInvalidArguments`. Successful binding creates the exact registered Go input and a fresh JSON-shaped argument map.
 2. **Authorization.** CodeMode passes the trusted subject, stable capability ID, dotted capability name, and canonical arguments to `authz.Authorizer`.
 3. **Handler dispatch.** CodeMode calls the typed handler only if authorization returns `nil`.
 
@@ -79,7 +79,7 @@ This projection prevents trusted diagnostic detail from becoming model-visible. 
 - credentials
 - source or argument values copied into wrapped errors
 
-The host can log trusted details on its side of the boundary if its authorizer, resolver, and handlers implement that logging. CodeMode's client response remains coarse. Unknown service errors and recovered adapter panics become `internal failure`.
+The host can log trusted details on its side of the boundary if its authorizer, resolver, and handlers implement that logging. CodeMode's client response remains coarse. Unknown service errors and recovered adapter panics become `internal failure`. A nil `Server.Execute` context is a caller-contract violation and is currently classified as `ErrInternal`.
 
 ## Execution state does not cross calls
 

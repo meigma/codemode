@@ -9,13 +9,13 @@ This tutorial builds an in-process MCP server with one typed capability. You wil
 
 ## Create a module
 
-CodeMode has not published a release. To follow the tutorial against the current `master` branch, create a module and add CodeMode:
+CodeMode has not published a release. To follow the tutorial against the current `master` branch, create a module and add CodeMode and the official MCP Go SDK:
 
 ```sh
 mkdir codemode-first-server
 cd codemode-first-server
 go mod init example.com/codemode-first-server
-go get github.com/meigma/codemode@master
+go get github.com/meigma/codemode@master github.com/modelcontextprotocol/go-sdk/mcp
 ```
 
 The repository currently requires Go 1.26.6.
@@ -186,7 +186,7 @@ The resolver reads only the typed, server-side Go context. In a production host,
 
 ## Run the server
 
-Resolve the direct dependencies and run the program:
+Clean up the module metadata, then run the program:
 
 ```sh
 go mod tidy

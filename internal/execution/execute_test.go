@@ -139,6 +139,27 @@ func TestExecuteRejectsMalformedArgumentsBeforePolicy(t *testing.T) {
 	assert.Zero(t, handlerCalls.Load())
 }
 
+// TestExecuteRejectsDuplicateKeywordSyntaxAsInvalidProgram proves repeated keywords fail at parse time before policy.
+func TestExecuteRejectsDuplicateKeywordSyntaxAsInvalidProgram(t *testing.T) {
+	authorizer := authzmocks.NewMockAuthorizer(t)
+	var handlerCalls atomic.Int64
+	capabilityCatalog := buildEngine(t, func(context.Context, authz.Subject, any) (any, error) {
+		handlerCalls.Add(1)
+		return testOutput{}, nil
+	})
+
+	_, err := capabilityCatalog.Execute(
+		t.Context(),
+		authz.Subject{ID: "subject-1"},
+		`def main(): return records.lookup(value="alpha", value="beta")`,
+		authorizer,
+		defaultExecutionLimits(),
+	)
+
+	require.ErrorIs(t, err, execution.ErrInvalidProgram)
+	assert.Zero(t, handlerCalls.Load())
+}
+
 // TestExecuteCancellationAfterAuthorizationPreventsDispatch proves a stale allow cannot cross the handler boundary.
 func TestExecuteCancellationAfterAuthorizationPreventsDispatch(t *testing.T) {
 	tests := []struct {
