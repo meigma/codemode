@@ -7,5 +7,5 @@
 | 003 | 2026-08-23 | Add optional Rego authorization | complete | Designed, spiked, implemented, documented, and merged the optional OPA/Rego authorizer adapter. |
 | 004 | 2026-08-23 | Functional verification and findings remediation | complete | Executed 59 public-contract cases, merged seven product remediation PRs, repaired the reusable harness, and reported OMP argument rewriting upstream. |
 | 005 | 2026-08-24 | New work session | in-progress | Started a new journal session and is awaiting the developer's substantive request. |
-| 006 | 2026-08-24 | Review execution deadline isolation | in-progress | Reviews issue #12's Starlark deadline overrun and proposes an evidence-backed remediation. |
+| 006 | 2026-08-24 | Review execution deadline isolation | complete | Confirmed issue #12, proved the re-exec worker remediation in a spike, and produced the approved worker-only architecture plus a five-increment implementation plan. |
 | 007 | 2026-08-24 | Review final-value allocation limit | complete | Confirmed and removed oversized final-conversion allocations, merged PR #26, and preserved the separate intermediate-output budget decision for issue #23. |
