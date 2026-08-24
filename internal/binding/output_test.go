@@ -251,7 +251,8 @@ func TestConvertFinalRejectsOversizedContainersBeforeAllocation(t *testing.T) {
 func measureConvertFinalGrowth(t *testing.T, value starlark.Value, maxDepth int, maxBytes int) (uint64, error) {
 	t.Helper()
 
-	defer debug.SetGCPercent(debug.SetGCPercent(-1))
+	previousGCPercent := debug.SetGCPercent(-1)
+	defer debug.SetGCPercent(previousGCPercent)
 
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
