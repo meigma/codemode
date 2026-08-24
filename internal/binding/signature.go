@@ -16,7 +16,7 @@ type FieldShape struct {
 	Required bool `json:"required"`
 }
 
-// Signature renders the compact keyword-only model documentation from the immutable plan.
+// Signature renders the compact keyword-only invocation form, ending at the closing parenthesis.
 func (plan *Plan) Signature(capabilityName string) string {
 	var signature strings.Builder
 	signature.WriteString(capabilityName)
@@ -32,12 +32,7 @@ func (plan *Plan) Signature(capabilityName string) string {
 			signature.WriteString(inputKindSignature(field.kind))
 		}
 	}
-	signature.WriteString(") -> ")
-	if plan.outputType.Name() == "" {
-		signature.WriteString("object")
-	} else {
-		signature.WriteString(plan.outputType.Name())
-	}
+	signature.WriteByte(')')
 	return signature.String()
 }
 

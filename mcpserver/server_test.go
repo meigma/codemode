@@ -165,7 +165,7 @@ func TestToolsResolveSubjectBeforeServiceWork(t *testing.T) {
 	service.EXPECT().Search("lookup").RunAndReturn(func(string) ([]codemode.SearchResult, error) {
 		events = append(events, "search")
 		return []codemode.SearchResult{
-			{Name: "records.lookup", Signature: "records.lookup() -> object", Summary: "lookup"},
+			{Name: "records.lookup", Signature: "records.lookup()", Summary: "lookup"},
 		}, nil
 	}).Once()
 	service.EXPECT().
@@ -174,7 +174,7 @@ func TestToolsResolveSubjectBeforeServiceWork(t *testing.T) {
 			events = append(events, "describe")
 			return codemode.Description{
 				Name:      "records.lookup",
-				Signature: "records.lookup() -> object",
+				Signature: "records.lookup()",
 				Summary:   "lookup",
 			}, nil
 		}).
@@ -201,7 +201,7 @@ func TestToolsResolveSubjectBeforeServiceWork(t *testing.T) {
 	require.False(t, describeResult.IsError)
 	assert.Equal(t, map[string]any{
 		"name":        "records.lookup",
-		"signature":   "records.lookup() -> object",
+		"signature":   "records.lookup()",
 		"summary":     "lookup",
 		"description": "",
 		"input":       nil,
