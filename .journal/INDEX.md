@@ -7,3 +7,4 @@
 | 003 | 2026-08-23 | Add optional Rego authorization | complete | Designed, spiked, implemented, documented, and merged the optional OPA/Rego authorizer adapter. |
 | 004 | 2026-08-23 | Functional verification and findings remediation | complete | Executed 59 public-contract cases, merged seven product remediation PRs, repaired the reusable harness, and reported OMP argument rewriting upstream. |
 | 005 | 2026-08-24 | New work session | in-progress | Started a new journal session and is awaiting the developer's substantive request. |
+| 006 | 2026-08-24 | Review execution deadline isolation | in-progress | Reviews issue #12's Starlark deadline overrun and proposes an evidence-backed remediation. |
