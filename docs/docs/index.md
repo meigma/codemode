@@ -6,13 +6,18 @@ description: Reference for bounded Starlark access to registered Go capabilities
 
 # CodeMode
 
-CodeMode is a Go library that exposes registered, typed Go capabilities to Model Context Protocol (MCP) clients through Starlark programs. The current implementation consists of an immutable capability server, an authorization interface, and an adapter for the official MCP Go SDK.
+CodeMode is a Go library that exposes registered, typed Go capabilities to Model Context Protocol (MCP) clients through Starlark programs. The current implementation consists of an immutable capability server, an authorization interface, an optional in-process Rego authorizer, and an adapter for the official MCP Go SDK.
 
 ## Public packages
 
+CodeMode has four public packages:
+
 - `github.com/meigma/codemode` registers typed capabilities, filters disabled capabilities, searches and describes the enabled catalog, and executes bounded Starlark programs.
 - `github.com/meigma/codemode/authz` defines the trusted subject, canonical authorization input, authorizer interface, and recognized denial.
+- `github.com/meigma/codemode/authz/rego` prepares a static in-memory Rego decision that implements the authorizer interface.
 - `github.com/meigma/codemode/mcpserver` binds a CodeMode service and trusted invocation resolver to an official MCP SDK server.
+
+See [Use Rego for authorization](how-to/use-rego-authorization.md) to replace `authz.AllowAll()`. The [public API reference](reference/public-api.md#authzrego) defines the exact Go and policy contracts, and the [security model](explanation/security-model.md#rego-policy-runs-in-process) explains the in-process boundary.
 
 ## MCP surface
 
