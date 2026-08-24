@@ -27,6 +27,12 @@ type testOutput struct {
 	Name string `json:"name"`
 }
 
+// ExportedOutput is a registered exported result type whose identifier must stay host-local.
+type ExportedOutput struct {
+	// Name is one result value.
+	Name string `json:"name"`
+}
+
 // TestBuildValidatesEveryRegistrationBeforeFiltering proves disabled entries cannot hide invalid contracts.
 func TestBuildValidatesEveryRegistrationBeforeFiltering(t *testing.T) {
 	registration := validRegistration("cap.bad", "records.bad", "Bad record")
@@ -183,7 +189,7 @@ func TestBuildFiltersOnceAndDerivesEverySurface(t *testing.T) {
 	require.True(t, foundDescription)
 	assert.Equal(t, "Alpha record", description.Summary)
 	assert.Equal(t, "Alpha record full description.", description.Description)
-	assert.Equal(t, "records.alpha(*, org: str, limit: int | None) -> testOutput", description.Signature)
+	assert.Equal(t, "records.alpha(*, org: str, limit: int | None)", description.Signature)
 	require.Len(t, description.Input, 2)
 	assert.Equal(t, "org", description.Input[0].Name)
 	assert.Equal(t, "str", description.Input[0].Type)
@@ -222,7 +228,7 @@ func TestSearchIsSortedNormalizedAndBounded(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 	assert.Equal(t, []string{"records.alpha", "records.beta"}, []string{results[0].Name, results[1].Name})
-	assert.Equal(t, "records.alpha(*, org: str, limit: int | None) -> testOutput", results[0].Signature)
+	assert.Equal(t, "records.alpha(*, org: str, limit: int | None)", results[0].Signature)
 
 	nonContiguous, err := catalog.Search("alpha record")
 	require.NoError(t, err)
@@ -239,6 +245,56 @@ func TestSearchIsSortedNormalizedAndBounded(t *testing.T) {
 	_, err = catalog.Search("query exceeding the configured byte budget")
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrSearchQueryLimit)
+}
+
+// TestSearchAndDescribeOmitHostOutputTypeNames proves exported and unexported
+// Go output identifiers never appear on catalog Search or Describe surfaces.
+func TestSearchAndDescribeOmitHostOutputTypeNames(t *testing.T) {
+	catalog, err := Build([]Registration{
+		validRegistration("cap.alpha", "records.alpha", "Alpha record"),
+		{
+			ID:          "cap.status",
+			Name:        "health.status",
+			Summary:     "Health status",
+			Description: "Health status full description.",
+			Plan:        mustCompileExportedOutputPlan(),
+			Invoke: func(context.Context, authz.Subject, any) (any, error) {
+				return ExportedOutput{Name: "ok"}, nil
+			},
+		},
+	}, testOptions())
+	require.NoError(t, err)
+
+	const unexportedName = "testOutput"
+	const exportedName = "ExportedOutput"
+
+	results, err := catalog.Search("alpha")
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, "records.alpha(*, org: str, limit: int | None)", results[0].Signature)
+	assertSearchOmitsOutputTypeNames(t, results[0], unexportedName, exportedName)
+
+	description, found := catalog.Describe("records.alpha")
+	require.True(t, found)
+	assert.Equal(t, "records.alpha(*, org: str, limit: int | None)", description.Signature)
+	require.Len(t, description.Output, 1)
+	assert.Equal(t, "name", description.Output[0].Name)
+	assert.Equal(t, "str", description.Output[0].Type)
+	assertDescriptionOmitsOutputTypeNames(t, description, unexportedName, exportedName)
+
+	statusResults, err := catalog.Search("health")
+	require.NoError(t, err)
+	require.Len(t, statusResults, 1)
+	assert.Equal(t, "health.status()", statusResults[0].Signature)
+	assertSearchOmitsOutputTypeNames(t, statusResults[0], unexportedName, exportedName)
+
+	statusDescription, found := catalog.Describe("health.status")
+	require.True(t, found)
+	assert.Equal(t, "health.status()", statusDescription.Signature)
+	require.Len(t, statusDescription.Output, 1)
+	assert.Equal(t, "name", statusDescription.Output[0].Name)
+	assert.Equal(t, "str", statusDescription.Output[0].Type)
+	assertDescriptionOmitsOutputTypeNames(t, statusDescription, unexportedName, exportedName)
 }
 
 // TestCatalogSupportsConcurrentReadOnlyUse proves cloned views and immutable indexes are race-safe.
@@ -328,4 +384,42 @@ func mustCompileTestPlan() *binding.Plan {
 		panic(err)
 	}
 	return plan
+}
+
+// mustCompileExportedOutputPlan compiles an empty input with an exported output type.
+func mustCompileExportedOutputPlan() *binding.Plan {
+	plan, err := binding.CompileFor[struct{}, ExportedOutput]()
+	if err != nil {
+		panic(err)
+	}
+	return plan
+}
+
+// assertSearchOmitsOutputTypeNames requires a Search result to omit host Go output identifiers.
+func assertSearchOmitsOutputTypeNames(t *testing.T, result SearchResult, forbidden ...string) {
+	t.Helper()
+	for _, name := range forbidden {
+		assert.NotContains(t, result.Name, name)
+		assert.NotContains(t, result.Signature, name)
+		assert.NotContains(t, result.Summary, name)
+	}
+}
+
+// assertDescriptionOmitsOutputTypeNames requires a Describe result to omit host Go output identifiers.
+func assertDescriptionOmitsOutputTypeNames(t *testing.T, description Description, forbidden ...string) {
+	t.Helper()
+	for _, name := range forbidden {
+		assert.NotContains(t, description.Name, name)
+		assert.NotContains(t, description.Signature, name)
+		assert.NotContains(t, description.Summary, name)
+		assert.NotContains(t, description.Description, name)
+		for _, field := range description.Input {
+			assert.NotContains(t, field.Name, name)
+			assert.NotContains(t, field.Type, name)
+		}
+		for _, field := range description.Output {
+			assert.NotContains(t, field.Name, name)
+			assert.NotContains(t, field.Type, name)
+		}
+	}
 }

@@ -141,8 +141,10 @@ Search(query string) ([]SearchResult, error)
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `name` | string | Exact enabled dotted name. |
-| `signature` | string | Keyword-only Starlark signature generated from the registered binding. |
+| `signature` | string | Invocation-only keyword signature. It ends after the parameter list and never contains a Go output type. |
 | `summary` | string | Registered summary. |
+
+`signature` contains the dotted name, a `*` keyword-only marker when there are parameters, and the ordered input fields with their type notations. It ends at `)`. The exact forms are `records.lookup(*, key: str, limit: int | None)` and `records.status()`. The result contract is `Description.Output`, not `signature`.
 
 An oversized query returns `ErrResourceLimit`. An unexpected server-state failure returns `ErrInternal`.
 
@@ -159,13 +161,15 @@ Describe(name CapabilityName) (Description, error)
 | JSON field | Type | Meaning |
 | --- | --- | --- |
 | `name` | string | Exact dotted name. |
-| `signature` | string | Generated Starlark signature. |
+| `signature` | string | Invocation-only keyword signature. It ends after `)` and never contains a Go output type. |
 | `summary` | string | Registered summary. |
 | `description` | string | Registered full description. |
 | `input` | array of field shapes | Ordered input fields. |
-| `output` | array of field shapes | Ordered output fields. |
+| `output` | array of field shapes | Stable result contract. Models and clients must use these ordered field shapes. |
 
 Each field shape has `name` (string), `type` (string), and `required` (boolean). Input shapes use `str` and `int | None`. Output shapes use `str`, `int`, `bool`, and `float`. Output fields always report `required: true`.
+
+`Description.Output` is the stable result contract. Clients that parsed a trailing ` -> <GoType>` suffix on `signature` must stop parsing it and use `output` instead. There is no compatibility suffix, alias, or alternate signature field.
 
 #### `Execute`
 

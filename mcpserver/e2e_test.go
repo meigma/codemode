@@ -76,6 +76,12 @@ type lookupResult struct {
 	Count int64 `json:"count"`
 }
 
+// StatusResult is an exported handler output whose Go identifier must not cross MCP.
+type StatusResult struct {
+	// State is the current status value.
+	State string `json:"state"`
+}
+
 // executeEnvelope is the exact structured execute payload.
 type executeEnvelope struct {
 	// Result is main's final converted value.
@@ -201,6 +207,15 @@ func TestActualMCPSecureLoop(t *testing.T) {
 			return lookupResult{}, errors.New("disabled capability invoked")
 		},
 	}))
+	require.NoError(t, codemode.Register(builder, codemode.Capability[struct{}, StatusResult]{
+		ID:          "health.entry.status",
+		Name:        "health.status",
+		Summary:     "Report current health.",
+		Description: "Returns one deterministic health status object.",
+		Handler: func(context.Context, authz.Subject, struct{}) (StatusResult, error) {
+			return StatusResult{State: "ok"}, nil
+		},
+	}))
 	root, err := builder.Build()
 	require.NoError(t, err)
 
@@ -240,8 +255,63 @@ func TestActualMCPSecureLoop(t *testing.T) {
 	searchResults := decodeStructured[[]codemode.SearchResult](t, searched)
 	require.Len(t, searchResults, 1)
 	assert.Equal(t, "records.lookup", searchResults[0].Name)
-	assert.Equal(t, "records.lookup(*, key: str, limit: int | None) -> lookupResult", searchResults[0].Signature)
+	assert.Equal(t, "records.lookup(*, key: str, limit: int | None)", searchResults[0].Signature)
 	assert.Equal(t, "Look up one record by key.", searchResults[0].Summary)
+	assertDiscoveryOmitsGoTypeNames(t, searched, "lookupResult", "StatusResult")
+
+	described, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      "describe_api",
+		Arguments: map[string]any{"name": "records.lookup"},
+	})
+	require.NoError(t, err)
+	assertSuccessfulTool(t, described)
+	assertNoCanary(t, described)
+	description := decodeStructured[codemode.Description](t, described)
+	assert.Equal(t, "records.lookup", description.Name)
+	assert.Equal(t, "records.lookup(*, key: str, limit: int | None)", description.Signature)
+	require.Len(t, description.Input, 2)
+	assert.Equal(t, "key", description.Input[0].Name)
+	assert.Equal(t, "str", description.Input[0].Type)
+	assert.True(t, description.Input[0].Required)
+	assert.Equal(t, "limit", description.Input[1].Name)
+	assert.Equal(t, "int | None", description.Input[1].Type)
+	assert.False(t, description.Input[1].Required)
+	require.Len(t, description.Output, 2)
+	assert.Equal(t, "key", description.Output[0].Name)
+	assert.Equal(t, "str", description.Output[0].Type)
+	assert.True(t, description.Output[0].Required)
+	assert.Equal(t, "count", description.Output[1].Name)
+	assert.Equal(t, "int", description.Output[1].Type)
+	assert.True(t, description.Output[1].Required)
+	assertDiscoveryOmitsGoTypeNames(t, described, "lookupResult", "StatusResult")
+
+	statusSearch, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      "search_api",
+		Arguments: map[string]any{"query": "health"},
+	})
+	require.NoError(t, err)
+	assertSuccessfulTool(t, statusSearch)
+	assertNoCanary(t, statusSearch)
+	statusResults := decodeStructured[[]codemode.SearchResult](t, statusSearch)
+	require.Len(t, statusResults, 1)
+	assert.Equal(t, "health.status", statusResults[0].Name)
+	assert.Equal(t, "health.status()", statusResults[0].Signature)
+	assertDiscoveryOmitsGoTypeNames(t, statusSearch, "lookupResult", "StatusResult")
+
+	statusDescribed, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      "describe_api",
+		Arguments: map[string]any{"name": "health.status"},
+	})
+	require.NoError(t, err)
+	assertSuccessfulTool(t, statusDescribed)
+	assertNoCanary(t, statusDescribed)
+	statusDescription := decodeStructured[codemode.Description](t, statusDescribed)
+	assert.Equal(t, "health.status", statusDescription.Name)
+	assert.Equal(t, "health.status()", statusDescription.Signature)
+	assert.Empty(t, statusDescription.Input)
+	require.Len(t, statusDescription.Output, 1)
+	assert.Equal(t, "state", statusDescription.Output[0].Name)
+	assertDiscoveryOmitsGoTypeNames(t, statusDescribed, "lookupResult", "StatusResult")
 
 	hidden, err := session.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      "describe_api",
@@ -420,5 +490,20 @@ func assertNotContainsText(t *testing.T, result *mcp.CallToolResult, forbidden .
 	payload := string(raw)
 	for _, value := range forbidden {
 		assert.NotContains(t, payload, value)
+	}
+}
+
+// assertDiscoveryOmitsGoTypeNames requires search/describe structured content
+// and its JSON text mirror to omit host Go output identifiers.
+func assertDiscoveryOmitsGoTypeNames(t *testing.T, result *mcp.CallToolResult, forbidden ...string) {
+	t.Helper()
+	structured, err := json.Marshal(result.StructuredContent)
+	require.NoError(t, err)
+	require.Len(t, result.Content, 1)
+	text, ok := result.Content[0].(*mcp.TextContent)
+	require.True(t, ok, "successful discovery content must be text")
+	for _, name := range forbidden {
+		assert.NotContains(t, string(structured), name)
+		assert.NotContains(t, text.Text, name)
 	}
 }

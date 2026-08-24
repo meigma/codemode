@@ -61,8 +61,10 @@ The structured content itself is the array described above, not an object that w
 | Field | Meaning |
 | --- | --- |
 | `name` | Exact enabled dotted capability name, such as `records.lookup`. |
-| `signature` | Keyword-only Starlark signature generated from the registered Go binding. |
+| `signature` | Invocation-only keyword signature. It ends after the parameter list and never contains a Go output type. |
 | `summary` | Registered compact summary. |
+
+`signature` contains the dotted name, a `*` keyword-only marker when there are parameters, and the ordered input fields with their type notations. It ends at `)`. The exact forms are `records.lookup(*, key: str, limit: int | None)` and `records.status()`. The result contract is `describe_api.output`, not `signature`.
 
 ## `describe_api`
 
@@ -143,6 +145,10 @@ For the site-wide sample, the requested name is `records.lookup`. Its stable ID,
 
 The sample capability therefore describes input fields `key` (`str`, required) and `limit` (`int | None`, optional), and output fields `key` (`str`, required) and `count` (`int`, required).
 
+`signature` is the same invocation-only keyword signature returned by `search_api`.
+
+`output` is the stable result contract. Models and clients must use these field shapes. Clients that parsed a trailing ` -> <GoType>` suffix on `signature` must stop parsing it and use `describe_api.output` instead. There is no compatibility suffix, alias, or alternate signature field.
+
 ## `execute`
 
 Execute one Starlark program that defines def main(): with zero arguments, calls only names confirmed through search_api and describe_api inside main, and returns main's final result.
@@ -202,6 +208,7 @@ The listed descriptions above are the model-facing contract. Recovery uses the s
 - Search with a short literal substring over enabled names and summaries. If the result is empty, retry with a shorter term.
 - Pass `describe_api` the exact `name` returned by `search_api`, without whitespace or case changes.
 - Compare native call arguments with the `describe_api` field shapes before `execute`.
+- Use `describe_api.output` as the result contract. Do not parse a type name from `signature`.
 - Define `def main():` with zero arguments. Call only names confirmed through `search_api` and `describe_api` inside `main`. Return `main`'s final result.
 - After `resource limit exceeded`, reduce program or result complexity and retry.
 - `permission denied` and `authorization policy failure` are outcomes for that call only. They do not disclose policy rules.
