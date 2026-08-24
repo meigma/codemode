@@ -258,7 +258,9 @@ Surrounding whitespace on the decision string is accepted by OPA's reference par
 
 `New` rejects a nil context, an already-canceled context, no modules, blank filenames, a non-ground or non-`data` decision, invalid Rego, and policy that uses an unavailable builtin. Context cancellation takes precedence over an OPA preparation error when they race. Other failures are ordinary constructor errors; this package defines no error sentinel.
 
-The prepared evaluator removes every builtin that OPA marks nondeterministic, sets `AllowNet` to a non-nil empty slice, enables `StrictBuiltinErrors(true)`, and uses `EnablePrintStatements(false)`. The package installs no custom builtins, hooks, tracer, store, resolver, or remote policy service.
+The prepared evaluator starts from OPA's Rego v1 capabilities and removes every builtin that OPA marks nondeterministic. That removal takes away runtime network-capable builtins, including `http.send`, plus DNS, runtime, random, time, and UUID builtins. `AllowNet` is a separate non-nil empty deny-all host list. It is defense in depth, not the mechanism that removes `http.send`. The evaluator also enables `StrictBuiltinErrors(true)` and uses `EnablePrintStatements(false)`. The package installs no custom builtins, hooks, tracer, store, schema set, schema resolver, or remote policy service.
+
+Metadata `schema["https://example.invalid/schema.json"]` is accepted but ignored: there is no validation and no fetch. Metadata with an external `$ref: "https://example.invalid/schema.json"` asks OPA to load a remote schema and is rejected because remote reference loading is disabled.
 
 ### `Authorize`
 
