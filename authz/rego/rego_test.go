@@ -177,7 +177,7 @@ allow if {
 	require.NoError(t, authorizer.Authorize(t.Context(), input), "expected an omitted optional argument to be absent")
 }
 
-// TestAuthorizeDecodesDirectBooleanResults proves true, false, and invalid shapes.
+// TestAuthorizeDecodesDirectBooleanResults proves true, false, undefined, and non-Boolean shapes.
 func TestAuthorizeDecodesDirectBooleanResults(t *testing.T) {
 	tests := []struct {
 		// name identifies the decision shape.
@@ -190,6 +190,8 @@ func TestAuthorizeDecodesDirectBooleanResults(t *testing.T) {
 		want error
 		// policyFailure reports whether the error must not be a denial.
 		policyFailure bool
+		// message is the exact policy-failure diagnostic.
+		message string
 	}{
 		{
 			name:   "true allows",
@@ -207,18 +209,21 @@ func TestAuthorizeDecodesDirectBooleanResults(t *testing.T) {
 			module:        undefinedAllowPolicy(),
 			input:         matchingInput(),
 			policyFailure: true,
+			message:       "rego: decision is undefined",
 		},
 		{
 			name:          "non-boolean is a policy failure",
 			module:        `package codemode.authz` + "\n\nallow := \"yes\"\n",
 			input:         matchingInput(),
 			policyFailure: true,
+			message:       "rego: decision must be boolean",
 		},
 		{
 			name:          "set result is a policy failure",
 			module:        `package codemode.authz` + "\n\nallow contains x if x := {true, false}[_]\n",
 			input:         matchingInput(),
 			policyFailure: true,
+			message:       "rego: decision must be boolean",
 		},
 	}
 
@@ -236,6 +241,7 @@ func TestAuthorizeDecodesDirectBooleanResults(t *testing.T) {
 				return
 			}
 			require.NotErrorIs(t, err, authz.ErrDenied, "expected a broken decision to remain a policy failure")
+			assert.Equal(t, tt.message, err.Error(), "expected the distinct decision diagnostic")
 		})
 	}
 }

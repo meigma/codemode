@@ -83,7 +83,7 @@ builder := codemode.New(codemode.Options{
 })
 ```
 
-`rego.New` compiles and prepares every supplied module synchronously. Return the error instead of building a server with another authorizer. The returned authorizer is immutable and can serve concurrent calls.
+`rego.New` validates the ground reference syntax, compiles every supplied module, and prepares the policy synchronously. It cannot prove that the decision is defined and Boolean for every future input. Return the error instead of building a server with another authorizer. The returned authorizer is immutable and can serve concurrent calls.
 
 To embed the policy, save the same module as `policies/authorization.rego` and replace the string constant with:
 
@@ -98,11 +98,11 @@ Pass `authorizationPolicy` to the same `rego.New` call. Replacing policy require
 
 ## Preserve the decision outcomes
 
-CodeMode calls the authorizer after argument binding and before handler dispatch. The direct decision has these outcomes:
+CodeMode calls the authorizer after argument binding and before handler dispatch. A ground decision is either undefined or yields one value. That value must be Boolean. The outcomes are:
 
-- Exactly one Boolean `true` allows handler dispatch.
-- Exactly one Boolean `false` returns `authz.ErrDenied`, which CodeMode classifies as `codemode.ErrPermissionDenied`.
-- An undefined, non-Boolean, or multi-result decision is a policy failure, as is any evaluation or builtin error. CodeMode classifies these errors as `codemode.ErrPolicyFailure`.
+- Boolean `true` allows handler dispatch.
+- Boolean `false` returns `authz.ErrDenied`, which CodeMode classifies as `codemode.ErrPermissionDenied`.
+- An undefined or non-Boolean decision is a policy failure, as is any evaluation or builtin error. CodeMode classifies these errors as `codemode.ErrPolicyFailure`.
 - The adapter returns `ctx.Err()` for a canceled or expired evaluation context. At `Server.Execute`, cancellation returns `context.Canceled`; a deadline is `codemode.ErrResourceLimit` and also wraps `context.DeadlineExceeded`.
 
 Do not use an undefined decision as denial behavior. Keep `default allow := false` so an unmatched input produces the intentional Boolean `false` result.

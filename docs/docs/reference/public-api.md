@@ -252,7 +252,9 @@ The optional `github.com/meigma/codemode/authz/rego` package implements `authz.A
 New(ctx context.Context, decision string, modules map[string]string) (*Authorizer, error)
 ```
 
-`New` accepts one ground `data` reference, such as `data.codemode.authz.allow`, and one or more in-memory Rego modules keyed by non-blank filename. It validates the decision, sorts the filenames, compiles the modules with Rego v1 semantics, and prepares the direct decision query synchronously.
+`New` accepts one ground `data` reference, such as `data.codemode.authz.allow`, and one or more in-memory Rego modules keyed by non-blank filename. It validates the decision's reference syntax, sorts the filenames, compiles the modules with Rego v1 semantics, and prepares the direct decision query synchronously. `New` cannot prove that the prepared decision is defined and Boolean for every future input; those outcomes are checked when `Authorize` evaluates the query.
+
+Surrounding whitespace on the decision string is accepted by OPA's reference parser. CodeMode does not add a second trim or normalization rule.
 
 `New` rejects a nil context, an already-canceled context, no modules, blank filenames, a non-ground or non-`data` decision, invalid Rego, and policy that uses an unavailable builtin. Context cancellation takes precedence over an OPA preparation error when they race. Other failures are ordinary constructor errors; this package defines no error sentinel.
 
@@ -286,13 +288,14 @@ The Rego input contains exactly these fields:
 
 `subject.id` is the trusted subject ID. `capability.id` is the stable policy identity; `capability.name` is the dotted discovery and Starlark name. `arguments` is the canonical map from `AuthorizationInput`, borrowed read-only for the synchronous evaluation. An omitted optional argument is absent from the map.
 
-The direct decision result has this contract:
+A ground decision is either undefined or yields one value. That value must be Boolean.
 
 | Result | Return value |
 | --- | --- |
-| Exactly one Boolean `true` | `nil` |
-| Exactly one Boolean `false` | `authz.ErrDenied` |
-| Undefined, non-Boolean, or multiple results | Ordinary policy error |
+| Boolean `true` | `nil` |
+| Boolean `false` | `authz.ErrDenied` |
+| Undefined decision | Ordinary policy error with text `rego: decision is undefined` |
+| Non-Boolean decision | Ordinary policy error with text `rego: decision must be boolean` |
 | Evaluation or builtin failure | Ordinary policy error |
 | Canceled or expired context | `ctx.Err()` |
 

@@ -50,7 +50,7 @@ The adapter starts with OPA's Rego v1 capabilities and removes every builtin tha
 
 `StrictBuiltinErrors(true)` makes builtin errors fatal. A failing builtin cannot become an undefined rule branch while another branch allows the call. `EnablePrintStatements(false)` erases print calls during compilation. The adapter installs no print hook, tracer, custom builtin, data store, resolver, or other policy hook.
 
-The configured decision is one direct, ground `data` reference. Exactly one Boolean `true` allows a call, and exactly one Boolean `false` is a recognized denial. Undefined, non-Boolean, and multi-result decisions are policy failures, as are evaluation and builtin errors. A total decision with `default allow := false` turns unmatched input into an intentional denial while still failing closed when the policy contract is broken.
+The configured decision is one direct, ground `data` reference. Construction validates that reference syntax and prepares the policy; it cannot prove that the decision is defined and Boolean for every future input. A ground decision is either undefined or yields one value. That value must be Boolean. Boolean `true` allows a call. Boolean `false` is a recognized denial. Undefined and non-Boolean decisions are policy failures, as are evaluation and builtin errors. A total decision with `default allow := false` turns unmatched input into an intentional denial while still failing closed when the policy contract is broken.
 
 These controls restrict inputs and evaluator capabilities, not resource consumption or process authority. OPA, the Starlark interpreter, authorizers, and handlers all run inside the host process. A host that does not trust its policy authors needs an external process or container boundary.
 
