@@ -19,3 +19,12 @@ A disposable clone validated the proposed invariant: a private bounded-container
 A disposable regression prebuilt a 262,144-element Starlark list outside the measurement window, then measured only `ConvertFinal` with a 1 KiB result budget. It failed on current code because conversion allocated `4,213,432` bytes against a 1 MiB ceiling and passed with the prototype. No product files were changed.
 
 Next: Deliver the exact code and test proposal, including the tuple/list/dictionary invariant and the unchanged process-isolation boundary.
+
+## 2026-08-24 13:07 — Compatibility with issue 23
+Issue #23 is open with no comments and the current scalar-only binding matrix remains unchanged. There is no semantic conflict: issue #13 hardens the final Starlark-to-JSON conversion after `main()` returns, while issue #23 widens the earlier Go-handler-output-to-Starlark conversion in `Plan.ConvertOutput`. A container child count above `MaxResultBytes` cannot possibly encode within that byte limit, so the issue #13 preflight does not reject any final composite value that issue #23 could validly return.
+
+The patches may overlap mechanically in `internal/binding/output.go` and `output_test.go`, but issue #23 can preserve `finalConverter` and its bounded-container check while replacing the separate scalar `ConvertOutput` path. The issue #13 allocation regression should remain direct against `ConvertFinal`; a public composite-capability test would include the earlier Go-to-Starlark allocation and stop isolating the defect.
+
+Issue #23 exposes a separate unresolved resource decision. Current code and documentation define `MaxValueDepth` and `MaxResultBytes` only for the final value; `Plan.ConvertOutput` receives neither limit. Blindly applying `MaxResultBytes` to intermediate capability outputs would undermine issue #23's core use case of filtering a large intermediate collection to a small digest. Its generic Go-to-Starlark walker therefore needs an explicitly designed, request-scoped intermediate materialization bound and must preflight slice/map lengths before allocating. That budget should remain separate from the final-result converter and from hard process isolation.
+
+Recommended order: land issue #13 independently, then implement issue #23 on top of the hardened final converter while resolving the intermediate-output budget explicitly.
