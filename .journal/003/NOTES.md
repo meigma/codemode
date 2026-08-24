@@ -50,3 +50,9 @@ Next: Rego adapter implementation and integration are complete. Keep session 003
 ## 2026-08-23 17:26 — Post-merge workflows checked
 Post-merge CI passed on `aac86bc`. GitHub Pages failed because repository Pages is not enabled for GitHub Actions, and Release Please failed because its GitHub App client ID secret is empty. Both failures predate the Rego change and failed identically on prior `master` commit `bf7ca67`; they are repository-configuration work outside this adapter implementation.
 Next: Adapter work remains complete. Surface the two pre-existing automation blockers separately; do not attribute them to PR #14.
+
+## 2026-08-23 17:30 — Close
+Session goal met. PR #14 was reviewed and squash-merged as `aac86bc`; local `master` matches `origin/master`, the implementation branch and worktree are removed, and the repository worktree is clean.
+The shipped adapter, exact contracts, verification, and deferred work are summarized in `SUMMARY.md`. `REGO_ADAPTER_ARCHITECTURE.md` and `REGO_ADAPTER_SPIKE.md` preserve the reviewed design and executable evidence.
+Open repository-configuration blockers remain unchanged: enable GitHub Pages for GitHub Actions and configure the Release Please GitHub App client ID secret. Both predate this session's implementation.
+Handoff: CodeMode now ships the optional `authz/rego` package on `master`; no Rego implementation work remains open.
