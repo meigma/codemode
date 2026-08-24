@@ -3,6 +3,9 @@ package binding
 import (
 	"math"
 	"math/big"
+	"runtime"
+	"runtime/debug"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -179,4 +182,81 @@ func TestConvertFinalBoundsSharedSubstructure(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrValueLimit)
 	assert.Contains(t, err.Error(), "node budget")
+}
+
+// TestConvertFinalRejectsOversizedContainersBeforeAllocation proves oversized
+// tuple, list, and dictionary sources are rejected before destination materialization.
+func TestConvertFinalRejectsOversizedContainersBeforeAllocation(t *testing.T) {
+	const (
+		sourceLen     = 128_000
+		maxDepth      = 4
+		maxBytes      = 1024
+		maxAllocBytes = 1 << 20
+	)
+
+	item := starlark.String("x")
+	tuple := make(starlark.Tuple, sourceLen)
+	listItems := make([]starlark.Value, sourceLen)
+	for index := range sourceLen {
+		tuple[index] = item
+		listItems[index] = item
+	}
+	list := starlark.NewList(listItems)
+
+	dictionary := starlark.NewDict(sourceLen)
+	for index := range sourceLen {
+		require.NoError(t, dictionary.SetKey(starlark.String(strconv.Itoa(index)), item))
+	}
+
+	tests := []struct {
+		// name identifies the oversized container kind.
+		name string
+
+		// value is the prebuilt source presented for final conversion.
+		value starlark.Value
+	}{
+		{name: "tuple", value: tuple},
+		{name: "list", value: list},
+		{name: "dictionary", value: dictionary},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			allocated, err := measureConvertFinalGrowth(t, tt.value, maxDepth, maxBytes)
+
+			require.Error(t, err)
+			require.ErrorIs(t, err, ErrValueLimit)
+			assert.Contains(t, err.Error(), "value exceeds byte-derived node budget")
+			assert.LessOrEqual(
+				t,
+				allocated,
+				uint64(maxAllocBytes),
+				"ConvertFinal allocated %d bytes converting an oversized %s; destination materialization must not scale with source length %d",
+				allocated,
+				tt.name,
+				sourceLen,
+			)
+			runtime.KeepAlive(tt.value)
+		})
+	}
+
+	runtime.KeepAlive(tests)
+}
+
+// measureConvertFinalGrowth reports heap bytes allocated by ConvertFinal.
+//
+// Automatic GC is disabled only for the measured call so TotalAlloc reflects
+// conversion work rather than concurrent collection, then the previous GC
+// percent is restored.
+func measureConvertFinalGrowth(t *testing.T, value starlark.Value, maxDepth int, maxBytes int) (uint64, error) {
+	t.Helper()
+
+	defer debug.SetGCPercent(debug.SetGCPercent(-1))
+
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	_, err := ConvertFinal(value, maxDepth, maxBytes)
+	runtime.ReadMemStats(&after)
+	runtime.KeepAlive(value)
+	return after.TotalAlloc - before.TotalAlloc, err
 }
