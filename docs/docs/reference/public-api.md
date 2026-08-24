@@ -57,7 +57,7 @@ The shipped input matrix is:
 | `string` | `str` | Yes | `omitempty` is rejected. |
 | `*int64` | `int` or `None` | No | `omitempty` is accepted but is not required for optional binding. |
 
-Inputs accept keyword arguments only. Positional, unknown, duplicate, missing required, incorrectly typed, and out-of-range arguments are rejected. An omitted optional integer and an explicit `None` both produce a nil pointer.
+Inputs accept keyword arguments only. Duplicate keyword syntax is rejected by the Starlark parser as `ErrInvalidProgram` before authorization or handler dispatch. Positional, unknown, missing required, incorrectly typed, and out-of-range arguments reach binding and map to `ErrInvalidArguments`. An omitted optional integer and an explicit `None` both produce a nil pointer.
 
 The shipped output matrix is:
 
@@ -113,12 +113,14 @@ The filter is deployment configuration, not a per-request policy. Use an `authz.
 | `MaxExecutionSteps uint64` | 1,000,000 | Starlark bytecode steps for one execution. |
 | `MaxExecutionTime time.Duration` | 5 seconds | Elapsed time for one execution. |
 | `MaxNativeCalls uint64` | 100 | Attempted native calls in one execution. |
-| `MaxValueDepth int` | 32 | Nesting depth of the converted final value. |
+| `MaxValueDepth int` | 32 | Inclusive nesting depth of the converted final value. |
 | `MaxResultBytes int` | 1,048,576 bytes (1 MiB) | JSON encoding of the final value. |
-| `MaxSearchQueryBytes int` | 256 bytes | Search query before normalization. |
+| `MaxSearchQueryBytes int` | 256 bytes | Raw search query before trimming or case normalization. Whitespace padding counts. |
 | `MaxSearchResults int` | 20 | Search results returned. |
 
 `Limits.Validate()` returns `ErrInvalidRegistration` if any field is zero or otherwise non-positive. Zero never means unlimited. Passing a zero-value `Limits` does not select defaults; use `DefaultLimits()` explicitly.
+
+`MaxValueDepth` is inclusive. A scalar or `None` is depth 1. Each tuple, list, or dictionary wrapper adds one. A scalar with limit 1 succeeds, a one-level container with limit 2 succeeds, and one more wrapper with limit 2 fails.
 
 Execution limits constrain an in-process interpreter. `MaxExecutionTime` cancels Starlark evaluation, but it cannot forcibly interrupt blocking Go authorizers or handlers. See [Security model](../explanation/security-model.md#cancellation-and-host-code).
 
@@ -132,7 +134,7 @@ Execution limits constrain an in-process interpreter. `MaxExecutionTime` cancels
 Search(query string) ([]SearchResult, error)
 ```
 
-`Search` first enforces `MaxSearchQueryBytes`, then trims surrounding whitespace and normalizes case. It performs substring matching against enabled capability names and summaries. Results are sorted by exact capability name and capped by `MaxSearchResults`. A blank normalized query returns an empty, non-nil result.
+`Search` first enforces `MaxSearchQueryBytes` on the raw query, then trims surrounding whitespace and normalizes case. Whitespace padding counts toward the byte budget. It performs substring matching against enabled capability names and summaries. Results are sorted by exact capability name and capped by `MaxSearchResults`. A blank normalized query returns an empty, non-nil result.
 
 `SearchResult` contains these JSON fields:
 
@@ -150,7 +152,7 @@ An oversized query returns `ErrResourceLimit`. An unexpected server-state failur
 Describe(name CapabilityName) (Description, error)
 ```
 
-`Describe` performs an exact, case-sensitive lookup of an enabled dotted name. An unavailable, unknown, or disabled name returns `ErrNotFound`.
+`Describe` performs an exact lookup of an enabled dotted name. It neither trims nor case-folds. Clients must pass the exact `name` returned by `Search`. An unavailable, unknown, or disabled name returns `ErrNotFound`.
 
 `Description` contains:
 
@@ -171,7 +173,7 @@ Each field shape has `name` (string), `type` (string), and `required` (boolean).
 Execute(ctx context.Context, subject authz.Subject, program Program) (any, error)
 ```
 
-`Program` is Starlark source. The context must be non-nil and the subject ID must be non-empty.
+`Program` is Starlark source. The context must be non-nil and the subject ID must be non-empty. A nil context is a caller-contract violation and is currently classified as `ErrInternal`.
 
 Every call creates a fresh interpreter and fresh budgets. Module loading is disabled. The enabled capability names form the predeclared namespace. Source loading must define a function named `main` that accepts no positional parameters, keyword-only parameters, variadic positional parameters, or variadic keyword parameters. Native capability calls are accepted only while `main` is running.
 
@@ -195,13 +197,13 @@ Use `errors.Is` to inspect these exported sentinel errors. Client adapters can r
 | `ErrInvalidRegistration` | Invalid capability metadata or types, builder use, limits, static filters, or server construction. |
 | `ErrUnauthenticated` | Missing trusted subject. |
 | `ErrNotFound` | Unknown, unavailable, or disabled capability. |
-| `ErrInvalidProgram` | Invalid source, entry point, runtime behavior, or unsupported final value. |
-| `ErrInvalidArguments` | Native arguments rejected before authorization. |
+| `ErrInvalidProgram` | Invalid source, including duplicate keyword syntax, invalid entry point, runtime behavior, or unsupported final value. |
+| `ErrInvalidArguments` | Native arguments rejected at binding before authorization: positional, unknown, missing required, incorrectly typed, or out-of-range. |
 | `ErrPermissionDenied` | Authorizer error that wraps `authz.ErrDenied`. |
 | `ErrPolicyFailure` | Other authorizer error or recovered authorizer panic. |
 | `ErrResourceLimit` | Source, step, time, native-call, conversion, result, or search budget exceeded. |
 | `ErrCapabilityFailure` | Handler error or invalid handler output conversion. |
-| `ErrInternal` | Unexpected framework state, recovered handler panic, or other recovered internal failure. |
+| `ErrInternal` | Unexpected framework state, recovered handler panic, other recovered internal failure, or a nil `Execute` context. |
 
 Request cancellation returns `context.Canceled`. A deadline is classified as `ErrResourceLimit` and also wraps `context.DeadlineExceeded` at the root API.
 

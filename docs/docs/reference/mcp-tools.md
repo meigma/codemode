@@ -34,7 +34,7 @@ Search the names and summaries of enabled capabilities.
 }
 ```
 
-The raw query is limited by `MaxSearchQueryBytes`. CodeMode then trims surrounding whitespace and normalizes case. Matching is a substring search over capability names and summaries. A blank normalized query returns an empty array.
+The raw query is limited by `MaxSearchQueryBytes` before trimming or case normalization. Whitespace padding counts. CodeMode then trims surrounding whitespace and normalizes case. Matching is a substring search over capability names and summaries. A blank normalized query returns an empty array.
 
 Results are sorted by exact dotted name and limited by `MaxSearchResults`. Static filtering happens before search, so disabled capabilities never appear.
 
@@ -66,7 +66,7 @@ The structured content itself is the array described above, not an object that w
 
 ## `describe_api`
 
-Describe one enabled capability by its exact dotted name.
+Describe one enabled capability by the exact dotted `name` returned by `search_api`.
 
 ### Input
 
@@ -83,7 +83,7 @@ Describe one enabled capability by its exact dotted name.
 }
 ```
 
-Name lookup is exact and case-sensitive. It does not perform search, case normalization, prefix expansion, or fuzzy matching. An unknown or disabled name returns `capability not found`.
+Name lookup is exact. It neither trims nor case-folds, and it does not perform search, prefix expansion, or fuzzy matching. Clients must pass the exact `name` returned by `search_api`. An unknown or disabled name returns `capability not found`.
 
 For the site-wide sample, the requested name is `records.lookup`. Its stable ID, `records.entry.lookup`, is intentionally not part of this tool input or output.
 
@@ -164,7 +164,7 @@ Execute one bounded Starlark program against the enabled capability namespace.
 
 The source must define `main` as a function with no parameters. Source loading cannot call native capabilities; calls are accepted only while `main` runs. Module loading is disabled.
 
-Capabilities are available by dotted name. The sample native call is `records.lookup(key="alpha", limit=2)`. Native calls accept keyword arguments only. For the sample, `key` is required and `limit` can be omitted, `None`, or an integer in the signed 64-bit range.
+Capabilities are available by dotted name. The sample native call is `records.lookup(key="alpha", limit=2)`. Native calls accept keyword arguments only. Duplicate keyword syntax is rejected by the Starlark parser as `invalid program` before authorization or handler dispatch. Positional, unknown, missing, incorrectly typed, and out-of-range arguments reach binding and map to `invalid capability arguments`. For the sample, `key` is required and `limit` can be omitted, `None`, or an integer in the signed 64-bit range.
 
 Each `execute` call gets a fresh interpreter and fresh source, step, elapsed-time, native-call, conversion-depth, and result-size budgets. There is no interpreter state shared between calls.
 
@@ -191,7 +191,7 @@ The `result` property is the final converted return value from `main`. Its runti
 - an array containing supported values
 - an object with string keys and supported values
 
-Nested values are subject to `MaxValueDepth`, and the encoded `result` value is subject to `MaxResultBytes`. Starlark tuples and lists become arrays. `None` becomes `null`. Dictionaries must have string keys.
+`MaxValueDepth` is inclusive. A scalar or `None` is depth 1. Each tuple, list, or dictionary wrapper adds one. A scalar with limit 1 succeeds, a one-level container with limit 2 succeeds, and one more wrapper with limit 2 fails. Nested values are subject to that limit, and the encoded `result` value is subject to `MaxResultBytes`. Starlark tuples and lists become arrays. `None` becomes `null`. Dictionaries must have string keys.
 
 Only the final converted value crosses the execution boundary. `print` output is discarded. Globals, source-loading values, intermediate expressions, and native results that are not included in the final return value are not added to structured output. The successful envelope contains only `result`.
 
@@ -203,8 +203,8 @@ After a well-formed call reaches the adapter, a resolver or service failure beco
 | --- | --- |
 | `unauthenticated` | The resolver failed or returned an empty subject ID. |
 | `capability not found` | `describe_api` did not find an enabled exact name. |
-| `invalid program` | Source, entry point, runtime behavior, or final-value conversion was invalid. |
-| `invalid capability arguments` | A native call failed exact argument binding. |
+| `invalid program` | Source, including duplicate keyword syntax, entry point, runtime behavior, or final-value conversion was invalid. |
+| `invalid capability arguments` | A native call failed binding: positional, unknown, missing, incorrectly typed, or out-of-range arguments. |
 | `permission denied` | Policy returned a recognized denial. |
 | `authorization policy failure` | Policy evaluation failed. |
 | `resource limit exceeded` | A discovery, execution, or conversion budget was exceeded. |

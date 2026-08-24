@@ -121,13 +121,26 @@ func TestConvertFinalRejectsUnsupportedAndOverflowingValues(t *testing.T) {
 	}
 }
 
-// TestConvertFinalEnforcesDepthAndEncodedSize proves both conversion budgets are positive hard limits.
+// TestConvertFinalEnforcesDepthAndEncodedSize proves inclusive nesting depth and both conversion budgets are positive hard limits.
 func TestConvertFinalEnforcesDepthAndEncodedSize(t *testing.T) {
+	converted, err := ConvertFinal(starlark.String("value"), 1, 1024)
+	require.NoError(t, err)
+	assert.Equal(t, "value", converted)
+
+	converted, err = ConvertFinal(starlark.None, 1, 1024)
+	require.NoError(t, err)
+	assert.Nil(t, converted)
+
+	shallow := starlark.NewList([]starlark.Value{starlark.String("value")})
+	converted, err = ConvertFinal(shallow, 2, 1024)
+	require.NoError(t, err)
+	assert.Equal(t, []any{"value"}, converted)
+
 	deep := starlark.NewList([]starlark.Value{
 		starlark.NewList([]starlark.Value{starlark.String("value")}),
 	})
 
-	_, err := ConvertFinal(deep, 2, 1024)
+	_, err = ConvertFinal(deep, 2, 1024)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrValueLimit)
 	assert.Contains(t, err.Error(), "depth")
