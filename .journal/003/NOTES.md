@@ -41,3 +41,8 @@ Next: Monitor PR checks and review, fix any findings, then squash-merge and clea
 ## 2026-08-23 17:18 — PR checks passed
 PR #14 is mergeable. CI, GitHub Pages, and Kusari Inspector passed; the deployment job correctly skipped for the pull request. The branch and implementation worktree are clean, and the disposable external consumer module is absent.
 Next: Wait for developer review before squash-merging PR #14.
+
+## 2026-08-23 17:25 — Rego adapter merged
+The developer approved PR #14. Squash-merged it on GitHub as `aac86bc` (`feat(authz): add Rego authorizer adapter (#14)`), fast-forwarded local `master` to the same commit, and removed the integrated `feat/rego-authorizer` branch and worktree with Worktrunk.
+The `master` worktree is clean, matches `origin/master`, and tracks no `.journal` files. Only `master` and the personal journal worktree remain.
+Next: Rego adapter implementation and integration are complete. Keep session 003 open until the developer requests session close.
