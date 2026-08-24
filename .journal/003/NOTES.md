@@ -37,3 +37,7 @@ Added focused real-OPA tests and documentation in the Rego how-to, public API re
 Verification passed: adapter tests, adapter race tests, the complete `moon run root:check` gate including lint, formatting, build, full race suite, actual MCP smoke, and strict docs build. An external consumer smoke built through a local module replacement; the allowed call returned `alpha`, the denied call returned `ErrPermissionDenied`, and the handler count remained one.
 Committed as `d4a2da4` (`feat(authz): add Rego authorizer adapter`), pushed the branch, and opened PR #14: https://github.com/meigma/codemode/pull/14.
 Next: Monitor PR checks and review, fix any findings, then squash-merge and clean the implementation worktree when approved.
+
+## 2026-08-23 17:18 — PR checks passed
+PR #14 is mergeable. CI, GitHub Pages, and Kusari Inspector passed; the deployment job correctly skipped for the pull request. The branch and implementation worktree are clean, and the disposable external consumer module is absent.
+Next: Wait for developer review before squash-merging PR #14.
