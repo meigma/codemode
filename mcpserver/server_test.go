@@ -63,7 +63,8 @@ func TestNewRejectsMissingDependencies(t *testing.T) {
 	}
 }
 
-// TestNewRegistersExactlyThreeTools proves the adapter exposes only the three official tools.
+// TestNewRegistersExactlyThreeTools proves the adapter exposes only the three official tools
+// and lists authoring guidance on each description.
 func TestNewRegistersExactlyThreeTools(t *testing.T) {
 	session := newTestSession(t, mocks.NewMockService(t), mocks.NewMockInvocationResolver(t))
 
@@ -71,6 +72,41 @@ func TestNewRegistersExactlyThreeTools(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, listed.Tools, 3)
 	assert.Equal(t, []string{"describe_api", "execute", "search_api"}, toolNames(listed.Tools))
+
+	tests := []struct {
+		// name is the official listed tool.
+		name string
+
+		// cues are required authoring phrases on the listed description.
+		cues []string
+	}{
+		{
+			name: "search_api",
+			cues: []string{"short literal substring", "shorter term"},
+		},
+		{
+			name: "describe_api",
+			cues: []string{"exact name returned by search_api", "without whitespace or case changes"},
+		},
+		{
+			name: "execute",
+			cues: []string{
+				"def main():",
+				"zero arguments",
+				"inside main",
+				"confirmed through search_api and describe_api",
+				"final result",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			description := listedDescription(t, listed.Tools, tt.name)
+			for _, cue := range tt.cues {
+				assert.Contains(t, description, cue)
+			}
+		})
+	}
 }
 
 // TestSDKRejectsMalformedArgumentsBeforeResolution proves schema validation owns malformed tool input.
@@ -522,6 +558,19 @@ func toolNames(tools []*mcp.Tool) []string {
 		names[index] = tool.Name
 	}
 	return names
+}
+
+// listedDescription returns the tools/list description for name.
+func listedDescription(t *testing.T, tools []*mcp.Tool, name string) string {
+	t.Helper()
+
+	for _, tool := range tools {
+		if tool.Name == name {
+			return tool.Description
+		}
+	}
+	require.FailNow(t, "expected listed tool "+name)
+	return ""
 }
 
 // requireToolValidationError asserts the SDK rejected malformed typed arguments.

@@ -70,15 +70,15 @@ func New(service Service, resolver InvocationResolver) (*mcp.Server, error) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "codemode", Version: "1"}, nil)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "search_api",
-		Description: "Search enabled capabilities by a bounded query string.",
+		Description: "Search enabled names and summaries with a short literal substring. Retry an empty result with a shorter term.",
 	}, bound.search)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "describe_api",
-		Description: "Describe one enabled capability by its exact name.",
+		Description: "Describe one enabled capability by the exact name returned by search_api, without whitespace or case changes.",
 	}, bound.describe)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "execute",
-		Description: "Execute one bounded Starlark program and return only its final result.",
+		Description: "Execute one Starlark program that defines def main(): with zero arguments, calls only names confirmed through search_api and describe_api inside main, and returns main's final result.",
 	}, bound.execute)
 	return server, nil
 }
