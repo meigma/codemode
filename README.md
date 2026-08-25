@@ -25,6 +25,10 @@ The repository also contains shorter, compile-checked examples:
 
 `authz.AllowAll()` is deliberate in the simple examples and permits every validated invocation. Production hosts normally supply an authorization policy.
 
+The final host binary must call `codemode.ServeWorkerAndExit()` as the first
+statement of `main`, before flag parsing or any other setup. Test binaries that
+call `Builder.Build` must do the same from `TestMain` before `m.Run`.
+
 ## Documentation
 
 - [Documentation home](docs/docs/index.md)
@@ -36,11 +40,24 @@ The repository also contains shorter, compile-checked examples:
 
 ## Security boundary
 
-Each `execute` request gets a fresh bounded interpreter. The submitted program must define a zero-argument `main()`, and only its final converted value crosses the execution boundary. Prints, globals, and intermediate values do not.
+Each `execute` request runs Starlark in a fresh process created by re-executing
+the host binary. The submitted program must define a zero-argument `main()`,
+and only its final converted value crosses the execution boundary. Prints,
+globals, and intermediate values do not.
 
-Capabilities are bound and canonicalized before authorization, and authorization completes before handler dispatch. Trusted subjects come from typed, host-owned Go context through `mcpserver.InvocationResolver`; tool arguments, Starlark source, and MCP `_meta` are not trusted identity or credential sources.
+Capabilities are bound and canonicalized in the parent before authorization,
+and authorization completes before handler dispatch. Trusted subjects come
+from typed, host-owned Go context through `mcpserver.InvocationResolver`; tool
+arguments, Starlark source, and MCP `_meta` are not trusted identity or
+credential sources.
 
-CodeMode's in-process limits are not a hard tenant or heap boundary. Go authorizers and handlers must honor context cancellation because CodeMode cannot forcibly interrupt blocking Go code. See the [security model](docs/docs/explanation/security-model.md) and [SECURITY.md](SECURITY.md) for the full boundary and vulnerability-reporting process.
+The worker process lets CodeMode kill Starlark when an execution deadline or
+request cancellation occurs. Authorizers and handlers remain ordinary Go code
+in the host process; CodeMode cannot forcibly stop them after dispatch. Worker
+processes also have no operating-system CPU or memory quota. See the
+[security model](docs/docs/explanation/security-model.md) and
+[SECURITY.md](SECURITY.md) for the full boundary and
+vulnerability-reporting process.
 
 ## Contributing
 

@@ -5,7 +5,7 @@ description: Register a typed Go capability and call it through the official MCP
 
 # Build your first CodeMode server
 
-This tutorial builds an in-process MCP server with one typed capability. You will connect an official MCP client over the SDK's in-memory transport and call `search_api`, `describe_api`, and `execute`.
+This tutorial builds an MCP server with one typed capability. You will connect an official MCP client over the SDK's in-memory transport and call `search_api`, `describe_api`, and `execute`.
 
 ## Create a module
 
@@ -172,8 +172,9 @@ func run(ctx context.Context) error {
 	})
 }
 
-// main runs the first-server tutorial.
+// main serves re-executed workers before starting the ordinary host.
 func main() {
+	codemode.ServeWorkerAndExit()
 	if err := run(context.Background()); err != nil {
 		log.Fatal(err)
 	}
@@ -199,8 +200,10 @@ The program prints structured results for all three tools. The final line contai
 {"result":{"count":2,"key":"alpha"}}
 ```
 
-`execute` first binds and canonicalizes the keyword arguments, then authorizes the native call, and then dispatches `lookupRecords`. Each `execute` call gets a fresh bounded interpreter. Only the final converted value returned by a zero-argument `main()` crosses the execution boundary; printed text, globals, and intermediate values do not.
+`execute` first binds and canonicalizes the keyword arguments in the parent, then authorizes the native call, and then dispatches `lookupRecords` in the parent. Each `execute` call runs a fresh bounded interpreter in a re-executed worker process. Only the final converted value returned by a zero-argument `main()` crosses the worker boundary; printed text, globals, and intermediate values do not.
 
-The in-memory transport keeps this tutorial in one process. In an application, the host owns authentication, transport selection and startup, listeners, request cancellation, and shutdown. CodeMode's in-process limits are not a hard tenant or heap boundary. A Go handler that can block must honor its context because CodeMode cannot forcibly interrupt it.
+`ServeWorkerAndExit` must be the first statement in `main`, before flag parsing, credential loading, client construction, or other application setup. It returns immediately in the ordinary host. In a re-executed worker, it serves one private probe or execution request and terminates the process.
+
+The in-memory MCP transport keeps the client and server in one parent process; Starlark still runs in fresh worker processes. In an application, the host owns authentication, transport selection and startup, listeners, request cancellation, and shutdown. A Go authorizer or handler that can block must honor its context. CodeMode can kill the Starlark worker, but it cannot forcibly stop Go code after parent dispatch.
 
 For shorter compile-checked forms of this setup, see the [typed registration example](https://github.com/meigma/codemode/blob/master/example_test.go) and [official transport example](https://github.com/meigma/codemode/blob/master/mcpserver/example_test.go).

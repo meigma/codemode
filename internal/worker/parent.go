@@ -113,7 +113,7 @@ type Dispatch func(context.Context, authz.Subject, string, map[string]any) (any,
 // ErrProtocol lets the authoritative root dispatcher report an impossible child ID or re-bind mismatch.
 var ErrProtocol = errors.New("worker protocol violation")
 
-// errProbeWorkerMode is the worker-mode probe refusal Increment 5 wraps as invalid registration.
+// errProbeWorkerMode rejects recursive server construction from a worker child.
 //
 //nolint:staticcheck // ST1005: Build names the exported Builder.Build method in the mandated diagnostic.
 var errProbeWorkerMode = errors.New(

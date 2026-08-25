@@ -199,9 +199,9 @@ The `result` property is the final converted return value from `main`. Its runti
 - an array containing supported values
 - an object with string keys and supported values
 
-`MaxValueDepth` is inclusive. A scalar or `None` is depth 1. Each tuple, list, or dictionary wrapper adds one. A scalar with limit 1 succeeds, a one-level container with limit 2 succeeds, and one more wrapper with limit 2 fails. Nested values are subject to that limit, and the encoded `result` value is subject to `MaxResultBytes`. Starlark tuples and lists become arrays. `None` becomes `null`. Dictionaries must have string keys.
+`MaxValueDepth` is inclusive. A scalar or `None` is depth 1. Each tuple, list, or dictionary wrapper adds one. A scalar with limit 1 succeeds, a one-level container with limit 2 succeeds, and one more wrapper with limit 2 fails. Native arguments, native results, and the final value are independently subject to `MaxValueDepth` and `MaxValueBytes`. Starlark tuples and lists become arrays. `None` becomes `null`. Dictionaries must have string keys.
 
-Only the final converted value crosses the execution boundary. `print` output is discarded. Globals, source-loading values, intermediate expressions, and native results that are not included in the final return value are not added to structured output. The successful envelope contains only `result`.
+Only the final converted value crosses from the worker into the successful MCP result. `print` output is discarded. Globals, source-loading values, intermediate expressions, and native results that are not included in the final return value are not added to structured output. The successful envelope contains only `result`.
 
 ## Authoring and recovery
 

@@ -16,6 +16,7 @@ import (
 	"github.com/meigma/codemode/internal/binding"
 	"github.com/meigma/codemode/internal/catalog"
 	"github.com/meigma/codemode/internal/execution"
+	"github.com/meigma/codemode/internal/worker"
 )
 
 // dispatchInput is the representative dispatcher test input.
@@ -102,7 +103,7 @@ func TestDispatchTranslatesEveryBindValueFailureInternally(t *testing.T) {
 				tt.arguments,
 			)
 
-			require.ErrorIs(t, err, execution.ErrInternal)
+			require.ErrorIs(t, err, worker.ErrProtocol)
 			require.NotErrorIs(t, err, execution.ErrInvalidArguments)
 			assert.Zero(t, handlerCalls.Load())
 		})
@@ -125,7 +126,7 @@ func TestDispatchRejectsUnknownIDsBeforeAuthorization(t *testing.T) {
 		map[string]any{"value": "alpha"},
 	)
 
-	require.ErrorIs(t, err, execution.ErrInternal)
+	require.ErrorIs(t, err, worker.ErrProtocol)
 	assert.Zero(t, handlerCalls.Load())
 }
 
@@ -358,6 +359,93 @@ func TestDispatchCancellationAfterAllowPreventsInvoke(t *testing.T) {
 	}
 }
 
+// TestDispatchClassifiesParentOutputLimits proves converted handler values are bounded before transport.
+func TestDispatchClassifiesParentOutputLimits(t *testing.T) {
+	tests := []struct {
+		// name identifies the exhausted parent output budget.
+		name string
+
+		// configure makes one output budget reject the representative result.
+		configure func(*dispatcher)
+	}{
+		{
+			name: "depth",
+			configure: func(dispatch *dispatcher) {
+				dispatch.maxValueDepth = 1
+			},
+		},
+		{
+			name: "materialization",
+			configure: func(dispatch *dispatcher) {
+				dispatch.maxValueBytes = 1
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			authorizer := authzmocks.NewMockAuthorizer(t)
+			authorizer.EXPECT().Authorize(mock.Anything, mock.Anything).Return(nil).Once()
+			subject := newDispatchSubject(
+				t,
+				authorizer,
+				func(context.Context, authz.Subject, any) (any, error) {
+					return dispatchOutput{Value: "alpha"}, nil
+				},
+			)
+			tt.configure(subject.dispatch)
+
+			_, err := subject.dispatch.dispatch(
+				t.Context(),
+				authz.Subject{ID: "subject-1"},
+				"cap.lookup",
+				map[string]any{"value": "alpha"},
+			)
+
+			require.ErrorIs(t, err, execution.ErrResourceLimit)
+		})
+	}
+}
+
+// TestDispatchCancellationDuringHandlerReturnsPromptly proves late trusted Go work cannot hold dispatch.
+func TestDispatchCancellationDuringHandlerReturnsPromptly(t *testing.T) {
+	authorizer := authzmocks.NewMockAuthorizer(t)
+	authorizer.EXPECT().Authorize(mock.Anything, mock.Anything).Return(nil).Once()
+	handlerStarted := make(chan struct{})
+	releaseHandler := make(chan struct{})
+	subject := newDispatchSubject(
+		t,
+		authorizer,
+		func(context.Context, authz.Subject, any) (any, error) {
+			close(handlerStarted)
+			<-releaseHandler
+			return dispatchOutput{Value: "late"}, nil
+		},
+	)
+	ctx, cancel := context.WithCancel(t.Context())
+	result := make(chan dispatchOutcome, 1)
+	go func() {
+		value, err := subject.dispatch.dispatch(
+			ctx,
+			authz.Subject{ID: "subject-1"},
+			"cap.lookup",
+			map[string]any{"value": "alpha"},
+		)
+		result <- dispatchOutcome{value: value, err: err}
+	}()
+
+	<-handlerStarted
+	cancel()
+	select {
+	case outcome := <-result:
+		assert.Nil(t, outcome.value)
+		require.ErrorIs(t, outcome.err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("dispatch waited for a canceled handler")
+	}
+	close(releaseHandler)
+}
+
 // dispatchSubject carries one catalog-backed dispatcher under test.
 type dispatchSubject struct {
 	// dispatch is the unexported native-call owner.
@@ -381,5 +469,7 @@ func newDispatchSubject(t *testing.T, authorizer authz.Authorizer, invoke catalo
 		MaxSearchResults:    20,
 	})
 	require.NoError(t, err)
-	return &dispatchSubject{dispatch: newDispatcher(capabilityCatalog, authorizer)}
+	return &dispatchSubject{
+		dispatch: newDispatcher(capabilityCatalog, authorizer, 16, 64*1024),
+	}
 }

@@ -1,11 +1,11 @@
 ---
 title: Security model
-description: Trust boundaries, authorization order, cancellation limits, and in-process containment in CodeMode.
+description: Trust boundaries, authorization order, cancellation, and worker-process containment in CodeMode.
 ---
 
 # Security model
 
-CodeMode separates client-controlled Starlark from host-controlled identity, policy, and Go handlers. The separation depends on the host establishing a trusted request context and on authorizers and handlers following their contracts. CodeMode does not authenticate clients or isolate tenants in separate processes.
+CodeMode separates client-controlled Starlark from host-controlled identity, policy, and Go handlers. The separation depends on the host establishing a trusted request context, installing the worker entry point, and ensuring authorizers and handlers follow their contracts. CodeMode does not authenticate clients or provide operating-system tenant quotas.
 
 ## The host establishes identity
 
@@ -56,7 +56,7 @@ CodeMode installs no schema set and no schema resolver. Metadata `schema["https:
 
 The configured decision is one direct, ground `data` reference. Construction validates that reference syntax and prepares the policy; it cannot prove that the decision is defined and Boolean for every future input. A ground decision is either undefined or yields one value. That value must be Boolean. Boolean `true` allows a call. Boolean `false` is a recognized denial. Undefined and non-Boolean decisions are policy failures, as are evaluation and builtin errors. A total decision with `default allow := false` turns unmatched input into an intentional denial while still failing closed when the policy contract is broken.
 
-These controls restrict inputs and evaluator capabilities, not resource consumption or process authority. OPA, the Starlark interpreter, authorizers, and handlers all run inside the host process. A host that does not trust its policy authors needs an external process or container boundary.
+These controls restrict policy inputs and evaluator capabilities, not resource consumption or process authority. OPA, authorizers, and handlers run inside the host process; moving Starlark to a worker does not isolate Rego policy. A host that does not trust its policy authors needs an external process or container boundary for policy evaluation.
 
 See [Use Rego for authorization](../how-to/use-rego-authorization.md) for configuration and the [`authz/rego` API reference](../reference/public-api.md#authzrego) for the exact input and result contracts.
 
@@ -82,19 +82,55 @@ An allowed or denied call proves only the result for that subject, capability, a
 
 ## Execution state does not cross calls
 
-Every `Server.Execute` call creates a fresh bounded Starlark interpreter. Module loading is disabled, and the only predeclared application functions are the enabled capability namespace. Native calls are rejected while top-level source is loading and are accepted only while the required zero-argument `main()` function runs.
+Every `Server.Execute` call starts a fresh process by re-executing the host
+binary. The child receives only the immutable enabled-capability manifest,
+positive execution limits, and one submitted program through CodeMode's private
+protocol. It constructs a fresh Starlark interpreter. Module loading is
+disabled, and the only predeclared application functions are the enabled
+capability namespace. Native calls are rejected while top-level source is
+loading and are accepted only while the required zero-argument `main()`
+function runs.
 
-After `main` returns, CodeMode converts only its final value to JSON-shaped data under the depth and encoded-size limits. Printed text is discarded. Globals, source-loading values, intermediate expressions, and unrelated native results do not cross the boundary. No Starlark globals or mutable interpreter state carry into the next execute call.
+After `main` returns, the worker converts only its final value to
+type-preserving wire data under the depth and encoded-size limits. Printed text
+is discarded. Globals, source-loading values, intermediate expressions, and
+unrelated native results do not cross the boundary. No Starlark globals or
+mutable interpreter state carry into the next execute call.
 
-These rules narrow the model-visible result and stop one request from intentionally using interpreter globals as storage for another. They do not make registered Go code untrusted or confined: a capability handler still runs inside the host process with the privileges the host gave that process.
+Capability handlers do not run in the worker. A native call crosses the private
+protocol, is rebound to the exact registered input type in the parent, is
+authorized there, and is then dispatched to the parent handler. The validated
+native result crosses back to the worker so Starlark can continue.
+
+These rules isolate interpreter state and make Starlark execution killable.
+They do not confine registered Go code: authorizers, the optional Rego
+evaluator, and handlers run in the host process with the privileges the host
+gave that process.
 
 ## Cancellation and host code
 
-CodeMode derives an elapsed deadline from `MaxExecutionTime` and the request context. It watches that context and cancels Starlark evaluation when the request is canceled or the elapsed budget expires. The interpreter also enforces source, bytecode-step, attempted-native-call, conversion-depth, and encoded-result limits.
+CodeMode derives one execution context from `MaxExecutionTime` and the request
+context. The elapsed budget starts before waiting for a worker slot and covers
+process startup, protocol exchange, Starlark execution, parent authorization
+and dispatch, and worker cleanup. The interpreter separately enforces source,
+bytecode-step, attempted-native-call, crossing-value depth, and crossing-value
+size limits.
 
-Cancellation is cooperative once execution enters Go code. CodeMode calls authorizers and handlers synchronously and cannot forcibly interrupt them. A blocking authorizer or handler can therefore keep the `Execute` call blocked after the Starlark deadline or request cancellation.
+When the execution context ends, the parent closes the worker pipes, kills the
+worker if necessary, and reaps it exactly once. This hard-preempts Starlark,
+including a monolithic built-in that does not observe interpreter cancellation.
 
-The Rego adapter passes the context into OPA evaluation and checks cancellation both before and after that call. The second check preserves `context.Canceled` or `context.DeadlineExceeded` when cancellation races with an OPA error. Cancellation remains cooperative; it does not impose a hard CPU limit or process boundary.
+Cancellation remains cooperative after a native call reaches parent Go code.
+Parent dispatch runs asynchronously so `Server.Execute` can return after
+canceling and reaping its worker, but CodeMode cannot forcibly stop an
+authorizer or handler goroutine or undo its side effects. A non-cooperative
+authorizer or handler may continue consuming host resources after `Execute`
+returns.
+
+The Rego adapter passes the context into OPA evaluation and checks cancellation
+both before and after that call. The second check preserves `context.Canceled`
+or `context.DeadlineExceeded` when cancellation races with an OPA error.
+Cancellation does not forcibly interrupt arbitrary parent Go code.
 
 Authorizers and handlers must:
 
@@ -104,12 +140,31 @@ Authorizers and handlers must:
 - avoid exposing credentials or trusted diagnostics in returned values or client-visible errors
 - be safe for concurrent calls when the immutable server is shared
 
-CodeMode recovers panics at selected boundaries and returns a coarse classification. Panic recovery does not replace normal error handling, cancellation, or resource control in host code.
+CodeMode recovers panics at selected boundaries and returns a coarse
+classification. Panic recovery does not replace normal error handling,
+cancellation, or resource control in host code.
 
-## In-process limits are not tenant isolation
+## Worker processes are not tenant isolation
 
-CodeMode's limits bound specific interpreter operations and final-value conversion. They do not establish a hard CPU or heap limit, a process boundary, or a security boundary between mutually untrusted tenants. The Starlark interpreter, embedded OPA evaluator, authorizers, and handlers share the host process and its memory, CPU, file descriptors, credentials, and operating-system privileges.
+The worker boundary separates Starlark interpreter state from the parent and
+permits process kill and reap. It does not establish a complete security
+boundary between mutually untrusted tenants. A worker runs as the host
+operating-system user and re-executes the host binary. CodeMode supplies an
+environment containing only its private worker marker and passes no extra file
+descriptors, but it provides no operating-system CPU or memory quota. Package
+initialization and any setup placed before the worker entry point still run in
+the child with that user's filesystem and network authority.
 
-A host that needs hard tenant, CPU, or heap containment must supply it outside CodeMode, for example with separate processes or containers and operating-system resource controls. CodeMode's in-process budgets and Rego capability restrictions remain useful inside that boundary, but they are not a substitute for it.
+The restricted Starlark environment exposes no file, network, environment, or
+process built-ins. Native access is limited to the enabled capability manifest
+and every call returns to the parent authorization boundary. Those language
+restrictions reduce reachability; they do not replace operating-system
+containment.
+
+A host that needs a hard tenant, CPU, heap, filesystem, credential, or network
+boundary must add container or workload isolation and operating-system resource
+controls. Keep credentials and other parent-only setup after
+`ServeWorkerAndExit` so worker processes do not initialize resources they do
+not need.
 
 See [Public API reference](../reference/public-api.md) for the Go contracts and [MCP tool reference](../reference/mcp-tools.md) for the exact client-visible surface.

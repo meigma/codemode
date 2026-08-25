@@ -1,13 +1,11 @@
 package worker
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
 	"math"
 	"os"
-	"time"
 
 	"github.com/meigma/codemode/internal/execution"
 )
@@ -23,7 +21,7 @@ var errNativeAbort = errors.New("native abort")
 // must not become a final_error frame.
 var errChildService = errors.New("worker service failure")
 
-// IsWorker reports the private marker mode for root facades in Increment 5.
+// IsWorker reports whether the current process carries the private worker marker.
 func IsWorker() bool {
 	return workerMode()
 }
@@ -104,7 +102,6 @@ func serveExec(r io.Reader, w io.Writer, frame execFrame) error {
 		return err
 	}
 	result, err := engine.Execute(
-		context.Background(),
 		frame.Source,
 		nativeForwarder(conn),
 		executionLimits(frame.Limits),
@@ -133,10 +130,9 @@ func executionLimits(limits childLimits) execution.Limits {
 	return execution.Limits{
 		MaxSourceBytes:    limits.MaxSourceBytes,
 		MaxExecutionSteps: limits.MaxExecutionSteps,
-		MaxExecutionTime:  time.Duration(math.MaxInt64),
 		MaxNativeCalls:    limits.MaxNativeCalls,
 		MaxValueDepth:     limits.MaxValueDepth,
-		MaxResultBytes:    limits.MaxValueBytes,
+		MaxValueBytes:     limits.MaxValueBytes,
 	}
 }
 

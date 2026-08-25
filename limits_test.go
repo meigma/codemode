@@ -2,6 +2,7 @@ package codemode_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -9,9 +10,20 @@ import (
 	"github.com/meigma/codemode"
 )
 
-// TestDefaultLimitsAreValid proves every default budget is explicitly positive.
+// TestDefaultLimitsAreValid proves every exact default budget is positive.
 func TestDefaultLimitsAreValid(t *testing.T) {
-	require.NoError(t, codemode.DefaultLimits().Validate())
+	limits := codemode.DefaultLimits()
+
+	require.NoError(t, limits.Validate())
+	assert.Equal(t, 65_536, limits.MaxSourceBytes)
+	assert.Equal(t, uint64(1_000_000), limits.MaxExecutionSteps)
+	assert.Equal(t, 5*time.Second, limits.MaxExecutionTime)
+	assert.Equal(t, uint64(100), limits.MaxNativeCalls)
+	assert.Equal(t, 32, limits.MaxValueDepth)
+	assert.Equal(t, 1_048_576, limits.MaxValueBytes)
+	assert.Equal(t, 256, limits.MaxSearchQueryBytes)
+	assert.Equal(t, 20, limits.MaxSearchResults)
+	assert.Equal(t, 8, limits.MaxConcurrentExecutions)
 }
 
 // TestLimitsRejectNonPositiveValues proves zero never selects an unlimited budget.
@@ -52,9 +64,9 @@ func TestLimitsRejectNonPositiveValues(t *testing.T) {
 			field:  "MaxValueDepth",
 		},
 		{
-			name:   "result bytes",
-			mutate: func(limits *codemode.Limits) { limits.MaxResultBytes = 0 },
-			field:  "MaxResultBytes",
+			name:   "value bytes",
+			mutate: func(limits *codemode.Limits) { limits.MaxValueBytes = 0 },
+			field:  "MaxValueBytes",
 		},
 		{
 			name:   "search query bytes",
@@ -65,6 +77,11 @@ func TestLimitsRejectNonPositiveValues(t *testing.T) {
 			name:   "search results",
 			mutate: func(limits *codemode.Limits) { limits.MaxSearchResults = 0 },
 			field:  "MaxSearchResults",
+		},
+		{
+			name:   "concurrent executions",
+			mutate: func(limits *codemode.Limits) { limits.MaxConcurrentExecutions = 0 },
+			field:  "MaxConcurrentExecutions",
 		},
 	}
 
