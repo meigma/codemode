@@ -1,6 +1,6 @@
 ---
 title: Use Rego for authorization
-description: Replace AllowAll with a prepared in-process Rego authorization decision.
+description: Replace the allow-all authorizer with a prepared in-process Rego authorization decision.
 ---
 
 # Use Rego for authorization
@@ -26,9 +26,19 @@ allow if {
 Use `input.capability.id` for policy identity. In this example, `records.entry.lookup` is the stable capability ID. `input.capability.name` is the dotted discovery and Starlark name, `records.lookup`; it can change independently of the policy identity.
 
 Set `ID: "records.entry.lookup"` in the tutorial's capability registration
-before writing this policy. An omitted ID defaults to `records.lookup`; explicit
-policy identity prevents a later capability rename from changing the decision
-input.
+before writing this policy:
+
+```go
+codemode.Register(builder, codemode.Capability[lookupInput, lookupOutput]{
+	ID:      "records.entry.lookup",
+	Name:    "records.lookup",
+	Summary: "Look up one record by key.",
+	Handler: lookup,
+})
+```
+
+An omitted ID defaults to `records.lookup`. Explicit policy identity
+prevents a later capability rename from changing the decision input.
 
 The adapter supplies only this input shape:
 
@@ -126,37 +136,35 @@ Do not use an undefined decision as denial behavior. Keep `default allow := fals
 
 ## Verify the policy
 
-Run the adapted first-server program with the tutorial's `execute` source, which calls `records.lookup(key="alpha", limit=2)`:
+Rebuild the server binary:
 
 ```sh
-go run .
+go build -o codemode-first-server .
 ```
 
-The `execute` line is:
+Reload the server in the configured agent.
 
-```
-execute: {"result":{"count":2,"key":"alpha"}}
-```
+### Verify an allowed call
 
-Change the `execute` source to `return records.lookup(key="forbidden", limit=2)`.
+Ask the agent to run this program through `execute` (the program text is the tool's `source` argument):
 
-The tutorial's `callTool` helper formats a tool error with `%v` and stops the program, so the denial text is not visible as written. To print it, replace the `result.IsError` branch in `callTool` with:
-
-```go
-if result.IsError {
-	text, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		return fmt.Errorf("%s returned a tool error: %v", params.Name, result.Content)
-	}
-	fmt.Printf("%s: %s\n", params.Name, text.Text)
-	return nil
-}
+```python
+def main():
+    return records.lookup(key="alpha", limit=2)
 ```
 
-Run `go run .` again. `search_api` and `describe_api` still succeed, and the `execute` line is:
+The structured result is `{"result":{"count":2,"key":"alpha"}}`.
 
+### Verify a denied call
+
+Ask the agent to run this program through `execute`:
+
+```python
+def main():
+    return records.lookup(key="forbidden", limit=2)
 ```
-execute: permission denied
-```
+
+`execute` returns a tool error whose text is `permission denied`.
+`search_api` and `describe_api` still succeed.
 
 See the [`authz/rego` API reference](../reference/public-api.md#authzrego) for constructor validation and exact result semantics. See [Understanding CodeMode's security model](../explanation/security-model.md#rego-policy-runs-in-process) for the policy trust boundary and runtime restrictions.

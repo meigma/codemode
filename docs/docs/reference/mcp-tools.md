@@ -110,22 +110,28 @@ For the site-wide sample, the requested name is `records.lookup`. Its stable ID,
     "description": { "type": "string" },
     "input": {
       "type": "array",
-      "items": { "$ref": "#/$defs/fieldShape" }
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "required"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "type": { "type": "string" },
+          "required": { "type": "boolean" }
+        }
+      }
     },
     "output": {
       "type": "array",
-      "items": { "$ref": "#/$defs/fieldShape" }
-    }
-  },
-  "$defs": {
-    "fieldShape": {
-      "type": "object",
-      "required": ["name", "type", "required"],
-      "additionalProperties": false,
-      "properties": {
-        "name": { "type": "string" },
-        "type": { "type": "string" },
-        "required": { "type": "boolean" }
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "required"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "type": { "type": "string" },
+          "required": { "type": "boolean" }
+        }
       }
     }
   }
@@ -204,7 +210,7 @@ For example, one flat `output` array can contain:
 ]
 ```
 
-The output universe includes nested structs, arrays and slices, string-keyed
+Supported output types include nested structs, arrays and slices, string-keyed
 maps, pointers, named scalars, all signed and unsigned integer kinds, finite
 `float32` and `float64` values, and byte slices or arrays as integer lists from
 0 through 255. Integers are projected through signed 64-bit values, so a
@@ -254,8 +260,9 @@ Capabilities are available by dotted name. The sample native call is `records.lo
 
 For example, a capability described with the signature
 `records.search(*, count: int, active: bool, score: float, label: str | None)`
-and output type `list[{id: str, active: bool, score: float}]` can be composed
-inside one program:
+has a `describe_api.output` field `items` of type
+`list[{id: str, active: bool, score: float}]`. It can be composed inside one
+program:
 
 ```python
 def main():
@@ -284,7 +291,7 @@ shared between calls.
   "required": ["result"],
   "additionalProperties": false,
   "properties": {
-    "result": {}
+    "result": true
   }
 }
 ```
@@ -348,7 +355,7 @@ After a well-formed call reaches the adapter, a resolver or service failure beco
 | `resource limit exceeded` | A discovery, execution, depth, per-value, or aggregate intermediate-value budget was exceeded. |
 | `capability failed` | A handler failed or returned an invalid value, including a non-finite float or an unsigned integer above `math.MaxInt64`. |
 | `context canceled` | The request context was canceled. |
-| `context deadline exceeded` | A service returned a bare deadline error. Root CodeMode execution deadlines are normally projected as `resource limit exceeded`. |
+| `context deadline exceeded` | A service returned a bare deadline error. Root CodeMode execution deadlines are projected as `resource limit exceeded`. |
 | `internal failure` | Any unknown service error or recovered adapter failure. |
 
 Malformed MCP arguments are rejected by the SDK's input-schema validation and do not call the invocation resolver. These errors can identify malformed client-owned fields or values because validation occurs before trusted resolution. For well-formed inputs, resolver failure stops the request before search, description, or execution and becomes `unauthenticated` without resolver detail.

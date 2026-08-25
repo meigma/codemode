@@ -24,12 +24,15 @@ CodeMode executes each submitted program in a fresh worker process created by
 re-executing the host binary. Module loading is disabled, native capabilities
 are limited to the immutable set registered and enabled by the host, and native
 calls are rejected during top-level source loading. A program must define a
-zero-argument `main()` function, and only its converted return value is
-exposed.
+zero-argument `main()` function. Only `main`'s final converted value is
+exposed to the caller.
 
 Configured limits bound source bytes, interpreter steps, elapsed time,
 attempted native calls, concurrent workers, and the depth and encoded
-size of every value that crosses the worker boundary. Search query bytes and
+size of every value that crosses the worker boundary.
+`MaxIntermediateValueBytes` is the cumulative encoded size of successful
+parent-to-child native-result value bodies per execution, independent of
+the per-value `MaxValueBytes` bound. Search query bytes and
 search result counts are bounded separately in the parent. An elapsed deadline
 or request cancellation kills and reaps the worker. Each native call whose
 arguments bind successfully is rebound in the parent and passes through the
