@@ -19,9 +19,7 @@ func TestConvertOutputUsesCompiledFields(t *testing.T) {
 	require.NoError(t, err)
 	output := representativeOutput{Name: "alpha", Count: 3, Active: true, Score: 1.5}
 
-	value, err := plan.ConvertOutput(output)
-	require.NoError(t, err)
-	converted, err := ConvertFinal(value, 4, 1024)
+	converted, err := plan.ConvertOutput(output)
 	require.NoError(t, err)
 
 	assert.Equal(t, map[string]any{
@@ -32,13 +30,13 @@ func TestConvertOutputUsesCompiledFields(t *testing.T) {
 	}, converted)
 }
 
-// TestConvertTypedOutputPreservesExactKinds proves handler output becomes process-neutral data without type erasure.
-func TestConvertTypedOutputPreservesExactKinds(t *testing.T) {
+// TestConvertOutputPreservesExactKinds proves handler output becomes process-neutral data without type erasure.
+func TestConvertOutputPreservesExactKinds(t *testing.T) {
 	plan, err := CompileFor[representativeInput, representativeOutput]()
 	require.NoError(t, err)
 	output := representativeOutput{Name: "alpha", Count: 3, Active: true, Score: 1.0}
 
-	converted, err := plan.convertTypedOutput(output)
+	converted, err := plan.ConvertOutput(output)
 	require.NoError(t, err)
 
 	assert.Equal(t, map[string]any{

@@ -6,8 +6,6 @@ import (
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
-
-	"github.com/meigma/codemode/internal/catalog"
 )
 
 // namespaceNode is one temporary registration-time path used to assemble frozen modules.
@@ -20,11 +18,12 @@ type namespaceNode struct {
 }
 
 // buildPredeclared creates the frozen capability namespace for one immutable Engine.
-func buildPredeclared(capabilityCatalog *catalog.Catalog) (starlark.StringDict, error) {
+func buildPredeclared(bindings []CapabilityBinding) (starlark.StringDict, error) {
 	root := newNamespaceNode()
-	for _, namespaceBinding := range capabilityCatalog.NamespaceBindings() {
+	for _, capability := range bindings {
+		segments, function := splitCapabilityName(capability.Name)
 		node := root
-		for _, segment := range namespaceBinding.Segments {
+		for _, segment := range segments {
 			child, ok := node.children[segment]
 			if !ok {
 				child = newNamespaceNode()
@@ -32,17 +31,19 @@ func buildPredeclared(capabilityCatalog *catalog.Catalog) (starlark.StringDict, 
 			}
 			node = child
 		}
-		if _, duplicate := node.functions[namespaceBinding.Function]; duplicate {
+		if _, duplicate := node.functions[function]; duplicate {
 			return nil, fmt.Errorf("%w: duplicate namespace function", ErrInternal)
 		}
-		entry := namespaceBinding.Capability
-		node.functions[namespaceBinding.Function] = starlark.NewBuiltin(entry.Name, func(
+		id := capability.ID
+		input := capability.Input
+		name := capability.Name
+		node.functions[function] = starlark.NewBuiltin(name, func(
 			thread *starlark.Thread,
 			_ *starlark.Builtin,
 			args starlark.Tuple,
 			kwargs []starlark.Tuple,
 		) (starlark.Value, error) {
-			return callCapability(thread, entry, args, kwargs)
+			return callCapability(thread, id, input, args, kwargs)
 		})
 	}
 

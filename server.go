@@ -31,8 +31,8 @@ type Server struct {
 	// engine owns the immutable precompiled native capability namespace.
 	engine *execution.Engine
 
-	// authorizer is called once before each valid native handler dispatch.
-	authorizer authz.Authorizer
+	// dispatcher is the authoritative native-call owner for this server.
+	dispatcher *dispatcher
 
 	// limits is the immutable execution budget configuration.
 	limits execution.Limits
@@ -44,14 +44,14 @@ func newServer(
 	authorizer authz.Authorizer,
 	limits Limits,
 ) (*Server, error) {
-	engine, err := execution.New(capabilityCatalog)
+	engine, err := execution.New(capabilityBindings(capabilityCatalog))
 	if err != nil {
 		return nil, err
 	}
 	return &Server{
 		catalog:    capabilityCatalog,
 		engine:     engine,
-		authorizer: authorizer,
+		dispatcher: newDispatcher(capabilityCatalog, authorizer),
 		limits: execution.Limits{
 			MaxSourceBytes:    limits.MaxSourceBytes,
 			MaxExecutionSteps: limits.MaxExecutionSteps,
@@ -61,6 +61,20 @@ func newServer(
 			MaxResultBytes:    limits.MaxResultBytes,
 		},
 	}, nil
+}
+
+// capabilityBindings derives process-neutral engine bindings from enabled catalog entries.
+func capabilityBindings(capabilityCatalog *catalog.Catalog) []execution.CapabilityBinding {
+	entries := capabilityCatalog.Entries()
+	bindings := make([]execution.CapabilityBinding, len(entries))
+	for index, entry := range entries {
+		bindings[index] = execution.CapabilityBinding{
+			ID:    entry.ID,
+			Name:  entry.Name,
+			Input: entry.Plan.InputShape(),
+		}
+	}
+	return bindings
 }
 
 // Search returns a bounded name-sorted scan of enabled capability names and summaries.
@@ -95,7 +109,7 @@ func (server *Server) Describe(name CapabilityName) (Description, error) {
 // The elapsed budget cancels Starlark evaluation. Authorizer and Handler implementations must
 // honor ctx and return promptly; CodeMode does not detach or forcibly interrupt blocking Go code.
 func (server *Server) Execute(ctx context.Context, subject authz.Subject, program Program) (any, error) {
-	if server == nil || server.engine == nil || server.authorizer == nil {
+	if server == nil || server.engine == nil || server.dispatcher == nil {
 		return nil, ErrInternal
 	}
 	if ctx == nil {
@@ -104,7 +118,19 @@ func (server *Server) Execute(ctx context.Context, subject authz.Subject, progra
 	if subject.ID == "" {
 		return nil, ErrUnauthenticated
 	}
-	result, err := server.engine.Execute(ctx, subject, string(program), server.authorizer, server.limits)
+	runCtx, cancel := context.WithTimeout(ctx, server.limits.MaxExecutionTime)
+	defer cancel()
+	if contextErr := contextFailure(runCtx); contextErr != nil {
+		return nil, projectExecutionError(contextErr)
+	}
+	result, err := server.engine.Execute(
+		runCtx,
+		string(program),
+		func(id string, args map[string]any) (any, error) {
+			return server.dispatcher.dispatch(runCtx, subject, id, args)
+		},
+		server.limits,
+	)
 	if err != nil {
 		return nil, projectExecutionError(err)
 	}

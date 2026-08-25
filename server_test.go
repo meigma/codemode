@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -409,6 +410,35 @@ func TestServerExecuteRequiresTrustedInvocationInputs(t *testing.T) {
 	_, err = server.Execute(deadlineCtx, authz.Subject{ID: "subject-1"}, `def main(): return None`)
 	require.ErrorIs(t, err, codemode.ErrResourceLimit)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+// TestServerExecuteElapsedBudgetAfterAllowPreventsHandler proves only MaxExecutionTime
+// can expire a blocked allow before the handler starts.
+func TestServerExecuteElapsedBudgetAfterAllowPreventsHandler(t *testing.T) {
+	authorizer := authzmocks.NewMockAuthorizer(t)
+	var handlerCalls atomic.Int64
+	authorizer.EXPECT().Authorize(mock.Anything, mock.Anything).Run(
+		func(ctx context.Context, _ authz.AuthorizationInput) {
+			<-ctx.Done()
+		},
+	).Return(nil).Once()
+	capability := validBuilderCapability("cap.lookup", "records.lookup")
+	capability.Handler = func(context.Context, authz.Subject, builderInput) (builderOutput, error) {
+		handlerCalls.Add(1)
+		return builderOutput{}, nil
+	}
+	limits := codemode.DefaultLimits()
+	limits.MaxExecutionTime = 20 * time.Millisecond
+	server := buildTestServer(t, authorizer, limits, capability)
+
+	_, err := server.Execute(t.Context(), authz.Subject{ID: "subject-1"}, `
+def main():
+    return records.lookup(value="alpha")
+`)
+
+	require.ErrorIs(t, err, codemode.ErrResourceLimit)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Zero(t, handlerCalls.Load())
 }
 
 // TestServerSupportsConcurrentDiscoveryAndExecution proves immutable server state is race-safe for parallel reads.

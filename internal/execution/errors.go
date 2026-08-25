@@ -6,7 +6,7 @@ var (
 	// ErrInvalidProgram classifies invalid source, entrypoint behavior, or loading-phase native calls.
 	ErrInvalidProgram = errors.New("invalid program")
 
-	// ErrInvalidArguments classifies native arguments rejected before authorization.
+	// ErrInvalidArguments classifies native arguments rejected before the native port.
 	ErrInvalidArguments = errors.New("invalid capability arguments")
 
 	// ErrPermissionDenied classifies a recognized authorization denial.
@@ -23,7 +23,4 @@ var (
 
 	// ErrInternal classifies an unexpected runtime or contract failure.
 	ErrInternal = errors.New("internal failure")
-
-	// errRecoveredHandlerPanic distinguishes a recovered panic from an ordinary handler error.
-	errRecoveredHandlerPanic = errors.New("recovered handler panic")
 )
