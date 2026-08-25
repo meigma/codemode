@@ -21,6 +21,7 @@ func TestDefaultLimitsAreValid(t *testing.T) {
 	assert.Equal(t, uint64(100), limits.MaxNativeCalls)
 	assert.Equal(t, 32, limits.MaxValueDepth)
 	assert.Equal(t, 1_048_576, limits.MaxValueBytes)
+	assert.Equal(t, 8_388_608, limits.MaxIntermediateValueBytes)
 	assert.Equal(t, 256, limits.MaxSearchQueryBytes)
 	assert.Equal(t, 20, limits.MaxSearchResults)
 	assert.Equal(t, 8, limits.MaxConcurrentExecutions)
@@ -67,6 +68,11 @@ func TestLimitsRejectNonPositiveValues(t *testing.T) {
 			name:   "value bytes",
 			mutate: func(limits *codemode.Limits) { limits.MaxValueBytes = 0 },
 			field:  "MaxValueBytes",
+		},
+		{
+			name:   "intermediate value bytes",
+			mutate: func(limits *codemode.Limits) { limits.MaxIntermediateValueBytes = 0 },
+			field:  "MaxIntermediateValueBytes",
 		},
 		{
 			name:   "search query bytes",

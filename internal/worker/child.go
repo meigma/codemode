@@ -139,10 +139,10 @@ func executionLimits(limits childLimits) execution.Limits {
 // nativeForwarder sends one native_call and waits for the parent reply.
 func nativeForwarder(conn *childConn) execution.NativeCall {
 	return func(id string, arguments map[string]any) (any, error) {
-		if err := validateBoundedValue(arguments, conn.limits); err != nil {
-			return nil, execution.ErrResourceLimit
-		}
 		if err := conn.writeNativeCall(id, arguments); err != nil {
+			if errors.Is(err, errInvalidValue) || errors.Is(err, errFrameTooLarge) {
+				return nil, execution.ErrResourceLimit
+			}
 			return nil, fmt.Errorf("%w: %w", errChildService, err)
 		}
 		frame, err := conn.read()

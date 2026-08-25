@@ -50,13 +50,14 @@ func newServer(
 	runner, err := worker.NewRunner(
 		capabilityBindings(capabilityCatalog),
 		worker.Limits{
-			MaxSourceBytes:          limits.MaxSourceBytes,
-			MaxExecutionSteps:       limits.MaxExecutionSteps,
-			MaxExecutionTime:        limits.MaxExecutionTime,
-			MaxNativeCalls:          limits.MaxNativeCalls,
-			MaxValueDepth:           limits.MaxValueDepth,
-			MaxValueBytes:           limits.MaxValueBytes,
-			MaxConcurrentExecutions: limits.MaxConcurrentExecutions,
+			MaxSourceBytes:            limits.MaxSourceBytes,
+			MaxExecutionSteps:         limits.MaxExecutionSteps,
+			MaxExecutionTime:          limits.MaxExecutionTime,
+			MaxNativeCalls:            limits.MaxNativeCalls,
+			MaxValueDepth:             limits.MaxValueDepth,
+			MaxValueBytes:             limits.MaxValueBytes,
+			MaxIntermediateValueBytes: limits.MaxIntermediateValueBytes,
+			MaxConcurrentExecutions:   limits.MaxConcurrentExecutions,
 		},
 		dispatch.dispatch,
 	)

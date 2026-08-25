@@ -207,6 +207,9 @@ type parentConn struct {
 
 	// hasLimits reports whether exec limits have been stored.
 	hasLimits bool
+
+	// remainingIntermediate is the unused native-result value-body budget.
+	remainingIntermediate int
 }
 
 // childConn is the child side of one probe or execution exchange.
@@ -316,15 +319,20 @@ func encodeExec(frame execFrame) ([]byte, error) {
 
 // encodeNativeCall encodes one child-originated native invocation.
 func encodeNativeCall(capabilityID string, arguments map[string]any) ([]byte, error) {
-	if capabilityID == "" {
-		return nil, errInvalidValue
-	}
 	if arguments == nil {
 		return nil, errInvalidValue
 	}
 	encodedArgs, err := encodeNormalizedValue(arguments)
 	if err != nil {
 		return nil, err
+	}
+	return encodeNativeCallBytes(capabilityID, encodedArgs)
+}
+
+// encodeNativeCallBytes wraps one already-encoded argument body in a native_call frame.
+func encodeNativeCallBytes(capabilityID string, encodedArgs []byte) ([]byte, error) {
+	if capabilityID == "" {
+		return nil, errInvalidValue
 	}
 	encodedID, err := json.Marshal(capabilityID)
 	if err != nil {
@@ -346,12 +354,17 @@ func encodeNativeResult(result any) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return encodeNativeResultBytes(encoded), nil
+}
+
+// encodeNativeResultBytes wraps one already-encoded value body in a native_result frame.
+func encodeNativeResultBytes(encoded []byte) []byte {
 	var buf bytes.Buffer
 	buf.Grow(len(nativeResultPrefix) + len(encoded) + len(nativeResultSuffix))
 	buf.WriteString(nativeResultPrefix)
 	buf.Write(encoded)
 	buf.WriteString(nativeResultSuffix)
-	return buf.Bytes(), nil
+	return buf.Bytes()
 }
 
 // encodeNativeAbort encodes the payload-free parent abort frame.
@@ -365,12 +378,17 @@ func encodeFinal(result any) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return encodeFinalBytes(encoded), nil
+}
+
+// encodeFinalBytes wraps one already-encoded value body in a final frame.
+func encodeFinalBytes(encoded []byte) []byte {
 	var buf bytes.Buffer
 	buf.Grow(len(finalPrefix) + len(encoded) + len(finalSuffix))
 	buf.WriteString(finalPrefix)
 	buf.Write(encoded)
 	buf.WriteString(finalSuffix)
-	return buf.Bytes(), nil
+	return buf.Bytes()
 }
 
 // encodeFinalError encodes one child-owned terminal failure.
@@ -459,14 +477,15 @@ func newChildProbeConn(r io.Reader, w io.Writer) *childConn {
 }
 
 // newParentExecConn constructs the parent side of an execution exchange.
-func newParentExecConn(w io.Writer, r io.Reader, writeCap uint32, readCap uint32) *parentConn {
+func newParentExecConn(w io.Writer, r io.Reader, writeCap uint32, readCap uint32, intermediateBudget int) *parentConn {
 	return &parentConn{
-		w:        w,
-		r:        r,
-		writeCap: writeCap,
-		readCap:  readCap,
-		kind:     connKindExec,
-		state:    stateInit,
+		w:                     w,
+		r:                     r,
+		writeCap:              writeCap,
+		readCap:               readCap,
+		kind:                  connKindExec,
+		state:                 stateInit,
+		remainingIntermediate: intermediateBudget,
 	}
 }
 
@@ -527,16 +546,18 @@ func (c *parentConn) writeNativeResult(result any) error {
 	if c == nil || c.kind != connKindExec || c.state != stateAwaitNative || !c.hasLimits {
 		return errIllegalState
 	}
-	if err := validateBoundedValue(result, c.limits); err != nil {
-		return err
-	}
-	payload, err := encodeNativeResult(result)
+	encoded, err := encodeBoundedValue(result, c.limits)
 	if err != nil {
 		return err
 	}
+	if len(encoded) > c.remainingIntermediate {
+		return errFrameTooLarge
+	}
+	payload := encodeNativeResultBytes(encoded)
 	if err := writeFrame(c.w, payload, c.writeCap); err != nil {
 		return err
 	}
+	c.remainingIntermediate -= len(encoded)
 	c.state = stateReady
 	return nil
 }
@@ -654,10 +675,14 @@ func (c *childConn) writeNativeCall(capabilityID string, arguments map[string]an
 	if c.nativeCalls >= c.limits.MaxNativeCalls {
 		return errIllegalState
 	}
-	if err := validateBoundedValue(arguments, c.limits); err != nil {
+	if arguments == nil {
+		return errInvalidValue
+	}
+	encodedArgs, err := encodeBoundedValue(arguments, c.limits)
+	if err != nil {
 		return err
 	}
-	payload, err := encodeNativeCall(capabilityID, arguments)
+	payload, err := encodeNativeCallBytes(capabilityID, encodedArgs)
 	if err != nil {
 		return err
 	}
@@ -674,13 +699,11 @@ func (c *childConn) writeFinal(result any) error {
 	if c == nil || c.kind != connKindExec || c.state != stateReady || !c.hasLimits {
 		return errIllegalState
 	}
-	if err := validateBoundedValue(result, c.limits); err != nil {
-		return err
-	}
-	payload, err := encodeFinal(result)
+	encoded, err := encodeBoundedValue(result, c.limits)
 	if err != nil {
 		return err
 	}
+	payload := encodeFinalBytes(encoded)
 	if err := writeFrame(c.w, payload, c.writeCap); err != nil {
 		return err
 	}

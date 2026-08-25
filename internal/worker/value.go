@@ -181,15 +181,21 @@ func decodeNumber(number json.Number) (any, error) {
 
 // validateBoundedValue enforces the shared type, depth, and encoded-size limits.
 func validateBoundedValue(value any, limits childLimits) error {
+	_, err := encodeBoundedValue(value, limits)
+	return err
+}
+
+// encodeBoundedValue validates one value and returns its canonical encoded body.
+func encodeBoundedValue(value any, limits childLimits) ([]byte, error) {
 	if err := binding.ValidateValue(value, limits.MaxValueDepth, limits.MaxValueBytes); err != nil {
-		return fmt.Errorf("%w: %w", errInvalidValue, err)
+		return nil, fmt.Errorf("%w: %w", errInvalidValue, err)
 	}
 	encoded, err := encodeNormalizedValue(value)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(encoded) > limits.MaxValueBytes {
-		return errFrameTooLarge
+		return nil, errFrameTooLarge
 	}
-	return nil
+	return encoded, nil
 }

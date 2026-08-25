@@ -168,3 +168,29 @@ func TestValueCodecUsesBindingValidation(t *testing.T) {
 	assert.Equal(t, value, decoded)
 	require.NoError(t, binding.ValidateValue(decoded, 4, 1024))
 }
+
+// TestValueCodecEncodesBoundedBodiesOnce proves validation reuses one encoded body.
+func TestValueCodecEncodesBoundedBodiesOnce(t *testing.T) {
+	limits := childLimits{
+		MaxSourceBytes:    256,
+		MaxExecutionSteps: 1,
+		MaxNativeCalls:    1,
+		MaxValueDepth:     8,
+		MaxValueBytes:     256,
+	}
+	value := map[string]any{"zeta": int64(1), "alpha": 1.0}
+
+	encoded, err := encodeBoundedValue(value, limits)
+	require.NoError(t, err)
+	direct, err := encodeNormalizedValue(value)
+	require.NoError(t, err)
+	assert.Equal(t, direct, encoded)
+	assert.Equal(t, `{"alpha":1.0,"zeta":1}`, string(encoded))
+
+	require.NoError(t, validateBoundedValue(value, limits))
+	tooSmall := limits
+	tooSmall.MaxValueBytes = 4
+	_, err = encodeBoundedValue(value, tooSmall)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, errInvalidValue) || errors.Is(err, errFrameTooLarge))
+}

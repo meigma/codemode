@@ -6,15 +6,16 @@ import (
 )
 
 const (
-	defaultMaxSourceBytes          = 64 * 1024
-	defaultMaxExecutionSteps       = 1_000_000
-	defaultMaxExecutionTime        = 5 * time.Second
-	defaultMaxNativeCalls          = 100
-	defaultMaxValueDepth           = 32
-	defaultMaxValueBytes           = 1024 * 1024
-	defaultMaxSearchQueryBytes     = 256
-	defaultMaxSearchResults        = 20
-	defaultMaxConcurrentExecutions = 8
+	defaultMaxSourceBytes            = 64 * 1024
+	defaultMaxExecutionSteps         = 1_000_000
+	defaultMaxExecutionTime          = 5 * time.Second
+	defaultMaxNativeCalls            = 100
+	defaultMaxValueDepth             = 32
+	defaultMaxValueBytes             = 1024 * 1024
+	defaultMaxIntermediateValueBytes = 8 * 1024 * 1024
+	defaultMaxSearchQueryBytes       = 256
+	defaultMaxSearchResults          = 20
+	defaultMaxConcurrentExecutions   = 8
 )
 
 // Limits bounds one execution and the model-facing catalog search surface.
@@ -43,6 +44,13 @@ type Limits struct {
 	// Size is measured by CodeMode's type-preserving JSON value encoder.
 	MaxValueBytes int
 
+	// MaxIntermediateValueBytes is the maximum cumulative encoded size of
+	// successful parent-to-child native-result value bodies in one Execute
+	// call. Size is measured by CodeMode's type-preserving JSON value encoder
+	// and excludes frame envelopes, native-call arguments, failed handlers,
+	// and the final program value. The budget is independent of MaxValueBytes.
+	MaxIntermediateValueBytes int
+
 	// MaxSearchQueryBytes is the maximum capability-search query size in bytes.
 	MaxSearchQueryBytes int
 
@@ -58,15 +66,16 @@ type Limits struct {
 // DefaultLimits returns positive development defaults for every supported budget.
 func DefaultLimits() Limits {
 	return Limits{
-		MaxSourceBytes:          defaultMaxSourceBytes,
-		MaxExecutionSteps:       defaultMaxExecutionSteps,
-		MaxExecutionTime:        defaultMaxExecutionTime,
-		MaxNativeCalls:          defaultMaxNativeCalls,
-		MaxValueDepth:           defaultMaxValueDepth,
-		MaxValueBytes:           defaultMaxValueBytes,
-		MaxSearchQueryBytes:     defaultMaxSearchQueryBytes,
-		MaxSearchResults:        defaultMaxSearchResults,
-		MaxConcurrentExecutions: defaultMaxConcurrentExecutions,
+		MaxSourceBytes:            defaultMaxSourceBytes,
+		MaxExecutionSteps:         defaultMaxExecutionSteps,
+		MaxExecutionTime:          defaultMaxExecutionTime,
+		MaxNativeCalls:            defaultMaxNativeCalls,
+		MaxValueDepth:             defaultMaxValueDepth,
+		MaxValueBytes:             defaultMaxValueBytes,
+		MaxIntermediateValueBytes: defaultMaxIntermediateValueBytes,
+		MaxSearchQueryBytes:       defaultMaxSearchQueryBytes,
+		MaxSearchResults:          defaultMaxSearchResults,
+		MaxConcurrentExecutions:   defaultMaxConcurrentExecutions,
 	}
 }
 
@@ -85,6 +94,8 @@ func (limits Limits) Validate() error {
 		return fmt.Errorf("%w: MaxValueDepth must be positive", ErrInvalidRegistration)
 	case limits.MaxValueBytes <= 0:
 		return fmt.Errorf("%w: MaxValueBytes must be positive", ErrInvalidRegistration)
+	case limits.MaxIntermediateValueBytes <= 0:
+		return fmt.Errorf("%w: MaxIntermediateValueBytes must be positive", ErrInvalidRegistration)
 	case limits.MaxSearchQueryBytes <= 0:
 		return fmt.Errorf("%w: MaxSearchQueryBytes must be positive", ErrInvalidRegistration)
 	case limits.MaxSearchResults <= 0:
