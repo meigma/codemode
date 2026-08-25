@@ -40,3 +40,6 @@ Parallel Programmer slices completed the process-neutral interpreter port and au
 The persistent Reviewer performed contract, slice, integration, fix, and lint-only passes. Fixed findings included elapsed context sharing, child binding/value classification, namespace/input validation, handler input-drift classification, mid-execution cancellation coverage, a goroutine test hazard, invalid Testify map identity assertions, and deletion of obsolete `BindAs`/`Plan.Bind` Starlark-to-typed compatibility paths. Final review approved with zero blockers. Native result dictionaries now deliberately expose sorted key order; Increment 2 tests pin it.
 
 Configured formatting, scoped lint, `mise exec -- go test ./internal/execution -count=1`, and `mise exec -- go test . -run '^(TestDispatch|TestServerExecute)' -count=1` all pass. Non-blocking accepted debt: catalog and execution independently validate dotted namespace legality, and `BindShape` revalidates immutable shapes per call; neither justifies widening this increment.
+
+## 2026-08-24 18:26 — Increment 2 pull request
+Committed and pushed `refactor/execution-native-dispatch`, then opened PR #28, `refactor(execution): move native dispatch behind a port`. The PR records the deliberate sorted-key behavior change and the bounded review evidence. GitHub CI, GitHub Pages, and Kusari Inspector all pass.
