@@ -42,3 +42,6 @@ Recurring failure mode worth TECH_NOTES promotion at close: code PRs that rewrit
 
 ## 2026-08-25 13:05 — PR #41 merged
 All checks passed (ci, GitHub Pages, Kusari). Squash-merged to master as a5031b5; docs/followup-review worktree and branch removed; master fast-forwarded. Follow-up docs pass complete.
+
+## 2026-08-25 13:20 — Close
+Session closed. Both PRs merged with developer approval: PR #32 (906541d, pass one — worker-boundary and budget corrections, style, cheap diataxis) and PR #41 (a5031b5, pass two — procedures orphaned by #34, literal wire schemas, MaxIntermediateValueBytes coverage). Local master fast-forwarded to a5031b5; both implementation worktrees removed. SUMMARY.md written; INDEX.md row set complete; TECH_NOTES.md gained the docs canonical-wording bullet and the execute-docs-reader-style lesson. Hand-off: no open docs work; rejected structural diataxis items recorded in SUMMARY Open Threads for future evidence-gated revisit.
