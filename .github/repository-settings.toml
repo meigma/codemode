@@ -1,15 +1,9 @@
 # GitHub repository settings managed by .github/scripts/configure_github_repo.py.
-#
-# Run:
-#   uv run .github/scripts/configure_github_repo.py plan --repo meigma/codemode
-#   uv run .github/scripts/configure_github_repo.py apply --repo meigma/codemode
-#
 # Notes:
 # - Supported settings are applied directly through the GitHub REST API.
 # - Unsupported settings stay in this file so the script can report manual follow-ups.
 # - The branch ruleset follows the repository default branch via ~DEFAULT_BRANCH.
-# - The only required status check is `ci`, the single Moon CI job. Add contexts
-#   here when the repository adds more required workflows.
+# - The only required status check is `ci`, the single Moon CI job.
 
 [repository]
 default_branch = "master"
@@ -114,7 +108,7 @@ prevent_direct_alert_dismissals = false
 grouped_security_updates = true
 dependabot_version_updates = false
 
-# General settings not currently handled in v1.
+# General settings the configurator does not apply.
 code_quality_preview = true
 commit_comments_on_individual_commits = true
 pull_request_creation_permissions = "all_users"

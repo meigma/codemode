@@ -67,7 +67,7 @@ type valueConverter struct {
 	// maxDepth is the maximum accepted nesting depth.
 	maxDepth int
 
-	// remainingNodes bounds materialization before exact JSON byte measurement.
+	// remainingNodes is the remaining materialization budget.
 	remainingNodes int
 
 	// active contains containers on the current recursive path.

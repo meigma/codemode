@@ -94,7 +94,7 @@ func TestProbeStableCauses(t *testing.T) {
 		// got is the produced cause text.
 		got string
 
-		// want is the architecture-stable cause.
+		// want is the expected cause text.
 		want string
 	}{
 		{name: "stdout closed", got: causeStdoutClosed, want: "stdout closed before probe_ack"},
@@ -275,7 +275,7 @@ func TestRunnerNewCopiesManifest(t *testing.T) {
 	assert.Equal(t, "value", runner.manifest[0].Input[0].Name)
 }
 
-// TestRunnerNilStateAndOversizeSource proves architecture §7 pre-spawn errors.
+// TestRunnerNilStateAndOversizeSource proves nil runner, nil context, and oversized source fail before spawn.
 func TestRunnerNilStateAndOversizeSource(t *testing.T) {
 	var runner *Runner
 	_, err := runner.Execute(context.Background(), authz.Subject{ID: "s"}, trivialSource)
