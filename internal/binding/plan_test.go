@@ -254,7 +254,8 @@ func TestCompileRejectsUnsupportedInputShapes(t *testing.T) {
 	}
 }
 
-// TestCompileRejectsUnsupportedOutputShapes proves outputs cannot smuggle pointers or unsupported kinds.
+// TestCompileRejectsUnsupportedOutputShapes proves root outputs stay non-pointer structs
+// and non-pointer omitempty remains rejected.
 func TestCompileRejectsUnsupportedOutputShapes(t *testing.T) {
 	tests := []struct {
 		// name identifies the invalid output shape.
@@ -267,11 +268,7 @@ func TestCompileRejectsUnsupportedOutputShapes(t *testing.T) {
 		contains string
 	}{
 		{name: "pointer output", outputType: reflect.TypeFor[*representativeOutput](), contains: "non-pointer struct"},
-		{name: "pointer field", outputType: reflect.TypeOf(struct {
-			// Value is the field under validation.
-			Value *int64 `json:"value"`
-		}{}), contains: "unsupported type"},
-		{name: "output omitempty", outputType: reflect.TypeOf(struct {
+		{name: "non-pointer omitempty", outputType: reflect.TypeOf(struct {
 			// Value is the field under validation.
 			Value string `json:"value,omitempty"`
 		}{}), contains: "cannot use omitempty"},

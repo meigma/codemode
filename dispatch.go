@@ -43,11 +43,17 @@ func newDispatcher(
 }
 
 // dispatch looks up an enabled ID, re-binds, authorizes, invokes, and converts typed output.
+//
+// remainingIntermediateBytes is the unused native-result value-body budget.
+// ConvertOutput uses min(maxValueBytes, remainingIntermediateBytes) as its
+// node and materialization limit. ErrValueLimit maps to resource failure;
+// other conversion failures map to capability failure.
 func (dispatch *dispatcher) dispatch(
 	ctx context.Context,
 	subject authz.Subject,
 	id string,
 	args map[string]any,
+	remainingIntermediateBytes int,
 ) (any, error) {
 	if dispatch == nil || dispatch.catalog == nil || dispatch.authorizer == nil {
 		return nil, execution.ErrInternal
@@ -98,19 +104,16 @@ func (dispatch *dispatcher) dispatch(
 	if outcome.err != nil {
 		return nil, outcome.err
 	}
-	converted, conversionErr := entry.Plan.ConvertOutput(outcome.output)
-	if conversionErr != nil {
-		return nil, fmt.Errorf("%w: %w", execution.ErrCapabilityFailure, conversionErr)
-	}
-	if validationErr := binding.ValidateValue(
-		converted,
+	converted, conversionErr := entry.Plan.ConvertOutput(
+		outcome.output,
 		dispatch.maxValueDepth,
-		dispatch.maxValueBytes,
-	); validationErr != nil {
-		if errors.Is(validationErr, binding.ErrValueLimit) {
-			return nil, fmt.Errorf("%w: %w", execution.ErrResourceLimit, validationErr)
+		min(dispatch.maxValueBytes, remainingIntermediateBytes),
+	)
+	if conversionErr != nil {
+		if errors.Is(conversionErr, binding.ErrValueLimit) {
+			return nil, fmt.Errorf("%w: %w", execution.ErrResourceLimit, conversionErr)
 		}
-		return nil, fmt.Errorf("%w: %w", execution.ErrCapabilityFailure, validationErr)
+		return nil, fmt.Errorf("%w: %w", execution.ErrCapabilityFailure, conversionErr)
 	}
 	return converted, nil
 }

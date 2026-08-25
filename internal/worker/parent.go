@@ -113,7 +113,12 @@ type Limits struct {
 }
 
 // Dispatch invokes one authoritative parent capability operation.
-type Dispatch func(context.Context, authz.Subject, string, map[string]any) (any, error)
+//
+// remainingIntermediateBytes is the unused native-result value-body budget for
+// this execution. handleNative passes min(MaxValueBytes, remainingIntermediate);
+// the dispatcher uses that as the ConvertOutput node and materialization limit.
+// Exact encoded-byte debit stays in writeNativeResult.
+type Dispatch func(context.Context, authz.Subject, string, map[string]any, int) (any, error)
 
 // ErrProtocol lets the authoritative root dispatcher report an impossible child ID or re-bind mismatch.
 var ErrProtocol = errors.New("worker protocol violation")
@@ -721,7 +726,13 @@ func (r *Runner) handleNative(
 ) execOutcome {
 	results := make(chan callbackResult, 1)
 	go func() {
-		value, err := r.dispatch(runCtx, subject, frame.CapabilityID, frame.Arguments)
+		value, err := r.dispatch(
+			runCtx,
+			subject,
+			frame.CapabilityID,
+			frame.Arguments,
+			min(r.limits.MaxValueBytes, conn.remainingIntermediate),
+		)
 		results <- callbackResult{value: value, err: err}
 	}()
 	select {

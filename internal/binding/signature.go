@@ -83,15 +83,28 @@ func (plan *Plan) InputShape() []FieldShape {
 
 // OutputShape returns a fresh model-facing description of the compiled output fields.
 func (plan *Plan) OutputShape() []FieldShape {
-	shape := make([]FieldShape, len(plan.outputFields))
-	for index, field := range plan.outputFields {
-		shape[index] = FieldShape{
-			Name:     field.name,
-			Type:     outputKindSignature(field.kind),
-			Required: true,
-		}
+	root := plan.outputNodes[plan.outputRoot]
+	shape := make([]FieldShape, len(root.fields))
+	for index, field := range root.fields {
+		shape[index] = outputFieldShape(plan, field)
 	}
 	return shape
+}
+
+// outputFieldShape renders one root field's flat discovery descriptor.
+func outputFieldShape(plan *Plan, field outputStructField) FieldShape {
+	if field.omitempty {
+		return FieldShape{
+			Name:     field.name,
+			Type:     plan.outputNodes[plan.outputNodes[field.node].elem].notation,
+			Required: false,
+		}
+	}
+	return FieldShape{
+		Name:     field.name,
+		Type:     plan.outputNodes[field.node].notation,
+		Required: true,
+	}
 }
 
 // ValidateInputShape reports whether fields is a combination Plan.InputShape can produce.
@@ -189,23 +202,6 @@ func inputKindSignature(kind fieldKind) string {
 		return optionalBoolType
 	case fieldOptionalFloat64:
 		return optionalFloatType
-	}
-	return unsupportedTypeSignature
-}
-
-// outputKindSignature returns the model-facing notation for one supported output conversion.
-func outputKindSignature(kind fieldKind) string {
-	switch kind {
-	case fieldString:
-		return stringType
-	case fieldInt64:
-		return integerType
-	case fieldBool:
-		return boolType
-	case fieldFloat64:
-		return floatType
-	case fieldOptionalString, fieldOptionalInt64, fieldOptionalBool, fieldOptionalFloat64:
-		return unsupportedTypeSignature
 	}
 	return unsupportedTypeSignature
 }

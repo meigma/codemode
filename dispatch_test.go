@@ -130,8 +130,7 @@ func TestDispatchBindsAuthorizesThenInvokes(t *testing.T) {
 			"limit":   int64(25),
 			"enabled": true,
 			"weight":  2.5,
-		},
-	)
+		}, 64*1024)
 
 	require.NoError(t, err)
 	assert.Equal(t, []string{"authorize", "handler"}, events)
@@ -197,8 +196,7 @@ func TestDispatchTranslatesEveryBindValueFailureInternally(t *testing.T) {
 				t.Context(),
 				authz.Subject{ID: "subject-1"},
 				"cap.lookup",
-				tt.arguments,
-			)
+				tt.arguments, 64*1024)
 
 			require.ErrorIs(t, err, worker.ErrProtocol)
 			require.NotErrorIs(t, err, execution.ErrInvalidArguments)
@@ -220,8 +218,7 @@ func TestDispatchRejectsUnknownIDsBeforeAuthorization(t *testing.T) {
 		t.Context(),
 		authz.Subject{ID: "subject-1"},
 		"cap.missing",
-		map[string]any{"value": "alpha"},
-	)
+		map[string]any{"value": "alpha"}, 64*1024)
 
 	require.ErrorIs(t, err, worker.ErrProtocol)
 	assert.Zero(t, handlerCalls.Load())
@@ -336,8 +333,7 @@ func TestDispatchClassifiesPolicyAndHandlerFailures(t *testing.T) {
 				t.Context(),
 				authz.Subject{ID: "subject-1"},
 				"cap.lookup",
-				map[string]any{"value": "alpha"},
-			)
+				map[string]any{"value": "alpha"}, 64*1024)
 
 			require.ErrorIs(t, err, tt.target)
 		})
@@ -380,8 +376,7 @@ func TestDispatchReturnsFreshCanonicalMaps(t *testing.T) {
 		t.Context(),
 		authz.Subject{ID: "subject-1"},
 		"cap.lookup",
-		decoded,
-	)
+		decoded, 64*1024)
 
 	require.NoError(t, err)
 	require.NotNil(t, authorized)
@@ -451,8 +446,7 @@ func TestDispatchCancellationAfterAllowPreventsInvoke(t *testing.T) {
 					ctx,
 					authz.Subject{ID: "subject-1"},
 					"cap.lookup",
-					map[string]any{"value": "alpha"},
-				)
+					map[string]any{"value": "alpha"}, 64*1024)
 				result <- dispatchOutcome{value: value, err: err}
 			}()
 
@@ -510,8 +504,7 @@ func TestDispatchClassifiesParentOutputLimits(t *testing.T) {
 				t.Context(),
 				authz.Subject{ID: "subject-1"},
 				"cap.lookup",
-				map[string]any{"value": "alpha"},
-			)
+				map[string]any{"value": "alpha"}, 64*1024)
 
 			require.ErrorIs(t, err, execution.ErrResourceLimit)
 		})
@@ -540,8 +533,7 @@ func TestDispatchCancellationDuringHandlerReturnsPromptly(t *testing.T) {
 			ctx,
 			authz.Subject{ID: "subject-1"},
 			"cap.lookup",
-			map[string]any{"value": "alpha"},
-		)
+			map[string]any{"value": "alpha"}, 64*1024)
 		result <- dispatchOutcome{value: value, err: err}
 	}()
 
@@ -605,4 +597,121 @@ func newWidenedDispatchSubject(t *testing.T, authorizer authz.Authorizer, invoke
 	return &dispatchSubject{
 		dispatch: newDispatcher(capabilityCatalog, authorizer, 16, 64*1024),
 	}
+}
+
+// overflowDispatchOutput covers unsigned values above MaxInt64.
+type overflowDispatchOutput struct {
+	// Count is an unsigned 64-bit integer.
+	Count uint64 `json:"count"`
+}
+
+// nanDispatchOutput covers non-finite floating-point results.
+type nanDispatchOutput struct {
+	// Score is a finite floating-point field.
+	Score float64 `json:"score"`
+}
+
+// TestDispatchClassifiesInvalidCompositeOutputs proves invalid runtime values stay capability failures.
+func TestDispatchClassifiesInvalidCompositeOutputs(t *testing.T) {
+	tests := []struct {
+		// name identifies the invalid handler output.
+		name string
+
+		// plan compiles the handler contract.
+		plan func(*testing.T) *binding.Plan
+
+		// invoke returns an invalid registered output.
+		invoke catalog.Invoker
+	}{
+		{
+			name: "unsigned overflow",
+			plan: func(t *testing.T) *binding.Plan {
+				t.Helper()
+				plan, err := binding.CompileFor[dispatchInput, overflowDispatchOutput]()
+				require.NoError(t, err)
+				return plan
+			},
+			invoke: func(context.Context, authz.Subject, any) (any, error) {
+				return overflowDispatchOutput{Count: uint64(1) << 63}, nil
+			},
+		},
+		{
+			name: "NaN",
+			plan: func(t *testing.T) *binding.Plan {
+				t.Helper()
+				plan, err := binding.CompileFor[dispatchInput, nanDispatchOutput]()
+				require.NoError(t, err)
+				return plan
+			},
+			invoke: func(context.Context, authz.Subject, any) (any, error) {
+				return nanDispatchOutput{Score: math.NaN()}, nil
+			},
+		},
+		{
+			name: "infinity",
+			plan: func(t *testing.T) *binding.Plan {
+				t.Helper()
+				plan, err := binding.CompileFor[dispatchInput, nanDispatchOutput]()
+				require.NoError(t, err)
+				return plan
+			},
+			invoke: func(context.Context, authz.Subject, any) (any, error) {
+				return nanDispatchOutput{Score: math.Inf(1)}, nil
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			authorizer := authzmocks.NewMockAuthorizer(t)
+			authorizer.EXPECT().Authorize(mock.Anything, mock.Anything).Return(nil).Once()
+			capabilityCatalog, err := catalog.Build([]catalog.Registration{{
+				ID:          "cap.lookup",
+				Name:        "records.lookup",
+				Summary:     "Return one record.",
+				Description: "Returns the supplied record value.",
+				Plan:        tt.plan(t),
+				Invoke:      tt.invoke,
+			}}, catalog.Options{
+				MaxSearchQueryBytes: 256,
+				MaxSearchResults:    20,
+			})
+			require.NoError(t, err)
+			subject := &dispatchSubject{dispatch: newDispatcher(capabilityCatalog, authorizer, 16, 64*1024)}
+
+			_, err = subject.dispatch.dispatch(
+				t.Context(),
+				authz.Subject{ID: "subject-1"},
+				"cap.lookup",
+				map[string]any{"value": "alpha"},
+				64*1024,
+			)
+
+			require.ErrorIs(t, err, execution.ErrCapabilityFailure)
+			require.NotErrorIs(t, err, execution.ErrResourceLimit)
+		})
+	}
+}
+
+// TestDispatchMapsValueLimitToResourceFailure proves remaining-byte conversion limits are resource failures.
+func TestDispatchMapsValueLimitToResourceFailure(t *testing.T) {
+	authorizer := authzmocks.NewMockAuthorizer(t)
+	authorizer.EXPECT().Authorize(mock.Anything, mock.Anything).Return(nil).Once()
+	subject := newDispatchSubject(
+		t,
+		authorizer,
+		func(context.Context, authz.Subject, any) (any, error) {
+			return dispatchOutput{Value: "alpha"}, nil
+		},
+	)
+
+	_, err := subject.dispatch.dispatch(
+		t.Context(),
+		authz.Subject{ID: "subject-1"},
+		"cap.lookup",
+		map[string]any{"value": "alpha"},
+		1,
+	)
+
+	require.ErrorIs(t, err, execution.ErrResourceLimit)
 }

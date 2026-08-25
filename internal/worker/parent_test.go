@@ -58,7 +58,7 @@ func lookupBinding() execution.CapabilityBinding {
 
 // nopDispatch rejects every native call as an ordinary capability failure.
 func nopDispatch() Dispatch {
-	return func(context.Context, authz.Subject, string, map[string]any) (any, error) {
+	return func(context.Context, authz.Subject, string, map[string]any, int) (any, error) {
 		return nil, execution.ErrCapabilityFailure
 	}
 }
@@ -275,10 +275,14 @@ func TestRunnerIntermediateBudget(t *testing.T) {
 		limits := testLimits()
 		limits.MaxIntermediateValueBytes = len(body)*2 + 1
 		var calls int
-		runner := newTestRunner(t, limits, func(context.Context, authz.Subject, string, map[string]any) (any, error) {
-			calls++
-			return result, nil
-		})
+		runner := newTestRunner(
+			t,
+			limits,
+			func(context.Context, authz.Subject, string, map[string]any, int) (any, error) {
+				calls++
+				return result, nil
+			},
+		)
 
 		got, err := runner.Execute(context.Background(), authz.Subject{ID: "s"}, twoCallSource)
 
@@ -290,9 +294,13 @@ func TestRunnerIntermediateBudget(t *testing.T) {
 	t.Run("inclusive edge", func(t *testing.T) {
 		limits := testLimits()
 		limits.MaxIntermediateValueBytes = len(body) * 2
-		runner := newTestRunner(t, limits, func(context.Context, authz.Subject, string, map[string]any) (any, error) {
-			return result, nil
-		})
+		runner := newTestRunner(
+			t,
+			limits,
+			func(context.Context, authz.Subject, string, map[string]any, int) (any, error) {
+				return result, nil
+			},
+		)
 
 		got, err := runner.Execute(context.Background(), authz.Subject{ID: "s"}, twoCallSource)
 
@@ -304,10 +312,14 @@ func TestRunnerIntermediateBudget(t *testing.T) {
 		limits := testLimits()
 		limits.MaxIntermediateValueBytes = len(body)*2 - 1
 		var calls int
-		runner := newTestRunner(t, limits, func(context.Context, authz.Subject, string, map[string]any) (any, error) {
-			calls++
-			return result, nil
-		})
+		runner := newTestRunner(
+			t,
+			limits,
+			func(context.Context, authz.Subject, string, map[string]any, int) (any, error) {
+				calls++
+				return result, nil
+			},
+		)
 
 		_, err := runner.Execute(context.Background(), authz.Subject{ID: "s"}, twoCallSource)
 
@@ -318,9 +330,13 @@ func TestRunnerIntermediateBudget(t *testing.T) {
 	t.Run("fresh next execution", func(t *testing.T) {
 		limits := testLimits()
 		limits.MaxIntermediateValueBytes = len(body)
-		runner := newTestRunner(t, limits, func(context.Context, authz.Subject, string, map[string]any) (any, error) {
-			return result, nil
-		})
+		runner := newTestRunner(
+			t,
+			limits,
+			func(context.Context, authz.Subject, string, map[string]any, int) (any, error) {
+				return result, nil
+			},
+		)
 
 		_, err := runner.Execute(context.Background(), authz.Subject{ID: "s"}, twoCallSource)
 		require.ErrorIs(t, err, execution.ErrResourceLimit)
@@ -334,9 +350,13 @@ func TestRunnerIntermediateBudget(t *testing.T) {
 		limits := testLimits()
 		limits.MaxIntermediateValueBytes = len(body)
 		limits.MaxConcurrentExecutions = 2
-		runner := newTestRunner(t, limits, func(context.Context, authz.Subject, string, map[string]any) (any, error) {
-			return result, nil
-		})
+		runner := newTestRunner(
+			t,
+			limits,
+			func(context.Context, authz.Subject, string, map[string]any, int) (any, error) {
+				return result, nil
+			},
+		)
 
 		var wg sync.WaitGroup
 		errCh := make(chan error, 2)
@@ -428,7 +448,7 @@ func TestRunnerNativeForwarding(t *testing.T) {
 		gotArgs map[string]any
 		parent  = os.Getpid()
 	)
-	dispatch := func(_ context.Context, _ authz.Subject, id string, arguments map[string]any) (any, error) {
+	dispatch := func(_ context.Context, _ authz.Subject, id string, arguments map[string]any, _ int) (any, error) {
 		gotID = id
 		gotArgs = arguments
 		return map[string]any{"pid": int64(os.Getpid())}, nil
@@ -446,9 +466,13 @@ func TestRunnerNativeForwarding(t *testing.T) {
 // TestRunnerRetainedCallbackError proves ordinary dispatch errors abort and win cleanup.
 func TestRunnerRetainedCallbackError(t *testing.T) {
 	retained := execution.ErrPermissionDenied
-	runner := newTestRunner(t, testLimits(), func(context.Context, authz.Subject, string, map[string]any) (any, error) {
-		return nil, retained
-	})
+	runner := newTestRunner(
+		t,
+		testLimits(),
+		func(context.Context, authz.Subject, string, map[string]any, int) (any, error) {
+			return nil, retained
+		},
+	)
 
 	_, err := runner.Execute(context.Background(), authz.Subject{ID: "s"}, nativeSource)
 
@@ -460,9 +484,13 @@ func TestRunnerRetainedCallbackError(t *testing.T) {
 
 // TestRunnerProtocolViolationKills proves ErrProtocol skips native_abort and returns ErrInternal.
 func TestRunnerProtocolViolationKills(t *testing.T) {
-	runner := newTestRunner(t, testLimits(), func(context.Context, authz.Subject, string, map[string]any) (any, error) {
-		return nil, fmt.Errorf("unknown id: %w", ErrProtocol)
-	})
+	runner := newTestRunner(
+		t,
+		testLimits(),
+		func(context.Context, authz.Subject, string, map[string]any, int) (any, error) {
+			return nil, fmt.Errorf("unknown id: %w", ErrProtocol)
+		},
+	)
 
 	_, err := runner.Execute(context.Background(), authz.Subject{ID: "s"}, nativeSource)
 
@@ -498,9 +526,13 @@ func TestRunnerFinalErrorTrailingByteKills(t *testing.T) {
 
 // TestRunnerProtocolViolationWritesNoAbort proves ErrProtocol kills without writing native_abort.
 func TestRunnerProtocolViolationWritesNoAbort(t *testing.T) {
-	runner := newTestRunner(t, testLimits(), func(context.Context, authz.Subject, string, map[string]any) (any, error) {
-		return nil, fmt.Errorf("unknown id: %w", ErrProtocol)
-	})
+	runner := newTestRunner(
+		t,
+		testLimits(),
+		func(context.Context, authz.Subject, string, map[string]any, int) (any, error) {
+			return nil, fmt.Errorf("unknown id: %w", ErrProtocol)
+		},
+	)
 	var parentWrites bytes.Buffer
 	var childOut bytes.Buffer
 	payload, err := encodeNativeCall("cap.lookup", map[string]any{"value": "alpha"})
@@ -549,7 +581,7 @@ func TestRunnerQueueCancellationSpawnsNoChild(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var live atomic.Int32
-	dispatch := func(ctx context.Context, _ authz.Subject, _ string, _ map[string]any) (any, error) {
+	dispatch := func(ctx context.Context, _ authz.Subject, _ string, _ map[string]any, _ int) (any, error) {
 		live.Add(1)
 		close(started)
 		select {
@@ -590,7 +622,7 @@ func TestRunnerQueueCancellationSpawnsNoChild(t *testing.T) {
 // TestRunnerPermitReuseAfterKill proves a later execution works after kill/reap.
 func TestRunnerPermitReuseAfterKill(t *testing.T) {
 	started := make(chan struct{})
-	dispatch := func(ctx context.Context, _ authz.Subject, _ string, _ map[string]any) (any, error) {
+	dispatch := func(ctx context.Context, _ authz.Subject, _ string, _ map[string]any, _ int) (any, error) {
 		close(started)
 		<-ctx.Done()
 		return nil, ctx.Err()
@@ -652,7 +684,7 @@ func TestRunnerParallelCap(t *testing.T) {
 	limits := testLimits()
 	limits.MaxConcurrentExecutions = 2
 	var current, peak atomic.Int32
-	dispatch := func(context.Context, authz.Subject, string, map[string]any) (any, error) {
+	dispatch := func(context.Context, authz.Subject, string, map[string]any, int) (any, error) {
 		n := current.Add(1)
 		for {
 			prev := peak.Load()
@@ -688,7 +720,7 @@ func TestRunnerParallelCap(t *testing.T) {
 // TestRunnerCancellationDuringDispatch proves cancellation is not joined to the callback.
 func TestRunnerCancellationDuringDispatch(t *testing.T) {
 	started := make(chan struct{})
-	dispatch := func(ctx context.Context, _ authz.Subject, _ string, _ map[string]any) (any, error) {
+	dispatch := func(ctx context.Context, _ authz.Subject, _ string, _ map[string]any, _ int) (any, error) {
 		close(started)
 		<-ctx.Done()
 		time.Sleep(20 * time.Millisecond)
@@ -723,7 +755,7 @@ func TestRunnerRepeatedCleanup(t *testing.T) {
 	runner := newTestRunner(
 		t,
 		testLimits(),
-		func(ctx context.Context, _ authz.Subject, _ string, _ map[string]any) (any, error) {
+		func(ctx context.Context, _ authz.Subject, _ string, _ map[string]any, _ int) (any, error) {
 			<-ctx.Done()
 			return nil, ctx.Err()
 		},
@@ -807,4 +839,55 @@ func TestProbeHelperExit(_ *testing.T) {
 		os.Exit(1)
 	}
 	os.Exit(code)
+}
+
+// TestRunnerForwardsMinRemainingIntermediateBytes proves handleNative forwards
+// min(MaxValueBytes, remaining intermediate) into Dispatch.
+func TestRunnerForwardsMinRemainingIntermediateBytes(t *testing.T) {
+	const first = "xx"
+	body, err := encodeNormalizedValue(first)
+	require.NoError(t, err)
+	const twoCallSource = "def main():\n    records.lookup(value=\"a\")\n    return records.lookup(value=\"b\")\n"
+
+	t.Run("remaining is smaller than MaxValueBytes", func(t *testing.T) {
+		limits := testLimits()
+		limits.MaxValueBytes = 1024
+		limits.MaxIntermediateValueBytes = len(body) * 2
+		got := make([]int, 0, 2)
+		runner := newTestRunner(
+			t,
+			limits,
+			func(_ context.Context, _ authz.Subject, _ string, _ map[string]any, remaining int) (any, error) {
+				got = append(got, remaining)
+				return first, nil
+			},
+		)
+
+		result, err := runner.Execute(context.Background(), authz.Subject{ID: "s"}, twoCallSource)
+		require.NoError(t, err)
+		assert.Equal(t, first, result)
+		require.Len(t, got, 2)
+		assert.Equal(t, []int{len(body) * 2, len(body)}, got)
+	})
+
+	t.Run("MaxValueBytes is smaller than remaining", func(t *testing.T) {
+		limits := testLimits()
+		limits.MaxValueBytes = 64
+		limits.MaxIntermediateValueBytes = 1024
+		got := make([]int, 0, 1)
+		runner := newTestRunner(
+			t,
+			limits,
+			func(_ context.Context, _ authz.Subject, _ string, _ map[string]any, remaining int) (any, error) {
+				got = append(got, remaining)
+				return first, nil
+			},
+		)
+
+		result, err := runner.Execute(context.Background(), authz.Subject{ID: "s"}, nativeSource)
+		require.NoError(t, err)
+		assert.Equal(t, first, result)
+		require.Len(t, got, 1)
+		assert.Equal(t, 64, got[0])
+	})
 }
