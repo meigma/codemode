@@ -39,3 +39,6 @@ Dispatched four programmer agents on branch docs/followup-review.
 ## 2026-08-25 12:55 — Follow-up fixes verified, PR #41 open
 Four programmer agents applied fixes across 7 files; I added the execute `source`-argument pointer both how-tos were missing (functional tester's only substantive friction). Functional re-verification (MCP client over CommandTransport as agent stand-in): every documented expected string reproduces verbatim — tutorial result, rego allowed/denied (plus embed variant), all three disable-capabilities checks. Docs build (strict) and go test ./... pass. Commit 2fe9197; PR #41.
 Recurring failure mode worth TECH_NOTES promotion at close: code PRs that rewrite one doc page (here #34's tutorial rewrite) orphan procedures in sibling pages that patch its code; cross-page procedure references need functional re-verification after any tutorial change.
+
+## 2026-08-25 13:05 — PR #41 merged
+All checks passed (ci, GitHub Pages, Kusari). Squash-merged to master as a5031b5; docs/followup-review worktree and branch removed; master fast-forwarded. Follow-up docs pass complete.
