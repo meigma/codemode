@@ -88,3 +88,6 @@ Final verification passes: scoped `golangci-lint` reports zero issues; `mise exe
 
 ## 2026-08-25 09:23 — Increment 5 pull request
 Committed and pushed `feat/worker-only-execution` as `dbcb7b8`, then opened PR #31, `feat(worker): require fresh-process execution`, closing issue #12. The PR head matches the local commit, is mergeable and clean, and GitHub CI, GitHub Pages, and Kusari Inspector all pass.
+
+## 2026-08-25 09:35 — Worker-only execution plan complete
+Maintainer approved PR #31. Squash-merged it to `master` as `3b541fc`, refreshed the default worktree, and removed the integrated `feat/worker-only-execution` worktree and branch. This completes all five increments from session 006: internal binding, interpreter native-call port, protocol and frame codec, child/parent supervision, and the atomic public worker-only cutover.
