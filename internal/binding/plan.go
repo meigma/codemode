@@ -1,6 +1,8 @@
 package binding
 
 import (
+	"encoding"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -22,7 +24,10 @@ var (
 	ErrValueLimit = errors.New("converted value limit exceeded")
 )
 
-// fieldKind identifies one supported direct conversion.
+// outputArenaHint is the initial compiled-output arena capacity for typical capability graphs.
+const outputArenaHint = 8
+
+// fieldKind identifies one supported input conversion.
 type fieldKind uint8
 
 const (
@@ -34,6 +39,22 @@ const (
 	fieldOptionalInt64
 	fieldOptionalBool
 	fieldOptionalFloat64
+)
+
+// outputNodeKind identifies one compiled output conversion node.
+type outputNodeKind uint8
+
+const (
+	outputNodeString outputNodeKind = iota + 1
+	outputNodeInt
+	outputNodeUint
+	outputNodeBool
+	outputNodeFloat
+	outputNodeBytes
+	outputNodeList
+	outputNodeMap
+	outputNodeStruct
+	outputNodePointer
 )
 
 // inputField is one immutable input-field conversion step.
@@ -51,16 +72,52 @@ type inputField struct {
 	required bool
 }
 
-// outputField is one immutable output-field conversion step.
-type outputField struct {
-	// name is the string key returned to Starlark.
+// outputNode is one immutable compiled output conversion node.
+type outputNode struct {
+	// kind selects the conversion and notation strategy.
+	kind outputNodeKind
+
+	// elem is the child node index for pointers, lists, and maps.
+	elem int
+
+	// fields are declaration-ordered struct members.
+	fields []outputStructField
+
+	// notation is the exact model-facing type string for this node.
+	notation string
+}
+
+// outputStructField is one compiled exported struct member.
+type outputStructField struct {
+	// name is the JSON and Starlark field name.
 	name string
 
-	// index is the direct field index in the non-embedded output struct.
+	// index is the direct field index on the struct type.
 	index int
 
-	// kind determines direct conversion behavior.
-	kind fieldKind
+	// node is the compiled field type.
+	node int
+
+	// omitempty omits a nil pointer from the converted object.
+	omitempty bool
+}
+
+// outputCompiler builds a flat immutable node arena with cycle detection.
+type outputCompiler struct {
+	// nodes is the arena under construction.
+	nodes []outputNode
+
+	// done maps a completed type onto its arena index.
+	done map[reflect.Type]int
+
+	// active is the stack of types currently being compiled.
+	active map[reflect.Type]struct{}
+
+	// jsonMarshaler is the json.Marshaler interface type used for method-set checks.
+	jsonMarshaler reflect.Type
+
+	// textMarshaler is the encoding.TextMarshaler interface type used for method-set checks.
+	textMarshaler reflect.Type
 }
 
 // Plan is an immutable compiled input, output, signature, and canonical-argument plan.
@@ -77,8 +134,11 @@ type Plan struct {
 	// inputByName maps each accepted keyword to its field-plan index.
 	inputByName map[string]int
 
-	// outputFields preserves declaration order for deterministic conversion.
-	outputFields []outputField
+	// outputRoot is the arena index of the compiled root struct.
+	outputRoot int
+
+	// outputNodes is the immutable compiled output type arena.
+	outputNodes []outputNode
 }
 
 // CompileFor compiles the exact generic input and output types once.
@@ -92,16 +152,17 @@ func Compile(inputType reflect.Type, outputType reflect.Type) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
-	outputFields, err := compileOutput(outputType)
+	root, nodes, err := compileOutput(outputType)
 	if err != nil {
 		return nil, err
 	}
 	return &Plan{
-		inputType:    inputType,
-		outputType:   outputType,
-		inputFields:  inputFields,
-		inputByName:  inputByName,
-		outputFields: outputFields,
+		inputType:   inputType,
+		outputType:  outputType,
+		inputFields: inputFields,
+		inputByName: inputByName,
+		outputRoot:  root,
+		outputNodes: nodes,
 	}, nil
 }
 
@@ -182,43 +243,254 @@ func compileInputKind(fieldType reflect.Type) (fieldKind, bool, bool) {
 	}
 }
 
-// compileOutput validates and compiles the restricted output struct.
-func compileOutput(outputType reflect.Type) ([]outputField, error) {
+// compileOutput validates and compiles the restricted output struct into an arena.
+func compileOutput(outputType reflect.Type) (int, []outputNode, error) {
 	if outputType == nil || outputType.Kind() != reflect.Struct {
-		return nil, fmt.Errorf("%w: output must be a non-pointer struct", ErrInvalidPlan)
+		return 0, nil, fmt.Errorf("%w: output must be a non-pointer struct", ErrInvalidPlan)
 	}
-	fields := make([]outputField, 0, outputType.NumField())
-	seen := make(map[string]struct{}, outputType.NumField())
-	for index := range outputType.NumField() {
-		field := outputType.Field(index)
+	compiler := outputCompiler{
+		nodes:         make([]outputNode, 0, outputArenaHint),
+		done:          make(map[reflect.Type]int),
+		active:        make(map[reflect.Type]struct{}),
+		jsonMarshaler: reflect.TypeFor[json.Marshaler](),
+		textMarshaler: reflect.TypeFor[encoding.TextMarshaler](),
+	}
+	root, err := compiler.compile(outputType, "")
+	if err != nil {
+		return 0, nil, err
+	}
+	return root, compiler.nodes, nil
+}
+
+// compile returns the arena index for typ, reusing completed nodes and rejecting cycles.
+func (compiler *outputCompiler) compile(typ reflect.Type, path string) (int, error) {
+	if typ == nil {
+		return 0, fmt.Errorf("%w: output field %q has unsupported type <nil>", ErrInvalidPlan, path)
+	}
+	if index, ok := compiler.done[typ]; ok {
+		return index, nil
+	}
+	if _, exists := compiler.active[typ]; exists {
+		return 0, fmt.Errorf("%w: cyclic type at %q", ErrInvalidPlan, path)
+	}
+	compiler.active[typ] = struct{}{}
+	defer delete(compiler.active, typ)
+
+	index, err := compiler.compileNew(typ, path)
+	if err != nil {
+		return 0, err
+	}
+	compiler.done[typ] = index
+	return index, nil
+}
+
+// compileNew appends one newly compiled node for typ.
+func (compiler *outputCompiler) compileNew(typ reflect.Type, path string) (int, error) {
+	if compiler.implementsMarshaler(typ) {
+		return 0, unsupportedOutputType(path, typ)
+	}
+	switch typ.Kind() { //nolint:exhaustive // Unsupported reflect kinds share registration-time rejection.
+	case reflect.String:
+		return compiler.append(outputNode{kind: outputNodeString, notation: stringType}), nil
+	case reflect.Bool:
+		return compiler.append(outputNode{kind: outputNodeBool, notation: boolType}), nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return compiler.append(outputNode{kind: outputNodeInt, notation: integerType}), nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return compiler.append(outputNode{kind: outputNodeUint, notation: integerType}), nil
+	case reflect.Float32, reflect.Float64:
+		return compiler.append(outputNode{kind: outputNodeFloat, notation: floatType}), nil
+	case reflect.Pointer:
+		return compiler.compilePointer(typ, path)
+	case reflect.Slice:
+		return compiler.compileSlice(typ, path)
+	case reflect.Array:
+		return compiler.compileArray(typ, path)
+	case reflect.Map:
+		return compiler.compileMap(typ, path)
+	case reflect.Struct:
+		return compiler.compileStruct(typ, path)
+	default:
+		return 0, unsupportedOutputType(path, typ)
+	}
+}
+
+// compilePointer compiles a pointer to a supported node.
+func (compiler *outputCompiler) compilePointer(typ reflect.Type, path string) (int, error) {
+	elem, err := compiler.compile(typ.Elem(), path)
+	if err != nil {
+		return 0, err
+	}
+	return compiler.append(outputNode{
+		kind:     outputNodePointer,
+		elem:     elem,
+		notation: pointerNotation(compiler.nodes[elem].notation),
+	}), nil
+}
+
+// compileSlice compiles a slice, treating uint8 elements as integer byte lists.
+func (compiler *outputCompiler) compileSlice(typ reflect.Type, path string) (int, error) {
+	if typ.Elem().Kind() == reflect.Uint8 && !compiler.implementsMarshaler(typ.Elem()) {
+		return compiler.append(outputNode{kind: outputNodeBytes, notation: listNotation(integerType)}), nil
+	}
+	elem, err := compiler.compile(typ.Elem(), path)
+	if err != nil {
+		return 0, err
+	}
+	return compiler.append(outputNode{
+		kind:     outputNodeList,
+		elem:     elem,
+		notation: listNotation(compiler.nodes[elem].notation),
+	}), nil
+}
+
+// compileArray compiles a fixed array, treating uint8 elements as integer byte lists.
+func (compiler *outputCompiler) compileArray(typ reflect.Type, path string) (int, error) {
+	if typ.Elem().Kind() == reflect.Uint8 && !compiler.implementsMarshaler(typ.Elem()) {
+		return compiler.append(outputNode{kind: outputNodeBytes, notation: listNotation(integerType)}), nil
+	}
+	elem, err := compiler.compile(typ.Elem(), path)
+	if err != nil {
+		return 0, err
+	}
+	return compiler.append(outputNode{
+		kind:     outputNodeList,
+		elem:     elem,
+		notation: listNotation(compiler.nodes[elem].notation),
+	}), nil
+}
+
+// compileMap compiles a string-keyed map.
+func (compiler *outputCompiler) compileMap(typ reflect.Type, path string) (int, error) {
+	keyType := typ.Key()
+	if compiler.implementsMarshaler(keyType) || keyType.Kind() != reflect.String {
+		if path == "" {
+			return 0, fmt.Errorf("%w: output type %s has unsupported map key type %s", ErrInvalidPlan, typ, keyType)
+		}
+		return 0, fmt.Errorf("%w: output field %q has unsupported map key type %s", ErrInvalidPlan, path, keyType)
+	}
+	elem, err := compiler.compile(typ.Elem(), path)
+	if err != nil {
+		return 0, err
+	}
+	return compiler.append(outputNode{
+		kind:     outputNodeMap,
+		elem:     elem,
+		notation: mapNotation(compiler.nodes[elem].notation),
+	}), nil
+}
+
+// compileStruct compiles exported non-embedded fields in declaration order.
+func (compiler *outputCompiler) compileStruct(typ reflect.Type, path string) (int, error) {
+	fields := make([]outputStructField, 0, typ.NumField())
+	seen := make(map[string]struct{}, typ.NumField())
+	for index := range typ.NumField() {
+		field := typ.Field(index)
 		name, options, err := compileFieldName(field)
 		if err != nil {
-			return nil, fmt.Errorf("%w: output field %s: %w", ErrInvalidPlan, field.Name, err)
+			return 0, fmt.Errorf("%w: output field %s: %w", ErrInvalidPlan, outputFieldPath(path, field.Name), err)
 		}
-		if options.omitempty {
-			return nil, fmt.Errorf("%w: output field %q cannot use omitempty", ErrInvalidPlan, name)
+		fieldPath := outputFieldPath(path, name)
+		if options.omitempty && field.Type.Kind() != reflect.Pointer {
+			return 0, fmt.Errorf("%w: output field %q cannot use omitempty", ErrInvalidPlan, fieldPath)
 		}
 		if _, exists := seen[name]; exists {
-			return nil, fmt.Errorf("%w: duplicate output name %q", ErrInvalidPlan, name)
+			return 0, fmt.Errorf("%w: duplicate output name %q", ErrInvalidPlan, fieldPath)
 		}
-
-		compiled := outputField{name: name, index: index}
-		switch field.Type.Kind() { //nolint:exhaustive // Unsupported reflect kinds share registration-time rejection.
-		case reflect.String:
-			compiled.kind = fieldString
-		case reflect.Int64:
-			compiled.kind = fieldInt64
-		case reflect.Bool:
-			compiled.kind = fieldBool
-		case reflect.Float64:
-			compiled.kind = fieldFloat64
-		default:
-			return nil, fmt.Errorf("%w: output field %q has unsupported type %s", ErrInvalidPlan, name, field.Type)
+		node, err := compiler.compile(field.Type, fieldPath)
+		if err != nil {
+			return 0, err
 		}
 		seen[name] = struct{}{}
-		fields = append(fields, compiled)
+		fields = append(fields, outputStructField{
+			name:      name,
+			index:     index,
+			node:      node,
+			omitempty: options.omitempty,
+		})
 	}
-	return fields, nil
+	return compiler.append(outputNode{
+		kind:     outputNodeStruct,
+		fields:   fields,
+		notation: compiler.structNotation(fields),
+	}), nil
+}
+
+// append stores node and returns its arena index.
+func (compiler *outputCompiler) append(node outputNode) int {
+	compiler.nodes = append(compiler.nodes, node)
+	return len(compiler.nodes) - 1
+}
+
+// structNotation renders a declaration-ordered struct literal.
+func (compiler *outputCompiler) structNotation(fields []outputStructField) string {
+	var notation strings.Builder
+	notation.WriteByte('{')
+	for index, field := range fields {
+		if index > 0 {
+			notation.WriteString(", ")
+		}
+		notation.WriteString(field.name)
+		if field.omitempty {
+			notation.WriteByte('?')
+			notation.WriteString(": ")
+			notation.WriteString(compiler.nodes[compiler.nodes[field.node].elem].notation)
+			continue
+		}
+		notation.WriteString(": ")
+		notation.WriteString(compiler.nodes[field.node].notation)
+	}
+	notation.WriteByte('}')
+	return notation.String()
+}
+
+// implementsMarshaler reports whether typ or *typ implements a forbidden marshaler.
+func (compiler *outputCompiler) implementsMarshaler(typ reflect.Type) bool {
+	if typ == nil {
+		return false
+	}
+	if typ.Implements(compiler.jsonMarshaler) || typ.Implements(compiler.textMarshaler) {
+		return true
+	}
+	if typ.Kind() == reflect.Pointer {
+		return false
+	}
+	pointer := reflect.PointerTo(typ)
+	return pointer.Implements(compiler.jsonMarshaler) || pointer.Implements(compiler.textMarshaler)
+}
+
+// unsupportedOutputType classifies a rejected output type at path.
+func unsupportedOutputType(path string, typ reflect.Type) error {
+	if path == "" {
+		return fmt.Errorf("%w: output type %s is unsupported", ErrInvalidPlan, typ)
+	}
+	return fmt.Errorf("%w: output field %q has unsupported type %s", ErrInvalidPlan, path, typ)
+}
+
+// outputFieldPath joins a parent compile path with a JSON field name.
+func outputFieldPath(parent string, name string) string {
+	if parent == "" {
+		return name
+	}
+	return parent + "/" + name
+}
+
+// pointerNotation appends one nullable suffix.
+func pointerNotation(elem string) string {
+	if strings.HasSuffix(elem, noneSuffix) {
+		return elem
+	}
+	return elem + noneSuffix
+}
+
+// listNotation renders list[T].
+func listNotation(elem string) string {
+	return "list[" + elem + "]"
+}
+
+// mapNotation renders dict[str, T].
+func mapNotation(elem string) string {
+	return "dict[str, " + elem + "]"
 }
 
 // tagOptions contains the supported JSON tag option state.

@@ -82,7 +82,6 @@ func newValueConverter(maxDepth int, maxNodes int) (valueConverter, error) {
 	return valueConverter{
 		maxDepth:       maxDepth,
 		remainingNodes: maxNodes,
-		active:         make(map[visitKey]struct{}),
 	}, nil
 }
 
@@ -416,6 +415,9 @@ func (converter *valueConverter) leaveGoContainer(kind byte, value any) {
 
 // enterKey adds a prepared container identity to the active recursion path.
 func (converter *valueConverter) enterKey(key visitKey) (visitKey, error) {
+	if converter.active == nil {
+		converter.active = make(map[visitKey]struct{})
+	}
 	if _, exists := converter.active[key]; exists {
 		return visitKey{}, fmt.Errorf("%w: cyclic value", ErrUnsupportedValue)
 	}

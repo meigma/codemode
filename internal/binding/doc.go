@@ -6,5 +6,6 @@
 // ValidateValue, FromStarlark, and ToStarlark enforce that matrix plus positive
 // depth and materialization limits. [json.Number] and other numeric types are
 // rejected. Plan.InputShape remains the only descriptor source for compiled
-// input fields.
+// input fields. Plan.OutputShape remains a flat FieldShape slice whose Type
+// strings carry nested list, dict, struct, and nullable notation.
 package binding
