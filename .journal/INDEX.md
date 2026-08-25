@@ -10,3 +10,4 @@
 | 006 | 2026-08-24 | Review execution deadline isolation | complete | Confirmed issue #12, proved the re-exec worker remediation in a spike, and produced the approved worker-only architecture plus a five-increment implementation plan. |
 | 007 | 2026-08-24 | Review final-value allocation limit | complete | Confirmed and removed oversized final-conversion allocations, merged PR #26, and preserved the separate intermediate-output budget decision for issue #23. |
 | 008 | 2026-08-24 | Implement worker execution isolation | complete | Implemented and merged five increments that move every Starlark execution into a bounded re-executed worker process and close issue #12. |
+| 009 | 2026-08-25 | New work session | in-progress | Started a new journal session and is awaiting the developer's substantive request. |
