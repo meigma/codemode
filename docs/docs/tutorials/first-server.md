@@ -207,7 +207,17 @@ The program prints structured results for all three tools. The final line contai
 {"result":{"count":2,"key":"alpha"}}
 ```
 
-`execute` first binds and canonicalizes the keyword arguments in the parent, then authorizes the native call, and then dispatches `lookupRecords` in the parent. Each `execute` call runs a fresh bounded interpreter in a re-executed worker process. Only the final converted value returned by a zero-argument `main()` is exposed in the successful MCP result; printed text, globals, and interpreter-local intermediate values are not returned. During execution, each native-call argument map and each validated native result crosses the private worker protocol, and each crossing value is independently subject to `MaxValueDepth` and `MaxValueBytes`.
+`execute` first binds the keyword arguments in the worker. The parent rebinds
+them to `lookupInput`, creates a fresh canonical authorization map, authorizes
+the native call, and then dispatches `lookupRecords`. The parent converts the
+handler output to a process-neutral value, and the worker converts it to
+Starlark. Each `execute` call runs a fresh bounded interpreter in a re-executed
+worker process. Only the final converted value returned by a zero-argument
+`main()` is exposed in the successful MCP result; printed text, globals, and
+interpreter-local intermediate values are not returned. Each native-call
+argument map, native result, and final value is independently subject to
+`MaxValueDepth` and `MaxValueBytes`. Successful native-result value bodies also
+consume the fresh request-scoped `MaxIntermediateValueBytes` budget.
 
 `ServeWorkerAndExit` must be the first statement in `main`, before flag parsing, credential loading, client construction, or other application setup. It returns immediately in the ordinary host. In a re-executed worker, it serves one private probe or execution request and terminates the process.
 

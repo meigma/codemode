@@ -81,29 +81,77 @@ The site examples use one capability contract throughout:
 
 #### Supported input and output types
 
-Both generic type arguments must be non-pointer structs. Fields must be exported, direct fields; embedded fields are not supported. A field name defaults to its Go name. A single `json` tag can replace it with a valid Starlark identifier. Other struct tags, ignored fields, and unsupported JSON tag options are rejected.
+Both generic type arguments must be non-pointer structs. Input fields must be
+direct exported fields. Output structs can be nested, but every struct in the
+output graph must contain only direct exported fields. Embedded fields are not
+supported.
 
-The shipped input matrix is:
+A field name defaults to its Go name. One `json` tag can replace it with a
+valid Starlark identifier. Other struct tags, ignored fields, duplicate names,
+and unsupported JSON tag options are rejected.
 
-| Go field type | Starlark input | Required | JSON tag rule |
+Inputs support these scalar fields and named types with the same underlying
+kind:
+
+| Go field type | Starlark input | Required | `omitempty` |
 | --- | --- | --- | --- |
-| `string` | `str` | Yes | `omitempty` is rejected. |
-| `*int64` | `int` or `None` | No | `omitempty` is accepted but is not required for optional binding. |
+| `string` | `str` | Yes | Rejected |
+| `int64` | `int` | Yes | Rejected |
+| `bool` | `bool` | Yes | Rejected |
+| `float64` | `float` | Yes | Rejected |
+| `*string` | `str` or `None` | No | Accepted but not required |
+| `*int64` | `int` or `None` | No | Accepted but not required |
+| `*bool` | `bool` or `None` | No | Accepted but not required |
+| `*float64` | `float` or `None` | No | Accepted but not required |
 
-Inputs accept keyword arguments only. Duplicate keyword syntax is rejected by the Starlark parser as `ErrInvalidProgram` before authorization or handler dispatch. Positional, unknown, missing required, incorrectly typed, and out-of-range arguments reach binding and map to `ErrInvalidArguments`. An omitted optional integer and an explicit `None` both produce a nil pointer.
+Inputs accept keyword arguments only. Integers must fit the signed 64-bit
+range, and floats must be finite. CodeMode does not coerce an integer to a
+float or a Boolean to an integer. An omitted optional input and an explicit
+`None` both produce a nil pointer and omit that key from the fresh canonical
+authorization map. Duplicate keyword syntax is rejected by the Starlark parser
+as `ErrInvalidProgram` before authorization or handler dispatch. Positional,
+unknown, missing required, incorrectly typed, and out-of-range arguments reach
+binding and map to `ErrInvalidArguments`.
 
-The shipped output matrix is:
+An output can recursively contain these Go types:
 
-| Go field type | Starlark value | Final JSON value |
+| Go type | Starlark value | Rules |
 | --- | --- | --- |
-| `string` | `str` | string |
-| `int64` | `int` | signed 64-bit integer |
-| `bool` | `bool` | boolean |
-| `float64` | `float` | number |
+| `string`, `bool`, and named types with those underlying kinds | `str`, `bool` | Values are preserved. |
+| `int`, `int8`, `int16`, `int32`, `int64`, and named types with those underlying kinds | `int` | Values are normalized to signed 64-bit integers. |
+| `uint`, `uint8`, `uint16`, `uint32`, `uint64`, and named types with those underlying kinds | `int` | Values are normalized to signed 64-bit integers. A value above `math.MaxInt64` is invalid. |
+| `float32`, `float64`, and named types with those underlying kinds | `float` | Values are normalized to finite `float64` values. NaN and infinity are invalid. |
+| Pointer to a supported type | The referenced value or `None` | Pointers can appear in fields and inside containers. |
+| Struct | Dictionary-like object | Fields follow the same export and tag rules at every nesting level. |
+| Array or slice of a supported type | List | Arrays and slices have the same model-facing type notation. |
+| Map with a string or named-string key and a supported value type | Dictionary | Other map key types are rejected. |
+| Slice or array whose element has underlying type `uint8` | List of integers from 0 through 255 | Byte sequences are not base64 encoded. |
 
-Every output field is required. `omitempty` is rejected on output fields. A `float64` output must be finite. Nested structs, slices, maps, other pointer fields, and other scalar field types are outside the shipped registration matrix.
+A nil pointer field without `omitempty` remains present with `None`; its
+discovery type is `T | None`. A nil pointer field with `omitempty` is absent;
+at the root its field shape has `required: false`, and inside a struct its name
+uses `?`, as in `{detail?: str}`. The omitted field's type does not gain
+`| None` from that pointer. `omitempty` is rejected on every non-pointer output
+field.
 
-`Register(builder, capability)` compiles and validates the generic binding contract and retains the capability. It rejects a nil or closed builder, a nil handler, invalid metadata, unsupported types, and duplicate IDs or names.
+Nil slices, maps, and byte slices become `None`. This remains true even though
+their discovery types are `list[T]` or `dict[str, T]`. Non-nil empty slices and
+maps become empty lists and dictionaries. A nil pointer inside a list or map
+becomes `None`; `omitempty` omits only struct fields.
+
+`Register(builder, capability)` compiles and validates the complete reflected
+type graph before retaining the capability. Registration rejects unsupported
+input types; pointer roots; interfaces including `any`; `json.RawMessage`;
+types whose value or pointer method set implements `json.Marshaler` or
+`encoding.TextMarshaler`; functions, channels, complex values,
+`unsafe.Pointer`, and `uintptr`; non-string map keys; cyclic type graphs; and
+invalid fields or tags.
+
+These are registration-time failures and map to `ErrInvalidRegistration`.
+Returned values are checked at call time. An unsigned result above
+`math.MaxInt64` or a non-finite float maps to `ErrCapabilityFailure`.
+Output-depth, per-value byte, and aggregate intermediate-byte exhaustion map to
+`ErrResourceLimit`.
 
 ### Options and builder lifecycle
 
@@ -159,6 +207,7 @@ The filter is deployment configuration, not a per-request policy. Use an `authz.
 | `MaxNativeCalls uint64` | 100 | Attempted native calls in one execution. |
 | `MaxValueDepth int` | 32 | Inclusive nesting depth of any value crossing the worker boundary. |
 | `MaxValueBytes int` | 1,048,576 bytes (1 MiB) | Type-preserving encoding of any value crossing the worker boundary. |
+| `MaxIntermediateValueBytes int` | 8,388,608 bytes (8 MiB) | Cumulative encoded successful parent-to-child native-result value bodies in one `Execute` call. |
 | `MaxSearchQueryBytes int` | 256 bytes | Raw search query before trimming or case normalization. Whitespace padding counts. |
 | `MaxSearchResults int` | 20 | Search results returned. |
 | `MaxConcurrentExecutions int` | 8 | Concurrent spawn attempts and live worker processes. |
@@ -177,6 +226,20 @@ CodeMode's type-preserving worker encoding, not canonical JSON and not the
 complete protocol frame. The worker frame cap adds the fixed envelope and, for
 native calls, the longest enabled encoded capability ID. Build rejects a
 catalog and limit combination whose largest legal frame cannot be represented.
+
+`MaxIntermediateValueBytes` is independent of `MaxValueBytes`. Each
+`Execute` call starts with a fresh aggregate budget. After a successful native
+result is encoded, CodeMode checks and debits its value-body byte length from
+that request's remaining budget. The sum excludes frame envelopes, native-call
+arguments, failed handlers, and the final program value. It also does not
+measure handler-owned memory, Starlark object memory, process RSS, or a
+high-water mark.
+
+A native result must satisfy both limits: `MaxValueBytes` bounds that one
+crossing, while `MaxIntermediateValueBytes` bounds the sum of successful
+native-result bodies. A sequence of individually valid results can therefore
+exhaust the aggregate limit, and a single result can exceed `MaxValueBytes`
+while aggregate capacity remains.
 
 `MaxExecutionTime` starts before waiting for a worker slot and covers spawn,
 protocol exchange, Starlark execution, and parent dispatch. Killing and
@@ -233,7 +296,27 @@ Describe(name CapabilityName) (Description, error)
 | `input` | array of field shapes | Ordered input fields. |
 | `output` | array of field shapes | Stable result contract. Models and clients must use these ordered field shapes. |
 
-Each field shape has `name` (string), `type` (string), and `required` (boolean). Input shapes use `str` and `int | None`. Output shapes use `str`, `int`, `bool`, and `float`. Output fields always report `required: true`.
+Each field shape remains the flat object `{name, type, required}`. Input
+`type` values are `str`, `int`, `bool`, and `float`; optional pointer inputs
+append ` | None` and set `required` to `false`.
+
+Output `type` strings use deterministic compact notation:
+
+| Go shape | Notation |
+| --- | --- |
+| String, integer, Boolean, or float | `str`, `int`, `bool`, or `float` |
+| Array or slice | `list[T]` |
+| String-keyed map | `dict[str, T]` |
+| Struct | `{field: T, optional?: U}` |
+| Pointer without an enclosing `omitempty` field | <code>T &#124; None</code> |
+
+Fields remain in Go declaration order, including fields inside a struct
+notation. Arrays and slices share `list[T]` because they produce the same
+Starlark value. Repeated pointer layers append ` | None` once. Root output
+optionality stays in `required`; nested output optionality uses `?`. Examples
+include `list[{title: str, score: float}]`, `dict[str, bool]`,
+`{value: str, detail?: str}`, and the nested nullable
+`list[str | None] | None`.
 
 `Description.Output` is the stable result contract. Clients that parsed a trailing ` -> <GoType>` suffix on `signature` must stop parsing it and use `output` instead. There is no compatibility suffix, alias, or alternate signature field.
 
@@ -249,14 +332,26 @@ Every call creates a fresh interpreter and fresh budgets. Module loading is disa
 
 For each native call, CodeMode performs these operations in order:
 
-1. Bind exact keyword arguments to the registered Go input and create a fresh canonical JSON-shaped argument map.
-2. Call the authorizer with that canonical input.
-3. Dispatch the handler only when authorization succeeds.
-4. Convert the handler's exact registered output to Starlark.
+1. The worker binds exact keyword arguments against the registered input shape
+   and sends normalized values to the parent.
+2. The parent rebinds those values to the exact registered Go input and creates
+   a fresh canonical authorization map.
+3. The parent calls the authorizer with that canonical input.
+4. The parent dispatches the handler only when authorization succeeds.
+5. The parent converts the exact registered handler output to a bounded
+   process-neutral value. The worker then converts that value to Starlark.
 
-After `main` returns, CodeMode converts only its final value. Supported final values are `None`, booleans, strings, signed 64-bit integers, finite floats, tuples, lists, and dictionaries with string keys, recursively within configured limits. `None` becomes JSON `null`, and tuples and lists become JSON arrays.
+After `main` returns, CodeMode converts only its final value. Supported final
+values are `None`, booleans, strings, signed 64-bit integers, finite floats,
+tuples, lists, and dictionaries with string keys, recursively within configured
+limits. `None` becomes JSON `null`, and tuples and lists become JSON arrays.
 
-Only that converted return value is exposed to the caller. Printed text, globals, and interpreter-local intermediate values are not returned. During execution, each native-call argument map and each validated native result crosses the private worker protocol, and each crossing value is independently subject to `MaxValueDepth` and `MaxValueBytes`.
+Only that converted return value is exposed to the caller. Printed text,
+globals, and interpreter-local intermediate values are not returned. Each
+native-call argument map, native result, and final value is independently
+subject to `MaxValueDepth` and `MaxValueBytes`. Successful native-result value
+bodies also consume the request-scoped `MaxIntermediateValueBytes` budget,
+including results that `main` does not return.
 
 ### Error classifications
 
@@ -298,7 +393,10 @@ Credentials do not belong in `Subject`. The host keeps credentials in its authen
 | `CapabilityName string` | Dotted model-facing name. |
 | `Arguments map[string]any` | Fresh canonical projection of validated keyword arguments. |
 
-Canonical arguments contain JSON-shaped values from the shipped input matrix. A supplied string is a string and a supplied optional integer is an `int64`. An omitted optional integer or explicit `None` is absent from the map. The canonical map is separate from the typed input passed to the handler.
+Canonical arguments contain JSON-shaped scalar values from the supported input
+matrix: strings, `int64` integers, Booleans, and finite `float64` values. An
+omitted optional value or explicit `None` is absent from the map. The canonical
+map is separate from the typed input passed to the handler.
 
 ### Authorizers
 

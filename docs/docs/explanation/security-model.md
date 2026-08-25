@@ -24,13 +24,24 @@ Credentials stay in the host's authentication layer. They are not fields on `aut
 
 ## Validation precedes authority
 
-A native call crosses three boundaries in a fixed order:
+A native call passes four stages in a fixed order:
 
-1. **Exact binding and canonicalization.** Duplicate keyword syntax is rejected by the Starlark parser as `ErrInvalidProgram` before this step. Positional, missing, unknown, incorrectly typed, and out-of-range arguments reach binding and map to `ErrInvalidArguments`. Successful binding creates the exact registered Go input and a fresh JSON-shaped argument map.
-2. **Authorization.** CodeMode passes the trusted subject, stable capability ID, dotted capability name, and canonical arguments to `authz.Authorizer`.
-3. **Handler dispatch.** CodeMode calls the typed handler only if authorization returns `nil`.
+1. **Worker binding.** The worker validates exact keyword arguments against the
+   registered input shape and sends normalized values to the parent. Duplicate
+   keyword syntax is rejected by the Starlark parser as `ErrInvalidProgram`.
+   Positional, missing, unknown, incorrectly typed, and out-of-range arguments
+   map to `ErrInvalidArguments`.
+2. **Parent rebinding and canonicalization.** The parent reconstructs the exact
+   registered Go input and creates a fresh JSON-shaped authorization map.
+3. **Authorization.** CodeMode passes the trusted subject, stable capability ID,
+   dotted capability name, and canonical arguments to `authz.Authorizer`.
+4. **Handler dispatch.** CodeMode calls the typed handler only if authorization
+   returns `nil`.
 
-This order prevents policy from interpreting malformed Starlark values and prevents a handler from running before policy has evaluated the exact input the handler will receive. The canonical map is separate from the typed handler input, so policy cannot rewrite the handler's arguments by mutating the map.
+This order prevents policy from interpreting malformed Starlark values and
+prevents a handler from running before policy has evaluated the exact input the
+handler will receive. The canonical map is separate from the typed handler
+input, so policy cannot rewrite the handler's arguments by mutating the map.
 
 An authorizer reports a recognized denial with an error that wraps `authz.ErrDenied`. CodeMode classifies that outcome as `permission denied` and does not dispatch the handler. Any other authorizer error, and an authorizer panic recovered at the boundary, becomes `authorization policy failure`. Policy diagnostic text does not cross the MCP boundary.
 
@@ -97,10 +108,12 @@ returned. Unrelated native results are not exposed in that final caller
 result. No Starlark globals or mutable interpreter state carry into the next
 execute call.
 
-Capability handlers do not run in the worker. A native call crosses the private
-protocol, is rebound to the exact registered input type in the parent, is
-authorized there, and is then dispatched to the parent handler. The validated
-native result crosses back to the worker so Starlark can continue.
+Capability handlers do not run in the worker. A normalized native call crosses
+the private protocol, is rebound to the exact registered input type in the
+parent, is authorized there, and is then dispatched to the parent handler. The
+parent converts the handler output to a bounded process-neutral value. Its
+encoded native-result body crosses back to the worker, which converts that
+value to Starlark so the program can continue.
 
 These rules isolate interpreter state and make Starlark execution killable.
 They do not confine registered Go code: authorizers, the optional Rego
@@ -112,9 +125,17 @@ gave that process.
 CodeMode derives one execution context from `MaxExecutionTime` and the request
 context. The elapsed budget starts before waiting for a worker slot and covers
 spawn, protocol exchange, Starlark execution, and parent dispatch. Killing and
-reaping the worker can add operating-system overhead beyond the budget. The
-interpreter separately enforces source, bytecode-step, attempted-native-call,
-crossing-value depth, and crossing-value size limits.
+reaping the worker can add operating-system overhead beyond the budget. Source,
+bytecode-step, attempted-native-call, crossing-value depth, and per-crossing
+encoded-size limits apply independently.
+
+`MaxIntermediateValueBytes` additionally bounds the request-scoped sum of
+successful parent-to-child native-result value bodies. A result is encoded
+before its body length is checked and debited. This cumulative budget is
+independent of `MaxValueBytes`, starts fresh for every `Execute`, and includes
+successful native results that the program later discards. It does not measure
+handler allocations, Starlark object memory, process RSS, or an operating-system
+memory quota.
 
 When the execution context ends, the parent closes the worker pipes, kills the
 worker if necessary, and reaps it exactly once. This hard-preempts Starlark,
