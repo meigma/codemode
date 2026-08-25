@@ -23,3 +23,8 @@ Required design corrections:
 - Compile immutable output node plans once, preserve exact numeric kinds through normalization, sort runtime map keys, deep-copy any nested discovery state, and report nested registration/conversion paths.
 
 Recommended implementation increments: first settle and spike the reflected output universe, null/omission semantics, notation, and aggregate budget; then widen scalar input binding on both child and authoritative parent paths; then add the compiled output walker and resource accounting; finally prove an end-to-end list/filter/aggregate program, derived discovery, failure classification, immutability, docs, and MCP schema behavior.
+
+## 2026-08-25 11:51 — Implementation plan delegated
+A planning agent verified the review against current symbols and produced [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md). The reviewed plan resolves the structural output universe, nil/omission behavior, flat discovery notation, input matrix, conversion-limit placement, and error classifications; it keeps the aggregate intermediate-value default and dispatch-budget plumbing behind a bounded spike rather than inventing unsupported precision.
+
+The plan has five implementation increments: widen scalar inputs; spike and add request-wide native-result accounting while removing duplicate encoding; compile and convert composite outputs; prove discovery plus real same-binary composition; then update all affected documentation. It includes file/symbol targets, focused tests and commands, traceability, risks, non-goals, and a definition of done.
