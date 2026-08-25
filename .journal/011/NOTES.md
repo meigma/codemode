@@ -28,3 +28,15 @@ Recommended implementation increments: first settle and spike the reflected outp
 A planning agent verified the review against current symbols and produced [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md). The reviewed plan resolves the structural output universe, nil/omission behavior, flat discovery notation, input matrix, conversion-limit placement, and error classifications; it keeps the aggregate intermediate-value default and dispatch-budget plumbing behind a bounded spike rather than inventing unsupported precision.
 
 The plan has five implementation increments: widen scalar inputs; spike and add request-wide native-result accounting while removing duplicate encoding; compile and convert composite outputs; prove discovery plus real same-binary composition; then update all affected documentation. It includes file/symbol targets, focused tests and commands, traceability, risks, non-goals, and a definition of done.
+
+## 2026-08-25 15:29 — Issue implementation complete
+Issue #23 was implemented, documented, verified, and closed. Six reviewed pull requests were squash-merged to `master`:
+
+- PR #35 widened required inputs to `string`, `int64`, `bool`, and `float64`, and optional inputs to pointers of those four kinds while preserving child validation, authoritative parent rebinding, canonical authorization arguments, omission semantics, and exact numeric kinds.
+- PR #36 added the positive 8 MiB default `MaxIntermediateValueBytes` request budget, debited encoded successful native-result bodies exactly once, kept it independent of per-crossing `MaxValueBytes`, and removed duplicate native-result encoding.
+- PR #37 compiled immutable recursive output plans for supported structs, arrays, slices, string-keyed maps, pointers, named scalars, signed and bounded unsigned integers, finite floats, and byte sequences. Conversion preflights depth and allocation-derived node limits, reports nested paths, sorts map keys, and derives deterministic flat `FieldShape.Type` notation.
+- PR #38 added the real same-binary MCP list/filter/aggregate proof, derived nested discovery and flat-schema checks, canonical authorization and exact typed-handler assertions, catalog immutability checks, and public capability/resource failure projections.
+- PR #39 updated the public API, MCP tool, security model, tutorial, and README contracts for the widened matrix, aggregate budget, parent/worker ordering, nil and `omitempty` behavior, and deterministic notation.
+- PR #40 stabilized an existing elapsed-budget test exposed by final race validation without weakening its authorizer, error, deadline, or zero-handler-call assertions.
+
+The final merged-tree validation passed format checking, `go build ./...`, strict MkDocs build, full golangci-lint, `go test ./...`, both real MCP smoke tests, and `go test -race ./... -count=1`. A transient Moon `root:check --force` artifact race was avoided by running the same gates sequentially; the latest GitHub CI run also passed the repository `root:check` graph.
