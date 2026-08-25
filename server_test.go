@@ -3,6 +3,7 @@ package codemode_test
 import (
 	"context"
 	"errors"
+	"math"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -392,6 +393,215 @@ def main():
 	require.ErrorIs(t, err, codemode.ErrResourceLimit)
 	assert.Equal(t, codemode.ErrResourceLimit, err)
 	assert.Equal(t, int64(2), handlerCalls.Load())
+}
+
+// compositeProjectionInput is the empty input used by public composite projections.
+type compositeProjectionInput struct{}
+
+// nanProjectionOutput covers nested non-finite floating-point results.
+type nanProjectionOutput struct {
+	// Score is a finite floating-point field.
+	Score float64 `json:"score"`
+}
+
+// overflowProjectionOutput covers unsigned values above MaxInt64.
+type overflowProjectionOutput struct {
+	// Count is an unsigned 64-bit integer.
+	Count uint64 `json:"count"`
+}
+
+// nestedProjectionItem is one nested object used for depth and budget cases.
+type nestedProjectionItem struct {
+	// ID is the nested row identifier.
+	ID string `json:"id"`
+}
+
+// nestedProjectionOutput is a composite result whose nesting exceeds MaxValueDepth 2.
+type nestedProjectionOutput struct {
+	// Items is the compiled list of nested objects.
+	Items []nestedProjectionItem `json:"items"`
+}
+
+// TestServerExecuteProjectsCompositeOutputFailures proves nested NaN, Inf, and
+// unsigned overflow become the bare public capability-failure sentinel.
+func TestServerExecuteProjectsCompositeOutputFailures(t *testing.T) {
+	tests := []struct {
+		// name identifies the invalid handler output.
+		name string
+
+		// capabilityName is the Starlark capability invoked by main.
+		capabilityName string
+
+		// register retains one capability that returns an invalid composite value.
+		register func(*codemode.Builder) error
+	}{
+		{
+			name:           "nested NaN",
+			capabilityName: "records.nan",
+			register: func(builder *codemode.Builder) error {
+				return codemode.Register(builder, codemode.Capability[compositeProjectionInput, nanProjectionOutput]{
+					ID:          "cap.nan",
+					Name:        "records.nan",
+					Summary:     "Return a NaN score.",
+					Description: "Projects non-finite floats as capability failure.",
+					Handler: func(context.Context, authz.Subject, compositeProjectionInput) (nanProjectionOutput, error) {
+						return nanProjectionOutput{Score: math.NaN()}, nil
+					},
+				})
+			},
+		},
+		{
+			name:           "nested Inf",
+			capabilityName: "records.inf",
+			register: func(builder *codemode.Builder) error {
+				return codemode.Register(builder, codemode.Capability[compositeProjectionInput, nanProjectionOutput]{
+					ID:          "cap.inf",
+					Name:        "records.inf",
+					Summary:     "Return an infinite score.",
+					Description: "Projects non-finite floats as capability failure.",
+					Handler: func(context.Context, authz.Subject, compositeProjectionInput) (nanProjectionOutput, error) {
+						return nanProjectionOutput{Score: math.Inf(1)}, nil
+					},
+				})
+			},
+		},
+		{
+			name:           "uint overflow",
+			capabilityName: "records.overflow",
+			register: func(builder *codemode.Builder) error {
+				return codemode.Register(
+					builder,
+					codemode.Capability[compositeProjectionInput, overflowProjectionOutput]{
+						ID:          "cap.overflow",
+						Name:        "records.overflow",
+						Summary:     "Return an overflowing unsigned count.",
+						Description: "Projects unsigned overflow as capability failure.",
+						Handler: func(context.Context, authz.Subject, compositeProjectionInput) (overflowProjectionOutput, error) {
+							return overflowProjectionOutput{Count: uint64(1) << 63}, nil
+						},
+					},
+				)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll(), Limits: codemode.DefaultLimits()})
+			require.NoError(t, tt.register(builder))
+			server, err := builder.Build()
+			require.NoError(t, err)
+
+			_, err = server.Execute(t.Context(), authz.Subject{ID: "subject-1"}, codemode.Program(`
+def main():
+    return `+tt.capabilityName+`()
+`))
+
+			require.ErrorIs(t, err, codemode.ErrCapabilityFailure)
+			assert.Equal(t, codemode.ErrCapabilityFailure, err)
+		})
+	}
+}
+
+// TestServerExecuteProjectsCompositeValueLimits proves composite depth and
+// independent per-value/aggregate budgets project only the bare resource sentinel.
+func TestServerExecuteProjectsCompositeValueLimits(t *testing.T) {
+	t.Run("max value depth", func(t *testing.T) {
+		limits := codemode.DefaultLimits()
+		limits.MaxValueDepth = 2
+		limits.MaxValueBytes = 1024
+		limits.MaxIntermediateValueBytes = 1024
+		builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll(), Limits: limits})
+		require.NoError(
+			t,
+			codemode.Register(builder, codemode.Capability[compositeProjectionInput, nestedProjectionOutput]{
+				ID:          "cap.depth",
+				Name:        "records.depth",
+				Summary:     "Return nested items.",
+				Description: "Projects composite depth exhaustion as a resource limit.",
+				Handler: func(context.Context, authz.Subject, compositeProjectionInput) (nestedProjectionOutput, error) {
+					return nestedProjectionOutput{Items: []nestedProjectionItem{{ID: "a"}}}, nil
+				},
+			}),
+		)
+		server, err := builder.Build()
+		require.NoError(t, err)
+
+		_, err = server.Execute(t.Context(), authz.Subject{ID: "subject-1"}, `
+def main():
+    return records.depth()
+`)
+
+		require.ErrorIs(t, err, codemode.ErrResourceLimit)
+		assert.Equal(t, codemode.ErrResourceLimit, err)
+	})
+
+	t.Run("per-value bytes", func(t *testing.T) {
+		const body = `{"items":[{"id":"xx"}]}`
+		limits := codemode.DefaultLimits()
+		limits.MaxValueBytes = len(body) - 1
+		limits.MaxIntermediateValueBytes = 1024
+		var handlerCalls atomic.Int64
+		builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll(), Limits: limits})
+		require.NoError(
+			t,
+			codemode.Register(builder, codemode.Capability[compositeProjectionInput, nestedProjectionOutput]{
+				ID:          "cap.pervalue",
+				Name:        "records.pervalue",
+				Summary:     "Return one nested item.",
+				Description: "Projects one oversized composite result independently of the aggregate budget.",
+				Handler: func(context.Context, authz.Subject, compositeProjectionInput) (nestedProjectionOutput, error) {
+					handlerCalls.Add(1)
+					return nestedProjectionOutput{Items: []nestedProjectionItem{{ID: "xx"}}}, nil
+				},
+			}),
+		)
+		server, err := builder.Build()
+		require.NoError(t, err)
+
+		_, err = server.Execute(t.Context(), authz.Subject{ID: "subject-1"}, `
+def main():
+    return records.pervalue()
+`)
+
+		require.ErrorIs(t, err, codemode.ErrResourceLimit)
+		assert.Equal(t, codemode.ErrResourceLimit, err)
+		assert.Equal(t, int64(1), handlerCalls.Load())
+	})
+
+	t.Run("aggregate intermediate bytes", func(t *testing.T) {
+		const body = `{"items":[{"id":"xx"}]}`
+		limits := codemode.DefaultLimits()
+		limits.MaxValueBytes = 1024
+		limits.MaxIntermediateValueBytes = len(body)*2 - 1
+		var handlerCalls atomic.Int64
+		builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll(), Limits: limits})
+		require.NoError(
+			t,
+			codemode.Register(builder, codemode.Capability[compositeProjectionInput, nestedProjectionOutput]{
+				ID:          "cap.aggregate",
+				Name:        "records.aggregate",
+				Summary:     "Return one nested item.",
+				Description: "Projects composite aggregate exhaustion independently of MaxValueBytes.",
+				Handler: func(context.Context, authz.Subject, compositeProjectionInput) (nestedProjectionOutput, error) {
+					handlerCalls.Add(1)
+					return nestedProjectionOutput{Items: []nestedProjectionItem{{ID: "xx"}}}, nil
+				},
+			}),
+		)
+		server, err := builder.Build()
+		require.NoError(t, err)
+
+		_, err = server.Execute(t.Context(), authz.Subject{ID: "subject-1"}, `
+def main():
+    records.aggregate()
+    return records.aggregate()
+`)
+
+		require.ErrorIs(t, err, codemode.ErrResourceLimit)
+		assert.Equal(t, codemode.ErrResourceLimit, err)
+		assert.Equal(t, int64(2), handlerCalls.Load())
+	})
 }
 
 // TestServerExecuteReturnsOnlyMainResult proves top-level values and printed text do not escape.

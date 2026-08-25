@@ -33,6 +33,24 @@ type ExportedOutput struct {
 	Name string `json:"name"`
 }
 
+// NamedItem is a nested catalog result whose Go identifier must stay host-local.
+type NamedItem struct {
+	// ID is the nested row identifier.
+	ID string `json:"id"`
+
+	// Active reports whether the row survives filtering.
+	Active bool `json:"active"`
+
+	// Score is the nested finite floating-point field.
+	Score float64 `json:"score"`
+}
+
+// compositeTestOutput is a list-valued catalog result used to lock derived notation.
+type compositeTestOutput struct {
+	// Items is the compiled list of nested objects.
+	Items []NamedItem `json:"items"`
+}
+
 // TestBuildValidatesEveryRegistrationBeforeFiltering proves disabled entries cannot hide invalid contracts.
 func TestBuildValidatesEveryRegistrationBeforeFiltering(t *testing.T) {
 	registration := validRegistration("cap.bad", "records.bad", "Bad record")
@@ -163,12 +181,26 @@ func TestBuildFiltersOnceAndDerivesEverySurface(t *testing.T) {
 		validRegistration("cap.zeta", "teams.zeta", "Zeta team"),
 		validRegistration("cap.disabled", "records.disabled", "Disabled record"),
 		validRegistration("cap.alpha", "records.alpha", "Alpha record"),
+		{
+			ID:          "cap.composite",
+			Name:        "records.composite",
+			Summary:     "Composite record",
+			Description: "Composite record full description.",
+			Plan:        mustCompileCompositePlan(),
+			Invoke: func(context.Context, authz.Subject, any) (any, error) {
+				return compositeTestOutput{}, nil
+			},
+		},
 	}, testOptions("cap.disabled"))
 	require.NoError(t, err)
 
 	entries := catalog.Entries()
-	require.Len(t, entries, 2)
-	assert.Equal(t, []string{"records.alpha", "teams.zeta"}, []string{entries[0].Name, entries[1].Name})
+	require.Len(t, entries, 3)
+	assert.Equal(t, []string{"records.alpha", "records.composite", "teams.zeta"}, []string{
+		entries[0].Name,
+		entries[1].Name,
+		entries[2].Name,
+	})
 	_, foundByName := catalog.Lookup("records.disabled")
 	_, foundByID := catalog.LookupID("cap.disabled")
 	_, foundDisabledDescription := catalog.Describe("records.disabled")
@@ -179,8 +211,16 @@ func TestBuildFiltersOnceAndDerivesEverySurface(t *testing.T) {
 	assert.False(t, foundDisabledDescription)
 	assert.Empty(t, disabledSearch)
 
+	recordSearch, err := catalog.Search("record")
+	require.NoError(t, err)
+	require.Len(t, recordSearch, 2)
+	assert.Equal(t, []string{"records.alpha", "records.composite"}, []string{
+		recordSearch[0].Name,
+		recordSearch[1].Name,
+	})
+
 	bindings := catalog.NamespaceBindings()
-	require.Len(t, bindings, 2)
+	require.Len(t, bindings, 3)
 	assert.Equal(t, []string{"records"}, bindings[0].Segments)
 	assert.Equal(t, "alpha", bindings[0].Function)
 	assert.Same(t, entries[0].Plan, bindings[0].Capability.Plan)
@@ -201,6 +241,26 @@ func TestBuildFiltersOnceAndDerivesEverySurface(t *testing.T) {
 	assert.Equal(t, "name", description.Output[0].Name)
 	assert.Equal(t, "str", description.Output[0].Type)
 	assert.True(t, description.Output[0].Required)
+
+	compositeDescription, foundComposite := catalog.Describe("records.composite")
+	require.True(t, foundComposite)
+	assert.Equal(t, "records.composite(*, org: str, limit: int | None)", compositeDescription.Signature)
+	require.Len(t, compositeDescription.Output, 1)
+	assert.Equal(t, "items", compositeDescription.Output[0].Name)
+	assert.Equal(t, "list[{id: str, active: bool, score: float}]", compositeDescription.Output[0].Type)
+	assert.True(t, compositeDescription.Output[0].Required)
+	assertDescriptionOmitsOutputTypeNames(t, compositeDescription, "NamedItem", "compositeTestOutput")
+	compositeDescription.Input[0].Name = "mutated"
+	compositeDescription.Input[0].Type = "mutated"
+	compositeDescription.Output[0].Name = "mutated"
+	compositeDescription.Output[0].Type = "mutated"
+	freshComposite, foundComposite := catalog.Describe("records.composite")
+	require.True(t, foundComposite)
+	assert.Equal(t, "org", freshComposite.Input[0].Name)
+	assert.Equal(t, "str", freshComposite.Input[0].Type)
+	assert.Equal(t, "items", freshComposite.Output[0].Name)
+	assert.Equal(t, "list[{id: str, active: bool, score: float}]", freshComposite.Output[0].Type)
+
 	description.Input[0].Name = "mutated"
 	freshDescription, foundDescription := catalog.Describe("records.alpha")
 	require.True(t, foundDescription)
@@ -389,6 +449,15 @@ func mustCompileTestPlan() *binding.Plan {
 // mustCompileExportedOutputPlan compiles an empty input with an exported output type.
 func mustCompileExportedOutputPlan() *binding.Plan {
 	plan, err := binding.CompileFor[struct{}, ExportedOutput]()
+	if err != nil {
+		panic(err)
+	}
+	return plan
+}
+
+// mustCompileCompositePlan compiles the catalog test input with a list-valued output.
+func mustCompileCompositePlan() *binding.Plan {
+	plan, err := binding.CompileFor[testInput, compositeTestOutput]()
 	if err != nil {
 		panic(err)
 	}
