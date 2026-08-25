@@ -24,3 +24,8 @@ Next: push the implementation branch, open the issue-closing PR, and monitor its
 Pushed `feat/issue-25-first-touch` and opened PR #34, `feat(api): reduce first-touch server ceremony`, closing issue #25. GitHub CI, GitHub Pages, and Kusari Inspector all passed; the PR reports a clean merge state and has no review comments yet.
 
 PR: https://github.com/meigma/codemode/pull/34
+
+## 2026-08-25 15:45 — Merge conflicts resolved
+Rebased `feat/issue-25-first-touch` onto `origin/master` at `36f38b0`, incorporating PRs #35–#40. Resolved conflicts in `README.md`, `builder_test.go`, `docs/docs/reference/public-api.md`, and `docs/docs/tutorials/first-server.md`. Preserved the widened binding matrix and intermediate-result budget documentation, migrated the new composite registration tests to deferred `Build` errors, and added per-field defaulting for the new `MaxIntermediateValueBytes` limit.
+
+The rebased commit is `ec0fa78`. Focused root, authz, and MCP tests passed. After clearing a stale golangci-lint cache that referenced a removed Worktrunk path, `moon run root:check` passed format, lint, build, MCP smoke, strict docs build, and the full race suite. Force-pushed with lease; GitHub CI, GitHub Pages, and Kusari Inspector passed. PR #34 is mergeable with a clean merge state and no review comments.
