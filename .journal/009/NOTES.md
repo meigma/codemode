@@ -24,3 +24,6 @@ Five programmer agents applied the approved scope across 11 files on branch docs
 Functional verification (functional-tester + my re-run of the fixed procedure): tutorial PASS verbatim; disable-capabilities PASS verbatim; Rego how-to initially FAILED as a procedure — err shadowing compile error, denial text unobservable through the tutorial's callTool, const scope ambiguity, missing go mod tidy. All four fixed in the doc; fixed procedure re-run reproduces `execute: {"result":{"count":2,"key":"alpha"}}` and `execute: permission denied` exactly.
 Validation: moon run docs:build (strict) PASS; go test ./... PASS. Commit f1a1a43; PR #32 open.
 Durable lesson for close-out: docs that publish exact expected outputs must be executed, not source-grounded — the Rego guide was accuracy-clean on paper yet unreproducible in practice.
+
+## 2026-08-25 11:15 — PR #32 merged
+All checks passed (ci, GitHub Pages, Kusari). Squash-merged to master as 906541d; implementation worktree docs/post-refactor-review removed. Docs review/improvement work complete.
