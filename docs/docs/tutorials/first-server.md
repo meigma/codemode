@@ -1,11 +1,12 @@
 ---
 title: Build your first CodeMode server
-description: Register a typed Go capability and call it through the official MCP in-memory transport.
+description: Register a typed Go capability and expose it through a real stdio MCP server.
 ---
 
 # Build your first CodeMode server
 
-This tutorial builds an MCP server with one typed capability. You will connect an official MCP client over the SDK's in-memory transport and call `search_api`, `describe_api`, and `execute`.
+This tutorial builds a stdio MCP server with one typed capability. After you add
+the server to an agent, the agent can discover and call `records.lookup`.
 
 ## Prerequisites
 
@@ -13,7 +14,8 @@ The repository currently requires Go 1.26.6.
 
 ## Create a module
 
-CodeMode has not published a release. To follow the tutorial against the current `master` branch, create a module and add CodeMode and the official MCP Go SDK:
+CodeMode has not published a release. Create a module and add CodeMode and the
+official MCP Go SDK from their current default branches:
 
 ```sh
 mkdir codemode-first-server
@@ -24,15 +26,13 @@ go get github.com/meigma/codemode@master github.com/modelcontextprotocol/go-sdk/
 
 ## Add the server
 
-Create `main.go` with the following program:
+Create `main.go`:
 
 ```go
 package main
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"log"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -42,185 +42,108 @@ import (
 	"github.com/meigma/codemode/mcpserver"
 )
 
-// invocationContextKey is the private key for trusted invocation context.
-type invocationContextKey struct{}
-
-// lookupInput is the records.lookup input contract.
 type lookupInput struct {
-	// Key is the required record identifier.
-	Key string `json:"key"`
-
-	// Limit is the optional result limit.
+	Key   string `json:"key"`
 	Limit *int64 `json:"limit,omitempty"`
 }
 
-// lookupOutput is the records.lookup output contract.
 type lookupOutput struct {
-	// Key is the record identifier returned by the handler.
-	Key string `json:"key"`
-
-	// Count is the limit observed by the handler.
-	Count int64 `json:"count"`
+	Key   string `json:"key"`
+	Count int64  `json:"count"`
 }
 
-// subjectResolver reads the authenticated subject from host-owned Go context.
-type subjectResolver struct{}
-
-// Resolve returns the authenticated subject stored by the host.
-func (subjectResolver) Resolve(ctx context.Context) (authz.Subject, error) {
-	subject, ok := ctx.Value(invocationContextKey{}).(authz.Subject)
-	if !ok || subject.ID == "" {
-		return authz.Subject{}, codemode.ErrUnauthenticated
-	}
-	return subject, nil
-}
-
-// withSubject stores a non-secret authenticated subject in trusted host context.
-func withSubject(ctx context.Context, subject authz.Subject) context.Context {
-	return context.WithValue(ctx, invocationContextKey{}, subject)
-}
-
-// lookupRecords returns a deterministic result for the tutorial capability.
-func lookupRecords(_ context.Context, _ authz.Subject, input lookupInput) (lookupOutput, error) {
+func lookup(_ context.Context, _ authz.Subject, in lookupInput) (lookupOutput, error) {
 	count := int64(0)
-	if input.Limit != nil {
-		count = *input.Limit
+	if in.Limit != nil {
+		count = *in.Limit
 	}
-	return lookupOutput{Key: input.Key, Count: count}, nil
+	return lookupOutput{Key: in.Key, Count: count}, nil
 }
 
-// callTool calls one MCP tool and prints its structured output.
-func callTool(ctx context.Context, session *mcp.ClientSession, params *mcp.CallToolParams) error {
-	result, err := session.CallTool(ctx, params)
-	if err != nil {
-		return fmt.Errorf("call %s: %w", params.Name, err)
-	}
-	if result.IsError {
-		return fmt.Errorf("%s returned a tool error: %v", params.Name, result.Content)
-	}
+func main() {
+	codemode.ServeWorkerAndExit()
 
-	encoded, err := json.Marshal(result.StructuredContent)
-	if err != nil {
-		return fmt.Errorf("encode %s result: %w", params.Name, err)
-	}
-	fmt.Printf("%s: %s\n", params.Name, encoded)
-	return nil
-}
+	builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll()})
 
-// run builds the server, connects the in-memory transport, and calls each tool.
-func run(ctx context.Context) error {
-	builder := codemode.New(codemode.Options{
-		Authorizer: authz.AllowAll(),
-		Limits:     codemode.DefaultLimits(),
+	codemode.Register(builder, codemode.Capability[lookupInput, lookupOutput]{
+		Name:    "records.lookup",
+		Summary: "Look up one record by key.",
+		Handler: lookup,
 	})
-
-	err := codemode.Register(builder, codemode.Capability[lookupInput, lookupOutput]{
-		ID:          "records.entry.lookup",
-		Name:        "records.lookup",
-		Summary:     "Look up one record by key.",
-		Description: "Returns one deterministic record for the supplied key.",
-		Handler:     lookupRecords,
-	})
-	if err != nil {
-		return fmt.Errorf("register capability: %w", err)
-	}
 
 	server, err := builder.Build()
 	if err != nil {
-		return fmt.Errorf("build CodeMode server: %w", err)
-	}
-	mcpServer, err := mcpserver.New(server, subjectResolver{})
-	if err != nil {
-		return fmt.Errorf("build MCP server: %w", err)
-	}
-
-	serverTransport, clientTransport := mcp.NewInMemoryTransports()
-	serverContext := withSubject(ctx, authz.Subject{ID: "example-user"})
-	serverSession, err := mcpServer.Connect(serverContext, serverTransport, nil)
-	if err != nil {
-		return fmt.Errorf("connect MCP server: %w", err)
-	}
-	defer serverSession.Close()
-
-	client := mcp.NewClient(&mcp.Implementation{
-		Name:    "codemode-first-server",
-		Version: "tutorial",
-	}, nil)
-	clientSession, err := client.Connect(ctx, clientTransport, nil)
-	if err != nil {
-		return fmt.Errorf("connect MCP client: %w", err)
-	}
-	defer clientSession.Close()
-
-	if err := callTool(ctx, clientSession, &mcp.CallToolParams{
-		Name:      "search_api",
-		Arguments: map[string]any{"query": "record"},
-	}); err != nil {
-		return err
-	}
-	if err := callTool(ctx, clientSession, &mcp.CallToolParams{
-		Name:      "describe_api",
-		Arguments: map[string]any{"name": "records.lookup"},
-	}); err != nil {
-		return err
-	}
-	return callTool(ctx, clientSession, &mcp.CallToolParams{
-		Name: "execute",
-		Arguments: map[string]any{
-			"source": `def main():
-    return records.lookup(key="alpha", limit=2)
-`,
-		},
-	})
-}
-
-// main serves re-executed workers before starting the ordinary host.
-func main() {
-	codemode.ServeWorkerAndExit()
-	if err := run(context.Background()); err != nil {
 		log.Fatal(err)
 	}
+
+	srv, err := mcpserver.New(server, mcpserver.StaticSubject(authz.Subject{ID: "local"}))
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Fatal(srv.Run(context.Background(), &mcp.StdioTransport{}))
 }
 ```
 
-`authz.AllowAll()` is deliberate in this small example: it makes the authorization decision explicit without adding application policy, and it permits every native call whose arguments bind successfully. Use `authz.AllowAll()` only when every resolved subject may call every enabled capability; otherwise supply an `authz.Authorizer` that evaluates the trusted subject, stable capability ID, exposed name, and canonical arguments.
+`authz.AllowAll()` is deliberate. CodeMode has no default authorizer, so
+disabling authorization requires an explicit decision.
 
-The resolver reads only the typed, server-side Go context. In a production host, authentication middleware establishes that context before the MCP server handles a request. Do not accept a subject or credentials from Starlark source, tool arguments, or MCP `_meta`.
+`StaticSubject` matches this single-user stdio deployment: possession of the
+process is the authentication boundary. A multi-user host must not use
+`StaticSubject`. Authenticate each request, store the resulting identity with
+`authz.WithSubject`, and use `mcpserver.ContextSubject`.
 
-## Run the server
+`Build` supplies bounded defaults for each zero-valued `Limits` field. It also
+reports all invalid registrations together. An omitted capability `ID` defaults
+to `Name`; set `ID` explicitly before writing authorization policy or deployment
+filters that must survive a capability rename. An omitted `Description`
+defaults to `Summary`.
 
-Clean up the module metadata:
+## Build and configure the server
+
+Clean up the module metadata, then build the server:
 
 ```sh
 go mod tidy
+go build -o codemode-first-server .
 ```
 
-Run the program:
+Add the absolute binary path to your agent's MCP configuration. For agents that
+use the common `mcpServers` shape:
 
-```sh
-go run .
+```json
+{
+  "mcpServers": {
+    "codemode-first-server": {
+      "command": "/absolute/path/to/codemode-first-server"
+    }
+  }
+}
 ```
 
-The program prints structured results for all three tools. The final line contains an `execute` result equivalent to:
+Restart or reload the agent's MCP servers. Ask the agent to search for a record
+capability and call `records.lookup` with `key="alpha"` and `limit=2`. The agent
+can use `search_api`, `describe_api`, and `execute`; the final structured result
+is equivalent to:
 
 ```json
 {"result":{"count":2,"key":"alpha"}}
 ```
 
-`execute` first binds the keyword arguments in the worker. The parent rebinds
-them to `lookupInput`, creates a fresh canonical authorization map, authorizes
-the native call, and then dispatches `lookupRecords`. The parent converts the
-handler output to a process-neutral value, and the worker converts it to
-Starlark. Each `execute` call runs a fresh bounded interpreter in a re-executed
-worker process. Only the final converted value returned by a zero-argument
-`main()` is exposed in the successful MCP result; printed text, globals, and
-interpreter-local intermediate values are not returned. Each native-call
-argument map, native result, and final value is independently subject to
-`MaxValueDepth` and `MaxValueBytes`. Successful native-result value bodies also
-consume the fresh request-scoped `MaxIntermediateValueBytes` budget.
+`ServeWorkerAndExit` must be the first statement in `main`, before flag parsing,
+credential loading, client construction, or other setup. `execute` first binds
+the keyword arguments in the worker. The parent rebinds them to `lookupInput`,
+creates a fresh canonical authorization map, authorizes the native call, and
+then dispatches `lookup`. The parent converts the handler output to a
+process-neutral value, and the worker converts it to Starlark. Each `execute`
+call runs a fresh bounded interpreter in a re-executed worker process. Only the
+final converted value returned by a zero-argument `main()` is exposed in the
+successful MCP result; printed text, globals, and interpreter-local intermediate
+values are not returned. Each native-call argument map, native result, and final
+value is independently subject to `MaxValueDepth` and `MaxValueBytes`.
+Successful native-result value bodies also consume the fresh request-scoped
+`MaxIntermediateValueBytes` budget.
 
-`ServeWorkerAndExit` must be the first statement in `main`, before flag parsing, credential loading, client construction, or other application setup. It returns immediately in the ordinary host. In a re-executed worker, it serves one private probe or execution request and terminates the process.
-
-The in-memory MCP transport keeps the client and server in one parent process; Starlark still runs in fresh workers. In an application, the host owns authentication, transport selection and startup, listeners, request cancellation, and shutdown. A Go authorizer or handler that can block must honor its context. CodeMode can kill the Starlark worker, but it cannot forcibly stop Go code after parent dispatch.
-
-For shorter compile-checked forms of this setup, see the [typed registration example](https://github.com/meigma/codemode/blob/master/example_test.go) and [official transport example](https://github.com/meigma/codemode/blob/master/mcpserver/example_test.go).
+For shorter compile-checked forms, see the [typed registration
+example](https://github.com/meigma/codemode/blob/master/example_test.go) and
+[official transport
+example](https://github.com/meigma/codemode/blob/master/mcpserver/example_test.go).

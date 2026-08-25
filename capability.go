@@ -17,7 +17,9 @@ type Handler[Input, Output any] func(context.Context, authz.Subject, Input) (Out
 
 // Capability describes one typed native operation available to CodeMode.
 type Capability[Input, Output any] struct {
-	// ID is the stable identity used by deployment filtering and authorization policy.
+	// ID is the stable identity used by deployment filtering and authorization
+	// policy. An empty ID defaults to Name. Set ID explicitly before writing
+	// policy or deployment filters against this capability.
 	ID CapabilityID
 
 	// Name is the dotted Starlark name exposed to programs and discovery.
@@ -26,7 +28,8 @@ type Capability[Input, Output any] struct {
 	// Summary is a compact description used by capability search.
 	Summary string
 
-	// Description explains the capability behavior for exact description requests.
+	// Description explains the capability behavior for exact description
+	// requests. An empty Description defaults to Summary.
 	Description string
 
 	// Handler executes the capability after binding and authorization succeed.

@@ -2,6 +2,7 @@ package codemode
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
@@ -19,7 +20,8 @@ type Options struct {
 	// DisabledCapabilities lists stable capability IDs removed from every live server surface.
 	DisabledCapabilities []CapabilityID
 
-	// Limits contains positive execution, conversion, and discovery budgets.
+	// Limits contains execution, conversion, and discovery budgets. Build
+	// replaces each zero-valued field with the corresponding DefaultLimits value.
 	Limits Limits
 }
 
@@ -39,6 +41,9 @@ type Builder struct {
 
 	// registrations contains validated, precompiled capability registrations until Build.
 	registrations []catalog.Registration
+
+	// registrationErrors contains capability-specific failures deferred to Build.
+	registrationErrors []error
 
 	// built reports whether Build has closed this builder.
 	built bool
@@ -61,28 +66,43 @@ func New(options Options) *Builder {
 	}
 }
 
-// Register compiles and retains one typed capability without erasing its binding contract first.
-func Register[Input, Output any](builder *Builder, capability Capability[Input, Output]) error {
+// Register compiles and retains one typed capability without erasing its
+// binding contract first.
+//
+// Capability-specific failures are accumulated and returned together by Build.
+// Register panics when builder is nil or already closed because no future Build
+// call can report those lifecycle violations.
+func Register[Input, Output any](builder *Builder, capability Capability[Input, Output]) {
 	if builder == nil {
-		return fmt.Errorf("%w: nil builder", ErrInvalidRegistration)
+		panic(fmt.Errorf("%w: nil builder", ErrInvalidRegistration))
 	}
 	if builder.built {
-		return fmt.Errorf("%w: builder is already closed", ErrInvalidRegistration)
+		panic(fmt.Errorf("%w: builder is already closed", ErrInvalidRegistration))
 	}
 	if capability.Handler == nil {
-		return fmt.Errorf("%w: capability handler must not be nil", ErrInvalidRegistration)
+		builder.recordRegistrationError(capability.Name, errors.New("handler must not be nil"))
+		return
 	}
 
 	plan, err := binding.CompileFor[Input, Output]()
 	if err != nil {
-		return fmt.Errorf("%w: capability %q: %w", ErrInvalidRegistration, capability.Name, err)
+		builder.recordRegistrationError(capability.Name, err)
+		return
+	}
+	id := capability.ID
+	if id == "" {
+		id = CapabilityID(capability.Name)
+	}
+	description := capability.Description
+	if description == "" {
+		description = capability.Summary
 	}
 	handler := capability.Handler
 	registration := catalog.Registration{
-		ID:          string(capability.ID),
+		ID:          string(id),
 		Name:        string(capability.Name),
 		Summary:     capability.Summary,
-		Description: capability.Description,
+		Description: description,
 		Plan:        plan,
 		Invoke: func(ctx context.Context, subject authz.Subject, input any) (any, error) {
 			typed, ok := input.(Input)
@@ -93,18 +113,36 @@ func Register[Input, Output any](builder *Builder, capability Capability[Input, 
 		},
 	}
 	if err := catalog.ValidateRegistration(registration); err != nil {
-		return fmt.Errorf("%w: %w", ErrInvalidRegistration, err)
+		builder.recordRegistrationError(capability.Name, err)
+		return
 	}
 	for _, existing := range builder.registrations {
 		if existing.ID == registration.ID {
-			return fmt.Errorf("%w: duplicate capability ID %q", ErrInvalidRegistration, registration.ID)
+			builder.recordRegistrationError(
+				capability.Name,
+				fmt.Errorf("duplicate capability ID %q", registration.ID),
+			)
+			return
 		}
 		if existing.Name == registration.Name {
-			return fmt.Errorf("%w: duplicate capability name %q", ErrInvalidRegistration, registration.Name)
+			builder.recordRegistrationError(
+				capability.Name,
+				fmt.Errorf("duplicate capability name %q", registration.Name),
+			)
+			return
 		}
 	}
 	builder.registrations = append(builder.registrations, registration)
-	return nil
+}
+
+// recordRegistrationError retains one capability-specific programmer error.
+func (builder *Builder) recordRegistrationError(name CapabilityName, err error) {
+	builder.registrationErrors = append(builder.registrationErrors, fmt.Errorf(
+		"%w: capability %q: %w",
+		ErrInvalidRegistration,
+		name,
+		err,
+	))
 }
 
 // Build closes the Builder and returns an immutable concurrency-safe Server
@@ -129,22 +167,31 @@ func (builder *Builder) Build() (*Server, error) {
 	builder.built = true
 	registrations := slices.Clone(builder.registrations)
 	builder.registrations = nil
+	buildErrors := slices.Clone(builder.registrationErrors)
+	builder.registrationErrors = nil
+	limits := builder.limits.withDefaults()
 
 	if isNilAuthorizer(builder.authorizer) {
-		return nil, fmt.Errorf("%w: Authorizer must not be nil", ErrInvalidRegistration)
+		buildErrors = append(
+			buildErrors,
+			fmt.Errorf("%w: Authorizer must not be nil", ErrInvalidRegistration),
+		)
 	}
-	if err := builder.limits.Validate(); err != nil {
-		return nil, err
+	if err := limits.Validate(); err != nil {
+		buildErrors = append(buildErrors, err)
+	}
+	if len(buildErrors) > 0 {
+		return nil, errors.Join(buildErrors...)
 	}
 	capabilityCatalog, err := catalog.Build(registrations, catalog.Options{
 		DisabledCapabilities: slices.Clone(builder.disabledCapabilities),
-		MaxSearchQueryBytes:  builder.limits.MaxSearchQueryBytes,
-		MaxSearchResults:     builder.limits.MaxSearchResults,
+		MaxSearchQueryBytes:  limits.MaxSearchQueryBytes,
+		MaxSearchResults:     limits.MaxSearchResults,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidRegistration, err)
 	}
-	server, err := newServer(capabilityCatalog, builder.authorizer, builder.limits)
+	server, err := newServer(capabilityCatalog, builder.authorizer, limits)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidRegistration, err)
 	}

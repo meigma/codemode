@@ -876,7 +876,7 @@ func buildRegoPolicyServer(t *testing.T, module string, handlerCalls *atomic.Int
 	t.Helper()
 	authorizer := mustRegoAuthorizer(t, module)
 	builder := codemode.New(codemode.Options{Authorizer: authorizer, Limits: codemode.DefaultLimits()})
-	require.NoError(t, codemode.Register(builder, codemode.Capability[policyLookupInput, policyLookupResult]{
+	codemode.Register(builder, codemode.Capability[policyLookupInput, policyLookupResult]{
 		ID:          "cap.lookup",
 		Name:        "records.lookup",
 		Summary:     "Return one record.",
@@ -885,7 +885,7 @@ func buildRegoPolicyServer(t *testing.T, module string, handlerCalls *atomic.Int
 			handlerCalls.Add(1)
 			return policyLookupResult{}, nil
 		},
-	}))
+	})
 	server, err := builder.Build()
 	require.NoError(t, err)
 	return server

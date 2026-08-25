@@ -16,18 +16,46 @@ The module currently requires Go 1.26.6.
 
 ## Get started
 
-Follow [Build your first CodeMode server](docs/docs/tutorials/first-server.md) to register the typed `records.entry.lookup` capability, expose it as `records.lookup`, connect the official in-memory MCP transport, and call all three tools.
+Follow [Build your first CodeMode server](docs/docs/tutorials/first-server.md)
+to register `records.lookup`, run a real stdio MCP server, and add it to an
+agent. The server assembly is:
+
+```go
+func main() {
+	codemode.ServeWorkerAndExit()
+
+	builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll()})
+	codemode.Register(builder, codemode.Capability[lookupInput, lookupOutput]{
+		Name:    "records.lookup",
+		Summary: "Look up one record by key.",
+		Handler: lookup,
+	})
+
+	server, err := builder.Build()
+	if err != nil {
+		log.Fatal(err)
+	}
+	srv, err := mcpserver.New(server, mcpserver.StaticSubject(authz.Subject{ID: "local"}))
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Fatal(srv.Run(context.Background(), &mcp.StdioTransport{}))
+}
+```
 
 The repository also contains shorter, compile-checked examples:
 
-- [`example_test.go`](example_test.go) — typed capability registration, explicit `authz.AllowAll()`, default limits, and direct execution
-- [`mcpserver/example_test.go`](mcpserver/example_test.go) — trusted typed-context resolution and the official in-memory MCP transport
+- [`example_test.go`](example_test.go) — typed registration with default identity and limits, plus direct execution
+- [`mcpserver/example_test.go`](mcpserver/example_test.go) — a fixed single-user subject and the official in-memory MCP transport
 
-`authz.AllowAll()` is deliberate in the simple examples and permits every native call whose arguments bind successfully. Use `authz.AllowAll()` only when every resolved subject may call every enabled capability; otherwise supply an `authz.Authorizer`.
+`authz.AllowAll()` is deliberate in the simple examples. CodeMode never
+defaults authorization to allow. `mcpserver.StaticSubject` is only for
+single-user transports where process ownership is the authentication boundary;
+multi-user hosts must resolve each authenticated request separately.
 
-The final host binary must call `codemode.ServeWorkerAndExit()` as the first
-statement of `main`, before flag parsing or any other setup. Test binaries that
-call `Builder.Build` must do the same from `TestMain` before `m.Run`.
+`codemode.ServeWorkerAndExit()` must remain the first statement of `main`,
+before flag parsing or any other setup. Test binaries that call `Builder.Build`
+must make the same call from `TestMain` before `m.Run`.
 
 ## Documentation
 
@@ -52,10 +80,10 @@ budget.
 The worker binds keyword arguments first. The parent then rebinds them to the
 registered Go input, creates a fresh canonical authorization map, authorizes
 the call, and dispatches the handler. The parent converts the handler output to
-a process-neutral value, and the worker converts that value to Starlark.
-Trusted subjects come
-from typed, host-owned Go context through `mcpserver.InvocationResolver`; tool
-arguments, Starlark source, and MCP `_meta` are not trusted identity or
+a process-neutral value, and the worker converts that value to Starlark. Every
+MCP operation gets a trusted subject through `mcpserver.InvocationResolver`,
+either from a single-user process boundary or authenticated host-owned context.
+Tool arguments, Starlark source, and MCP `_meta` are not trusted identity or
 credential sources.
 
 The worker process lets CodeMode kill Starlark when an execution deadline or

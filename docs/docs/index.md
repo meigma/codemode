@@ -12,7 +12,7 @@ CodeMode is a Go library that exposes registered, typed Go capabilities to Model
 
 Learn the workflow by building a working server.
 
-- [Build your first CodeMode server](tutorials/first-server.md) — register one typed capability and call `search_api`, `describe_api`, and `execute` over the official MCP in-memory transport.
+- [Build your first CodeMode server](tutorials/first-server.md) — register one typed capability and run a real stdio MCP server that an agent can call.
 
 ## How-to guides
 

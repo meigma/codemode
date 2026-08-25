@@ -9,9 +9,16 @@ CodeMode separates client-controlled Starlark from host-controlled identity, pol
 
 ## The host establishes identity
 
-The host authenticates a connection or request before the MCP adapter uses it. Authentication middleware or process composition stores a non-secret `authz.Subject` in typed, host-owned Go context. An `mcpserver.InvocationResolver` reads that context for every `search_api`, `describe_api`, and `execute` call.
+Every `search_api`, `describe_api`, and `execute` call runs an
+`mcpserver.InvocationResolver`. In a single-user stdio deployment,
+`mcpserver.StaticSubject` treats process ownership as the authentication
+boundary. A multi-user host must not use `StaticSubject`; authentication
+middleware must validate each request, store the non-secret identity with
+`authz.WithSubject`, and use `mcpserver.ContextSubject`.
 
-Typed Go context matters because it gives the host an identity channel outside model-visible data. These values are untrusted and cannot establish or replace a subject:
+Typed, host-owned Go context gives a multi-user host an identity channel outside
+model-visible data. These values are untrusted and cannot establish or replace
+a subject:
 
 - MCP tool arguments
 - Starlark source or values
