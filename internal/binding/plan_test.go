@@ -32,6 +32,72 @@ type representativeOutput struct {
 	Score float64 `json:"score"`
 }
 
+// orgName is a named string alias accepted as a required or optional input.
+type orgName string
+
+// itemCount is a named int64 alias accepted as a required or optional input.
+type itemCount int64
+
+// flag is a named bool alias accepted as a required or optional input.
+type flag bool
+
+// score is a named float64 alias accepted as a required or optional input.
+type score float64
+
+// widenedInput is the eight-form scalar input used by widened binding tests.
+type widenedInput struct {
+	// Org is the required string argument.
+	Org string `json:"org"`
+
+	// Count is the required signed integer argument.
+	Count int64 `json:"count"`
+
+	// Active is the required Boolean argument.
+	Active bool `json:"active"`
+
+	// Score is the required finite floating-point argument.
+	Score float64 `json:"score"`
+
+	// Label is the optional string argument.
+	Label *string `json:"label,omitempty"`
+
+	// Limit is the optional signed integer argument.
+	Limit *int64 `json:"limit,omitempty"`
+
+	// Enabled is the optional Boolean argument.
+	Enabled *bool `json:"enabled"`
+
+	// Weight is the optional finite floating-point argument.
+	Weight *float64 `json:"weight,omitempty"`
+}
+
+// aliasedInput is the eight-form scalar input using named underlying kinds.
+type aliasedInput struct {
+	// Org is the required named string argument.
+	Org orgName `json:"org"`
+
+	// Count is the required named integer argument.
+	Count itemCount `json:"count"`
+
+	// Active is the required named Boolean argument.
+	Active flag `json:"active"`
+
+	// Score is the required named floating-point argument.
+	Score score `json:"score"`
+
+	// Label is the optional named string argument.
+	Label *orgName `json:"label,omitempty"`
+
+	// Limit is the optional named integer argument.
+	Limit *itemCount `json:"limit,omitempty"`
+
+	// Enabled is the optional named Boolean argument.
+	Enabled *flag `json:"enabled"`
+
+	// Weight is the optional named floating-point argument.
+	Weight *score `json:"weight,omitempty"`
+}
+
 // embeddedInputBase supplies a field that must not be promoted implicitly.
 type embeddedInputBase struct {
 	// Value is an embedded candidate argument.
@@ -53,6 +119,49 @@ func TestCompileAcceptsRepresentativeTypes(t *testing.T) {
 	assert.Equal(t, reflect.TypeFor[representativeOutput](), plan.OutputType())
 }
 
+// TestCompileAcceptsWidenedScalarInputs proves all eight scalar forms and named aliases compile.
+func TestCompileAcceptsWidenedScalarInputs(t *testing.T) {
+	tests := []struct {
+		// name identifies the accepted input type.
+		name string
+
+		// inputType is compiled as a capability input.
+		inputType reflect.Type
+	}{
+		{name: "eight scalar forms", inputType: reflect.TypeFor[widenedInput]()},
+		{name: "named aliases", inputType: reflect.TypeFor[aliasedInput]()},
+		{name: "required integer", inputType: reflect.TypeOf(struct {
+			// Value is the field under validation.
+			Value int64 `json:"value"`
+		}{})},
+		{name: "required bool", inputType: reflect.TypeOf(struct {
+			// Value is the field under validation.
+			Value bool `json:"value"`
+		}{})},
+		{name: "required float", inputType: reflect.TypeOf(struct {
+			// Value is the field under validation.
+			Value float64 `json:"value"`
+		}{})},
+		{name: "optional string without omitempty", inputType: reflect.TypeOf(struct {
+			// Value is the field under validation.
+			Value *string `json:"value"`
+		}{})},
+		{name: "optional integer without omitempty", inputType: reflect.TypeOf(struct {
+			// Value is the field under validation.
+			Value *int64 `json:"value"`
+		}{})},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan, err := Compile(tt.inputType, reflect.TypeFor[representativeOutput]())
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.inputType, plan.InputType())
+		})
+	}
+}
+
 // TestCompileRejectsUnsupportedInputShapes proves malformed binding plans fail during registration.
 func TestCompileRejectsUnsupportedInputShapes(t *testing.T) {
 	tests := []struct {
@@ -66,13 +175,21 @@ func TestCompileRejectsUnsupportedInputShapes(t *testing.T) {
 		contains string
 	}{
 		{name: "pointer input", inputType: reflect.TypeFor[*representativeInput](), contains: "non-pointer struct"},
-		{name: "required integer", inputType: reflect.TypeOf(struct {
+		{name: "unsupported integer width", inputType: reflect.TypeOf(struct {
 			// Value is the field under validation.
-			Value int64 `json:"value"`
+			Value int32 `json:"value"`
 		}{}), contains: "unsupported type"},
-		{name: "wrong optional pointer", inputType: reflect.TypeOf(struct {
+		{name: "unsupported unsigned integer", inputType: reflect.TypeOf(struct {
 			// Value is the field under validation.
-			Value *string `json:"value,omitempty"`
+			Value uint64 `json:"value"`
+		}{}), contains: "unsupported type"},
+		{name: "unsupported optional integer width", inputType: reflect.TypeOf(struct {
+			// Value is the field under validation.
+			Value *int `json:"value,omitempty"`
+		}{}), contains: "unsupported type"},
+		{name: "unsupported float width", inputType: reflect.TypeOf(struct {
+			// Value is the field under validation.
+			Value float32 `json:"value"`
 		}{}), contains: "unsupported type"},
 		{name: "embedded field", inputType: reflect.TypeFor[embeddedInput](), contains: "embedded fields"},
 		{name: "unexported field", inputType: reflect.TypeOf(struct {
@@ -111,6 +228,18 @@ func TestCompileRejectsUnsupportedInputShapes(t *testing.T) {
 		{name: "required omitempty", inputType: reflect.TypeOf(struct {
 			// Value is the field under validation.
 			Value string `json:"value,omitempty"`
+		}{}), contains: "cannot use omitempty"},
+		{name: "required integer omitempty", inputType: reflect.TypeOf(struct {
+			// Value is the field under validation.
+			Value int64 `json:"value,omitempty"`
+		}{}), contains: "cannot use omitempty"},
+		{name: "required bool omitempty", inputType: reflect.TypeOf(struct {
+			// Value is the field under validation.
+			Value bool `json:"value,omitempty"`
+		}{}), contains: "cannot use omitempty"},
+		{name: "required float omitempty", inputType: reflect.TypeOf(struct {
+			// Value is the field under validation.
+			Value float64 `json:"value,omitempty"`
 		}{}), contains: "cannot use omitempty"},
 	}
 

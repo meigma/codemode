@@ -30,6 +30,28 @@ func TestSignatureUsesTheCompiledInputPlan(t *testing.T) {
 	assert.Equal(t, "records.lookup(*, org: str, limit: int | None)", signature)
 }
 
+// TestSignatureUsesWidenedScalarInputs proves all eight compiled input forms appear in declaration order.
+func TestSignatureUsesWidenedScalarInputs(t *testing.T) {
+	plan, err := CompileFor[widenedInput, representativeOutput]()
+	require.NoError(t, err)
+
+	assert.Equal(
+		t,
+		"records.lookup(*, org: str, count: int, active: bool, score: float, label: str | None, limit: int | None, enabled: bool | None, weight: float | None)",
+		plan.Signature("records.lookup"),
+	)
+	assert.Equal(t, []FieldShape{
+		{Name: "org", Type: "str", Required: true},
+		{Name: "count", Type: "int", Required: true},
+		{Name: "active", Type: "bool", Required: true},
+		{Name: "score", Type: "float", Required: true},
+		{Name: "label", Type: "str | None", Required: false},
+		{Name: "limit", Type: "int | None", Required: false},
+		{Name: "enabled", Type: "bool | None", Required: false},
+		{Name: "weight", Type: "float | None", Required: false},
+	}, plan.InputShape())
+}
+
 // TestSignatureHandlesAnEmptyInputStruct proves zero-argument capabilities omit the keyword-only marker.
 func TestSignatureHandlesAnEmptyInputStruct(t *testing.T) {
 	plan, err := CompileFor[struct{}, representativeOutput]()
@@ -97,6 +119,38 @@ func TestValidateInputShapeAcceptsCompiledAndEmptyShapes(t *testing.T) {
 			}},
 		},
 		{
+			name: "required integer",
+			fields: []FieldShape{{
+				Name:     "count",
+				Type:     "int",
+				Required: true,
+			}},
+		},
+		{
+			name: "required bool",
+			fields: []FieldShape{{
+				Name:     "active",
+				Type:     "bool",
+				Required: true,
+			}},
+		},
+		{
+			name: "required float",
+			fields: []FieldShape{{
+				Name:     "score",
+				Type:     "float",
+				Required: true,
+			}},
+		},
+		{
+			name: "optional string",
+			fields: []FieldShape{{
+				Name:     "label",
+				Type:     "str | None",
+				Required: false,
+			}},
+		},
+		{
 			name: "optional integer",
 			fields: []FieldShape{{
 				Name:     "limit",
@@ -104,6 +158,23 @@ func TestValidateInputShapeAcceptsCompiledAndEmptyShapes(t *testing.T) {
 				Required: false,
 			}},
 		},
+		{
+			name: "optional bool",
+			fields: []FieldShape{{
+				Name:     "enabled",
+				Type:     "bool | None",
+				Required: false,
+			}},
+		},
+		{
+			name: "optional float",
+			fields: []FieldShape{{
+				Name:     "weight",
+				Type:     "float | None",
+				Required: false,
+			}},
+		},
+		{name: "compiled widened", fields: mustCompileWidenedInputShape(t)},
 	}
 
 	for _, tt := range tests {
@@ -135,7 +206,7 @@ func TestValidateInputShapeRejectsNonCompiledPairs(t *testing.T) {
 			contains: "unsupported shape",
 		},
 		{
-			name: "required integer Type/Required mismatch",
+			name: "required optional-integer Type/Required mismatch",
 			fields: []FieldShape{{
 				Name:     "limit",
 				Type:     "int | None",
@@ -144,10 +215,19 @@ func TestValidateInputShapeRejectsNonCompiledPairs(t *testing.T) {
 			contains: "unsupported shape",
 		},
 		{
-			name: "output integer notation",
+			name: "required bool marked optional",
 			fields: []FieldShape{{
-				Name:     "count",
-				Type:     "int",
+				Name:     "active",
+				Type:     "bool",
+				Required: false,
+			}},
+			contains: "unsupported shape",
+		},
+		{
+			name: "optional float marked required",
+			fields: []FieldShape{{
+				Name:     "weight",
+				Type:     "float | None",
 				Required: true,
 			}},
 			contains: "unsupported shape",
@@ -189,4 +269,12 @@ func TestValidateInputShapeRejectsNonCompiledPairs(t *testing.T) {
 			assert.Contains(t, err.Error(), tt.contains)
 		})
 	}
+}
+
+// mustCompileWidenedInputShape returns the compiled eight-form input shape.
+func mustCompileWidenedInputShape(t *testing.T) []FieldShape {
+	t.Helper()
+	plan, err := CompileFor[widenedInput, representativeOutput]()
+	require.NoError(t, err)
+	return plan.InputShape()
 }

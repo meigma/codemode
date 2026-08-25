@@ -14,8 +14,26 @@ const (
 	// integerType is the compact Starlark-facing notation for a signed integer.
 	integerType = "int"
 
+	// boolType is the compact Starlark-facing notation for a Boolean value.
+	boolType = "bool"
+
+	// floatType is the compact Starlark-facing notation for a finite floating-point value.
+	floatType = "float"
+
+	// noneSuffix is the exact InputShape suffix for an optional scalar.
+	noneSuffix = " | None"
+
+	// optionalStringType is the exact InputShape notation for an optional string.
+	optionalStringType = stringType + noneSuffix
+
 	// optionalIntegerType is the exact InputShape notation for an optional integer.
-	optionalIntegerType = integerType + " | None"
+	optionalIntegerType = integerType + noneSuffix
+
+	// optionalBoolType is the exact InputShape notation for an optional Boolean.
+	optionalBoolType = boolType + noneSuffix
+
+	// optionalFloatType is the exact InputShape notation for an optional float.
+	optionalFloatType = floatType + noneSuffix
 )
 
 // FieldShape is one model-facing field in a supported capability input or output structure.
@@ -78,10 +96,11 @@ func (plan *Plan) OutputShape() []FieldShape {
 
 // ValidateInputShape reports whether fields is a combination Plan.InputShape can produce.
 //
-// A required string is exactly Type "str" and Required true. An optional integer
-// is exactly Type "int | None" and Required false. An empty shape is valid.
-// Names must be unique Starlark identifiers. Any other pair, including the
-// literal "unsupported" notation, is rejected.
+// Required scalars are exactly Type "str", "int", "bool", or "float" with
+// Required true. Optional scalars are exactly those types with " | None" and
+// Required false. An empty shape is valid. Names must be unique Starlark
+// identifiers. Any other pair, including the literal "unsupported" notation, is
+// rejected.
 func ValidateInputShape(fields []FieldShape) error {
 	seen := make(map[string]struct{}, len(fields))
 	for _, field := range fields {
@@ -101,7 +120,14 @@ func ValidateInputShape(fields []FieldShape) error {
 
 // isSupportedInputShape reports whether field is an exact compiled input pair.
 func isSupportedInputShape(field FieldShape) bool {
-	return isRequiredStringShape(field) || isOptionalIntegerShape(field)
+	return isRequiredStringShape(field) ||
+		isRequiredIntegerShape(field) ||
+		isRequiredBoolShape(field) ||
+		isRequiredFloatShape(field) ||
+		isOptionalStringShape(field) ||
+		isOptionalIntegerShape(field) ||
+		isOptionalBoolShape(field) ||
+		isOptionalFloatShape(field)
 }
 
 // isRequiredStringShape reports whether field is a required string descriptor.
@@ -109,9 +135,39 @@ func isRequiredStringShape(field FieldShape) bool {
 	return field.Type == stringType && field.Required
 }
 
+// isRequiredIntegerShape reports whether field is a required integer descriptor.
+func isRequiredIntegerShape(field FieldShape) bool {
+	return field.Type == integerType && field.Required
+}
+
+// isRequiredBoolShape reports whether field is a required Boolean descriptor.
+func isRequiredBoolShape(field FieldShape) bool {
+	return field.Type == boolType && field.Required
+}
+
+// isRequiredFloatShape reports whether field is a required float descriptor.
+func isRequiredFloatShape(field FieldShape) bool {
+	return field.Type == floatType && field.Required
+}
+
+// isOptionalStringShape reports whether field is an optional string descriptor.
+func isOptionalStringShape(field FieldShape) bool {
+	return field.Type == optionalStringType && !field.Required
+}
+
 // isOptionalIntegerShape reports whether field is an optional integer descriptor.
 func isOptionalIntegerShape(field FieldShape) bool {
 	return field.Type == optionalIntegerType && !field.Required
+}
+
+// isOptionalBoolShape reports whether field is an optional Boolean descriptor.
+func isOptionalBoolShape(field FieldShape) bool {
+	return field.Type == optionalBoolType && !field.Required
+}
+
+// isOptionalFloatShape reports whether field is an optional float descriptor.
+func isOptionalFloatShape(field FieldShape) bool {
+	return field.Type == optionalFloatType && !field.Required
 }
 
 // inputKindSignature returns the model-facing notation for one supported input conversion.
@@ -119,10 +175,20 @@ func inputKindSignature(kind fieldKind) string {
 	switch kind {
 	case fieldString:
 		return stringType
+	case fieldInt64:
+		return integerType
+	case fieldBool:
+		return boolType
+	case fieldFloat64:
+		return floatType
+	case fieldOptionalString:
+		return optionalStringType
 	case fieldOptionalInt64:
 		return optionalIntegerType
-	case fieldInt64, fieldBool, fieldFloat64:
-		return unsupportedTypeSignature
+	case fieldOptionalBool:
+		return optionalBoolType
+	case fieldOptionalFloat64:
+		return optionalFloatType
 	}
 	return unsupportedTypeSignature
 }
@@ -135,10 +201,10 @@ func outputKindSignature(kind fieldKind) string {
 	case fieldInt64:
 		return integerType
 	case fieldBool:
-		return "bool"
+		return boolType
 	case fieldFloat64:
-		return "float"
-	case fieldOptionalInt64:
+		return floatType
+	case fieldOptionalString, fieldOptionalInt64, fieldOptionalBool, fieldOptionalFloat64:
 		return unsupportedTypeSignature
 	}
 	return unsupportedTypeSignature

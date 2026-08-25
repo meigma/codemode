@@ -121,36 +121,141 @@ def main():
 
 // TestExecuteBindsThenDispatches proves canonical validation precedes the native port.
 func TestExecuteBindsThenDispatches(t *testing.T) {
-	var gotID string
-	var gotArguments map[string]any
-	nativeCall := func(id string, arguments map[string]any) (any, error) {
-		gotID = id
-		gotArguments = arguments
-		return map[string]any{"value": "alpha"}, nil
-	}
-	result, err := buildEngine(t).Execute(
-		`def main(): return records.lookup(value="alpha")`,
-		nativeCall,
-		defaultExecutionLimits(),
-	)
+	tests := []struct {
+		// name identifies the bound call.
+		name string
 
-	require.NoError(t, err)
-	assert.Equal(t, "cap.lookup", gotID)
-	assert.Equal(t, map[string]any{"value": "alpha"}, gotArguments)
-	assert.Equal(t, map[string]any{"value": "alpha"}, result)
+		// engine constructs the execution engine under test.
+		engine func(*testing.T) *execution.Engine
+
+		// source is the Starlark program that performs one native call.
+		source string
+
+		// wantArguments is the canonical map forwarded to the native port.
+		wantArguments map[string]any
+	}{
+		{
+			name:   "required string",
+			engine: buildEngine,
+			source: `def main(): return records.lookup(value="alpha")`,
+			wantArguments: map[string]any{
+				"value": "alpha",
+			},
+		},
+		{
+			name:   "all eight scalar forms",
+			engine: buildWidenedEngine,
+			source: `
+def main():
+    return records.lookup(org="meigma", count=3, active=True, score=1.5, label="beta", limit=25, enabled=True, weight=2.5)
+`,
+			wantArguments: map[string]any{
+				"org":     "meigma",
+				"count":   int64(3),
+				"active":  true,
+				"score":   1.5,
+				"label":   "beta",
+				"limit":   int64(25),
+				"enabled": true,
+				"weight":  2.5,
+			},
+		},
+		{
+			name:   "omitted optional scalars",
+			engine: buildWidenedEngine,
+			source: `def main(): return records.lookup(org="meigma", count=3, active=False, score=0.0)`,
+			wantArguments: map[string]any{
+				"org":    "meigma",
+				"count":  int64(3),
+				"active": false,
+				"score":  0.0,
+			},
+		},
+		{
+			name:   "explicit None optional scalars",
+			engine: buildWidenedEngine,
+			source: `def main(): return records.lookup(org="meigma", count=3, active=True, score=1.5, label=None, limit=None, enabled=None, weight=None)`,
+			wantArguments: map[string]any{
+				"org":    "meigma",
+				"count":  int64(3),
+				"active": true,
+				"score":  1.5,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotID string
+			var gotArguments map[string]any
+			nativeCall := func(id string, arguments map[string]any) (any, error) {
+				gotID = id
+				gotArguments = arguments
+				return map[string]any{"value": "alpha"}, nil
+			}
+			result, err := tt.engine(t).Execute(tt.source, nativeCall, defaultExecutionLimits())
+
+			require.NoError(t, err)
+			assert.Equal(t, "cap.lookup", gotID)
+			assert.Equal(t, tt.wantArguments, gotArguments)
+			assert.Equal(t, map[string]any{"value": "alpha"}, result)
+		})
+	}
 }
 
 // TestExecuteRejectsMalformedArgumentsBeforeNativeCall proves invalid calls never reach the native port.
 func TestExecuteRejectsMalformedArgumentsBeforeNativeCall(t *testing.T) {
-	var nativeCalls atomic.Int64
-	_, err := buildEngine(t).Execute(
-		`def main(): return records.lookup()`,
-		countingNativeCall(&nativeCalls),
-		defaultExecutionLimits(),
-	)
+	tests := []struct {
+		// name identifies the malformed call.
+		name string
 
-	require.ErrorIs(t, err, execution.ErrInvalidArguments)
-	assert.Zero(t, nativeCalls.Load())
+		// engine constructs the execution engine under test.
+		engine func(*testing.T) *execution.Engine
+
+		// source is the Starlark program that performs one native call.
+		source string
+	}{
+		{
+			name:   "missing required string",
+			engine: buildEngine,
+			source: `def main(): return records.lookup()`,
+		},
+		{
+			name:   "missing required integer",
+			engine: buildWidenedEngine,
+			source: `def main(): return records.lookup(org="meigma", active=True, score=1.5)`,
+		},
+		{
+			name:   "integer supplied as float",
+			engine: buildWidenedEngine,
+			source: `def main(): return records.lookup(org="meigma", count=3.0, active=True, score=1.5)`,
+		},
+		{
+			name:   "overflowing integer",
+			engine: buildWidenedEngine,
+			source: `def main(): return records.lookup(org="meigma", count=9223372036854775808, active=True, score=1.5)`,
+		},
+		{
+			name:   "NaN float",
+			engine: buildWidenedEngine,
+			source: `def main(): return records.lookup(org="meigma", count=3, active=True, score=float("nan"))`,
+		},
+		{
+			name:   "infinity float",
+			engine: buildWidenedEngine,
+			source: `def main(): return records.lookup(org="meigma", count=3, active=True, score=float("inf"))`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var nativeCalls atomic.Int64
+			_, err := tt.engine(t).Execute(tt.source, countingNativeCall(&nativeCalls), defaultExecutionLimits())
+
+			require.ErrorIs(t, err, execution.ErrInvalidArguments)
+			assert.Zero(t, nativeCalls.Load())
+		})
+	}
 }
 
 // TestExecuteRejectsDuplicateKeywordSyntaxAsInvalidProgram proves repeated keywords fail at parse time.
@@ -342,6 +447,32 @@ func lookupBinding() execution.CapabilityBinding {
 		Name: "records.lookup",
 		Input: []binding.FieldShape{
 			{Name: "value", Type: "str", Required: true},
+		},
+	}
+}
+
+// buildWidenedEngine creates one engine exposing all eight scalar input forms.
+func buildWidenedEngine(t *testing.T) *execution.Engine {
+	t.Helper()
+	engine, err := execution.New([]execution.CapabilityBinding{widenedLookupBinding()})
+	require.NoError(t, err)
+	return engine
+}
+
+// widenedLookupBinding returns records.lookup with every supported scalar input form.
+func widenedLookupBinding() execution.CapabilityBinding {
+	return execution.CapabilityBinding{
+		ID:   "cap.lookup",
+		Name: "records.lookup",
+		Input: []binding.FieldShape{
+			{Name: "org", Type: "str", Required: true},
+			{Name: "count", Type: "int", Required: true},
+			{Name: "active", Type: "bool", Required: true},
+			{Name: "score", Type: "float", Required: true},
+			{Name: "label", Type: "str | None", Required: false},
+			{Name: "limit", Type: "int | None", Required: false},
+			{Name: "enabled", Type: "bool | None", Required: false},
+			{Name: "weight", Type: "float | None", Required: false},
 		},
 	}
 }
