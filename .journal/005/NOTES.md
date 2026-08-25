@@ -30,3 +30,10 @@ Filed #25: reduce first-touch API ceremony in one PR. Four changes: (1) stock re
 Parallel sessions landed PRs #26–#31: fresh-process worker execution (ServeWorkerAndExit required as first statement of main, Build runs a same-executable worker probe), MaxResultBytes -> MaxValueBytes, new MaxConcurrentExecutions, MaxExecutionTime now covers spawn+exchange. Issues #12/#13 closed by that work.
 Re-verified all four #25 items against 3b541fc: still applicable and unimplemented (empty ID still rejected in ValidateRegistration, zero Limits still fail Validate, Register still returns error, no stock resolvers in mcpserver/authz).
 Amended #25 body: target example gains codemode.ServeWorkerAndExit(), Limits text updated to nine-field shape, ServeWorkerAndExit added to deliberately-stays; left explanatory comment on the issue.
+
+## Fresh UX review at a5031b5
+Merged since last look: #32–#41. Issues #23 (binding matrix) and #25 (first-touch ceremony) implemented and closed; #24 still open.
+Functional smoke performed (not just reading): built the tutorial-shaped stdio server verbatim against the local checkout plus one composite-output capability (list of structs), drove it with a real MCP client over CommandTransport.
+Verified live: search/describe show composite notation list[{key: str, size: int, public: bool, score: float}]; the Code Mode thesis program (fetch collection -> comprehension filter -> chained per-item native calls -> digest) returns correct results through fresh worker processes; zero-config Limits, void Register with joined Build errors, ID/Description defaults, StaticSubject all work as documented.
+New findings: (1) my first program failed on Starlark-missing sum() with bare "invalid program" — empirical demonstration of #24; (2) PR #22 formalized non-disclosure of source locations as a documented contract, so #24 now requires a deliberate contract amendment; (3) no model-facing statement of the Starlark language surface (builtin list) anywhere — cheap doc fix. Commented all three on #24.
+Remaining open UX threads: #24, composite inputs (deferred phase 2 of #23), ten-field Limits growth (acceptable, hidden by defaults).
