@@ -28,3 +28,8 @@ Formatting completed with the configured `golangci-lint` formatters. Targeted ve
 
 ## 2026-08-24 17:24 — Increment 1 pull request
 Committed and pushed the implementation, then opened PR #27, `refactor(binding): add process-neutral value conversion`. The first CI run exposed five lint-only findings: an exhaustive-switch annotation, two shared signature constants, and two Godoc links. The two Programmer agents fixed their independent slices in parallel; the persistent Reviewer approved the lint-only changes with zero blockers. Scoped lint and binding/execution tests pass locally. The updated GitHub checks pass: CI, GitHub Pages, and Kusari Inspector.
+
+## 2026-08-24 17:37 — Increment 2 started
+Maintainer approved PR #27. Squash-merged it to `master` as `81f899b`, refreshed the default worktree, removed the integrated Increment 1 worktree, and created `refactor/execution-native-dispatch` from `origin/master`.
+
+Increment 2 keeps execution behavior in-process while moving native dispatch behind process-neutral ports. Two parallel Programmer slices will own: (1) `internal/execution` capability bindings, native-call function port, namespace stubs, and interpreter tests; (2) root `dispatcher`, transitional `Server` wiring, typed-output-to-process-neutral conversion, and dispatch/server tests. Shared contract: `execution.CapabilityBinding` carries only ID, dotted name, and `Plan.InputShape()`; `execution.NativeCall` accepts an ID plus canonical map and returns a normalized value; `Engine.Execute` retains the temporary context/deadline watcher; the root dispatcher translates every `BindValue` failure to internal/protocol classification before authorization. One bounded Reviewer will review both slices continuously.
