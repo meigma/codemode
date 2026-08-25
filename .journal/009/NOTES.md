@@ -27,3 +27,15 @@ Durable lesson for close-out: docs that publish exact expected outputs must be e
 
 ## 2026-08-25 11:15 — PR #32 merged
 All checks passed (ci, GitHub Pages, Kusari). Squash-merged to master as 906541d; implementation worktree docs/post-refactor-review removed. Docs review/improvement work complete.
+
+## 2026-08-25 11:40 — Follow-up docs pass started
+Eight PRs merged after the docs PR (#33–#40): reduced first-touch API ceremony (#34), widened scalar inputs (#35), intermediate native-result budget (#36 — issue #23 thread), composite outputs (#37), plus tests and matrix docs (#39). All doc pages rewritten alongside. Dispatched follow-up review wave: AccuracyReview2 (qa vs 715a716), StyleDiataxisReview2 (conformance on the new text), VerifyDocsProcedures2 (functional-tester, all executable claims — added to the review wave this time after last round proved source-grounding insufficient).
+
+## 2026-08-25 12:10 — Follow-up findings and fix dispatch
+Review wave returned: 1 blocking HIGH (rego how-to "Verify the policy" orphaned by #34's tutorial rewrite — all three reviewers converged; outcomes verified correct via real MCP client, procedure dead), plus mcp-tools.md literal-wire-schema mismatch ($ref/$defs and result:{} vs inlined/true), composite example root-shape error (list[...] vs field items), SECURITY.md missing MaxIntermediateValueBytes, reintroduced hedges ("normally", "common"), "output universe" jargon, conditions-after-code in three docs, procedural creep in public-api reference, non-executable disable-capabilities verification.
+Skipped as structural vs fresh #34 intent (mirrors developer's earlier scope call): named-agent tutorial path, tutorial explanation relocation, MCP recovery-section move, README snippet removal.
+Dispatched four programmer agents on branch docs/followup-review.
+
+## 2026-08-25 12:55 — Follow-up fixes verified, PR #41 open
+Four programmer agents applied fixes across 7 files; I added the execute `source`-argument pointer both how-tos were missing (functional tester's only substantive friction). Functional re-verification (MCP client over CommandTransport as agent stand-in): every documented expected string reproduces verbatim — tutorial result, rego allowed/denied (plus embed variant), all three disable-capabilities checks. Docs build (strict) and go test ./... pass. Commit 2fe9197; PR #41.
+Recurring failure mode worth TECH_NOTES promotion at close: code PRs that rewrite one doc page (here #34's tutorial rewrite) orphan procedures in sibling pages that patch its code; cross-page procedure references need functional re-verification after any tutorial change.
