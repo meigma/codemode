@@ -43,3 +43,8 @@ Configured formatting, scoped lint, `mise exec -- go test ./internal/execution -
 
 ## 2026-08-24 18:26 — Increment 2 pull request
 Committed and pushed `refactor/execution-native-dispatch`, then opened PR #28, `refactor(execution): move native dispatch behind a port`. The PR records the deliberate sorted-key behavior change and the bounded review evidence. GitHub CI, GitHub Pages, and Kusari Inspector all pass.
+
+## 2026-08-24 19:19 — Increment 3 started
+Maintainer approved PR #28. Squash-merged it to `master` as `561bae0`, refreshed the default worktree, removed the integrated Increment 2 worktree, and created `feat/worker-protocol-framing` from `origin/master`.
+
+Increment 3 adds only the private bounded protocol and type-preserving frame codec in a new `internal/worker` package; it starts no processes. One Programmer agent will own protocol production code while a second writes the complete behavioral test matrix against the shared semantic contract in parallel, coordinating exact private symbols over IRC. One persistent bounded Reviewer will review the contract, production slice, test slice, and fixes. Required invariants: uint32 big-endian length prefix; strict UTF-8/JSON/concrete-frame decoding; legal state transitions; pre-allocation length caps; one outstanding call; payload-free parent abort; exact int64/finite-float preservation; checked manifest/source/value frame arithmetic; no public protocol or launcher seam.
