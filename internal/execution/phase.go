@@ -1,10 +1,9 @@
 package execution
 
 import (
-	"context"
 	"fmt"
 
-	"github.com/meigma/codemode/authz"
+	"go.starlark.net/starlark"
 )
 
 // executionPhase identifies whether native capability calls are currently permitted.
@@ -39,17 +38,11 @@ func (counter *checkedCounter) increment() error {
 	return nil
 }
 
+// nativeInvoker is a Starlark-ready native call that already converted a successful result.
+type nativeInvoker func(id string, arguments map[string]any) (starlark.Value, error)
+
 // executionState contains request-local trusted state unavailable to Starlark programs.
 type executionState struct {
-	// ctx carries request cancellation and the derived elapsed deadline.
-	ctx context.Context
-
-	// subject is the trusted authenticated identity for every native call.
-	subject authz.Subject
-
-	// authorizer decides each validated invocation immediately before dispatch.
-	authorizer authz.Authorizer
-
 	// phase guards the side-effectful native-call boundary.
 	phase executionPhase
 
@@ -58,6 +51,9 @@ type executionState struct {
 
 	// stepLimited records interpreter cancellation caused by the configured step budget.
 	stepLimited bool
+
+	// call forwards a bound canonical map through the request-specific native port.
+	call nativeInvoker
 }
 
 // beginMain transitions exactly once from loading to running.

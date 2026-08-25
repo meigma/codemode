@@ -8,28 +8,8 @@ import (
 	"go.starlark.net/starlark"
 )
 
-// ConvertOutput converts the plan's exact handler output directly to a Starlark object.
-func (plan *Plan) ConvertOutput(output any) (starlark.Value, error) {
-	converted, err := plan.convertTypedOutput(output)
-	if err != nil {
-		return nil, err
-	}
-
-	result := starlark.NewDict(len(plan.outputFields))
-	for _, field := range plan.outputFields {
-		item, err := toStarlarkScalar(converted[field.name])
-		if err != nil {
-			return nil, fmt.Errorf("%w: output field %q: %w", ErrInvalidPlan, field.name, err)
-		}
-		if err := result.SetKey(starlark.String(field.name), item); err != nil {
-			return nil, fmt.Errorf("%w: output field %q: %w", ErrUnsupportedValue, field.name, err)
-		}
-	}
-	return result, nil
-}
-
-// convertTypedOutput converts the plan's exact handler output to a process-neutral object.
-func (plan *Plan) convertTypedOutput(output any) (map[string]any, error) {
+// ConvertOutput converts the plan's exact handler output to a process-neutral object.
+func (plan *Plan) ConvertOutput(output any) (map[string]any, error) {
 	if plan == nil {
 		return nil, fmt.Errorf("%w: nil plan", ErrInvalidPlan)
 	}
@@ -87,20 +67,4 @@ func convertOutputField(field outputField, value reflect.Value) (any, error) {
 		return nil, fmt.Errorf("%w: output field %q has an invalid compiled kind", ErrInvalidPlan, field.name)
 	}
 	return nil, fmt.Errorf("%w: output field %q has an unknown compiled kind", ErrInvalidPlan, field.name)
-}
-
-// toStarlarkScalar converts one process-neutral scalar produced by convertTypedOutput.
-func toStarlarkScalar(value any) (starlark.Value, error) {
-	switch typed := value.(type) {
-	case string:
-		return starlark.String(typed), nil
-	case int64:
-		return starlark.MakeInt64(typed), nil
-	case bool:
-		return starlark.Bool(typed), nil
-	case float64:
-		return starlark.Float(typed), nil
-	default:
-		return nil, fmt.Errorf("unexpected converted output type %T", value)
-	}
 }

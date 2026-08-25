@@ -8,9 +8,7 @@ import (
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
 
-	"github.com/meigma/codemode/authz"
 	"github.com/meigma/codemode/internal/binding"
-	"github.com/meigma/codemode/internal/catalog"
 )
 
 const executionStateLocal = "codemode.execution.state"
@@ -27,9 +25,8 @@ type executionOutcome struct {
 // Execute runs source in a fresh restricted interpreter and converts only main's final value.
 func (engine *Engine) Execute(
 	ctx context.Context,
-	subject authz.Subject,
 	source string,
-	authorizer authz.Authorizer,
+	nativeCall NativeCall,
 	limits Limits,
 ) (any, error) {
 	outcome := executionOutcome{}
@@ -40,14 +37,7 @@ func (engine *Engine) Execute(
 				outcome.err = ErrInternal
 			}
 		}()
-		outcome.value, outcome.err = execute(
-			ctx,
-			subject,
-			source,
-			engine.predeclared,
-			authorizer,
-			limits,
-		)
+		outcome.value, outcome.err = execute(ctx, source, engine.predeclared, nativeCall, limits)
 	}()
 	return outcome.value, outcome.err
 }
@@ -55,13 +45,12 @@ func (engine *Engine) Execute(
 // execute performs one execution after the panic-recovery boundary is installed.
 func execute(
 	ctx context.Context,
-	subject authz.Subject,
 	source string,
 	predeclared starlark.StringDict,
-	authorizer authz.Authorizer,
+	nativeCall NativeCall,
 	limits Limits,
 ) (any, error) {
-	if ctx == nil || predeclared == nil || authorizer == nil {
+	if ctx == nil || predeclared == nil || nativeCall == nil {
 		return nil, ErrInternal
 	}
 	if len(source) > limits.MaxSourceBytes {
@@ -78,13 +67,11 @@ func execute(
 	}
 
 	state := &executionState{
-		ctx:        runCtx,
-		subject:    subject,
-		authorizer: authorizer,
-		phase:      phaseLoading,
+		phase: phaseLoading,
 		nativeCalls: checkedCounter{
 			maximum: limits.MaxNativeCalls,
 		},
+		call: wrapNativeCall(runCtx, nativeCall, limits),
 	}
 	thread := newThread(state, limits.MaxExecutionSteps)
 	stopCancellation := watchCancellation(runCtx, thread)
@@ -131,6 +118,27 @@ func execute(
 		return nil, contextErr
 	}
 	return converted, nil
+}
+
+// wrapNativeCall captures request context and conversion limits for one execution.
+func wrapNativeCall(ctx context.Context, nativeCall NativeCall, limits Limits) nativeInvoker {
+	return func(id string, arguments map[string]any) (starlark.Value, error) {
+		if contextErr := contextFailure(ctx); contextErr != nil {
+			return nil, contextErr
+		}
+		result, err := nativeCall(id, arguments)
+		if err != nil {
+			return nil, err
+		}
+		converted, conversionErr := binding.ToStarlark(result, limits.MaxValueDepth, limits.MaxResultBytes)
+		if conversionErr != nil {
+			if errors.Is(conversionErr, binding.ErrValueLimit) {
+				return nil, fmt.Errorf("%w: %w", ErrResourceLimit, conversionErr)
+			}
+			return nil, fmt.Errorf("%w: %w", ErrInternal, conversionErr)
+		}
+		return converted, nil
+	}
 }
 
 // newThread constructs one restricted Starlark thread and stores its trusted execution state.
@@ -185,10 +193,11 @@ func requireMain(globals starlark.StringDict) (*starlark.Function, error) {
 	return mainFunction, nil
 }
 
-// callCapability validates, authorizes, dispatches, and converts one native invocation in order.
+// callCapability binds one native invocation and forwards a fresh canonical map.
 func callCapability(
 	thread *starlark.Thread,
-	entry catalog.Entry,
+	id string,
+	input []binding.FieldShape,
 	args starlark.Tuple,
 	kwargs []starlark.Tuple,
 ) (starlark.Value, error) {
@@ -202,86 +211,14 @@ func callCapability(
 	if counterErr := state.nativeCalls.increment(); counterErr != nil {
 		return nil, counterErr
 	}
-	input, canonical, bindingErr := entry.Plan.Bind(args, kwargs)
+	canonical, bindingErr := binding.BindShape(input, args, kwargs)
 	if bindingErr != nil {
 		if errors.Is(bindingErr, binding.ErrInvalidArguments) {
 			return nil, fmt.Errorf("%w: %w", ErrInvalidArguments, bindingErr)
 		}
 		return nil, fmt.Errorf("%w: %w", ErrInternal, bindingErr)
 	}
-	if contextErr := contextFailure(state.ctx); contextErr != nil {
-		return nil, contextErr
-	}
-	if policyErr := authorize(state, entry, canonical); policyErr != nil {
-		return nil, policyErr
-	}
-	if contextErr := contextFailure(state.ctx); contextErr != nil {
-		return nil, contextErr
-	}
-	output, invocationErr := invoke(state, entry, input)
-	if invocationErr != nil {
-		return nil, invocationErr
-	}
-	converted, conversionErr := entry.Plan.ConvertOutput(output)
-	if conversionErr != nil {
-		return nil, fmt.Errorf("%w: %w", ErrCapabilityFailure, conversionErr)
-	}
-	return converted, nil
-}
-
-// authorize calls policy once and converts denial, error, and panic to safe internal classes.
-func authorize(state *executionState, entry catalog.Entry, arguments map[string]any) (err error) {
-	defer func() {
-		if recover() != nil {
-			err = ErrPolicyFailure
-		}
-	}()
-	err = state.authorizer.Authorize(state.ctx, authz.AuthorizationInput{
-		Subject:        state.subject,
-		CapabilityID:   entry.ID,
-		CapabilityName: entry.Name,
-		Arguments:      arguments,
-	})
-	if err == nil {
-		return nil
-	}
-	if errors.Is(err, authz.ErrDenied) {
-		return fmt.Errorf("%w: %w", ErrPermissionDenied, err)
-	}
-	return fmt.Errorf("%w: %w", ErrPolicyFailure, err)
-}
-
-// invocationOutcome carries one recovered native handler result without named returns.
-type invocationOutcome struct {
-	// output is the handler's typed result.
-	output any
-
-	// err is the handler or recovery failure.
-	err error
-}
-
-// invoke calls one typed handler and recovers handler panics at the native boundary.
-func invoke(state *executionState, entry catalog.Entry, input any) (any, error) {
-	outcome := invocationOutcome{}
-	func() {
-		defer func() {
-			if recover() != nil {
-				outcome.output = nil
-				outcome.err = errRecoveredHandlerPanic
-			}
-		}()
-		outcome.output, outcome.err = entry.Invoke(state.ctx, state.subject, input)
-	}()
-	if outcome.err == nil {
-		return outcome.output, nil
-	}
-	if errors.Is(outcome.err, errRecoveredHandlerPanic) {
-		return nil, ErrInternal
-	}
-	if errors.Is(outcome.err, catalog.ErrInputTypeMismatch) {
-		return nil, fmt.Errorf("%w: %w", ErrInternal, outcome.err)
-	}
-	return nil, fmt.Errorf("%w: %w", ErrCapabilityFailure, outcome.err)
+	return state.call(id, canonical)
 }
 
 // classifyRuntimeError prefers request and budget state before classifying evaluator causes.
