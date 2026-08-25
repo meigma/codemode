@@ -29,11 +29,6 @@ type Limits struct {
 	// before waiting for a worker slot and covers spawn, protocol exchange,
 	// Starlark execution, and parent dispatch. Killing and reaping can add
 	// operating-system overhead.
-	//
-	// Process startup consumes part of this budget. The worker spike observed
-	// 2.25–2.93 ms for a trivial end-to-end execution on one Apple M4 Max; that
-	// measurement is not a portable lower bound. Measure deployment behavior
-	// before configuring a low-millisecond value.
 	MaxExecutionTime time.Duration
 
 	// MaxNativeCalls is the maximum number of attempted native capability calls.

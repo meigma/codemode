@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// representativeInput is the restricted MVP input shape.
+// representativeInput is a supported capability input used by binding tests.
 type representativeInput struct {
 	// Org is the required string argument.
 	Org string `json:"org"`
@@ -44,7 +44,7 @@ type embeddedInput struct {
 	embeddedInputBase
 }
 
-// TestCompileAcceptsRepresentativeTypes proves the restricted MVP shape compiles once.
+// TestCompileAcceptsRepresentativeTypes proves a supported input and output compile once.
 func TestCompileAcceptsRepresentativeTypes(t *testing.T) {
 	plan, err := CompileFor[representativeInput, representativeOutput]()
 

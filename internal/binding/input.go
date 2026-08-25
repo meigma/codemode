@@ -64,9 +64,7 @@ func BindShape(fields []FieldShape, args starlark.Tuple, kwargs []starlark.Tuple
 //
 // The decoded child map is never returned or retained. A present optional key
 // with a nil value is treated as explicit None and omitted from the canonical
-// map. Invalid normalized maps are classified with ErrInvalidArguments so
-// Increment 2 can translate every BindValue failure to an internal/protocol
-// error rather than a caller argument error.
+// map. Invalid normalized maps are classified with ErrInvalidArguments.
 func (plan *Plan) BindValue(arguments map[string]any) (any, map[string]any, error) {
 	if plan == nil {
 		return nil, nil, fmt.Errorf("%w: nil plan", ErrInvalidPlan)

@@ -130,7 +130,7 @@ func TestDispatchRejectsUnknownIDsBeforeAuthorization(t *testing.T) {
 	assert.Zero(t, handlerCalls.Load())
 }
 
-// TestDispatchClassifiesPolicyAndHandlerFailures proves every retained native classification.
+// TestDispatchClassifiesPolicyAndHandlerFailures proves policy and handler failures map to native classifications.
 func TestDispatchClassifiesPolicyAndHandlerFailures(t *testing.T) {
 	tests := []struct {
 		// name identifies the classified failure.

@@ -717,7 +717,7 @@ func requireDescribeAPIOutputSchema(t *testing.T, schema map[string]any) {
 	requireFieldShapeItemSchema(t, output["items"])
 }
 
-// requireExecuteOutputSchema requires execute to advertise its existing result object shape.
+// requireExecuteOutputSchema requires execute to advertise a non-null result object.
 func requireExecuteOutputSchema(t *testing.T, schema map[string]any) {
 	t.Helper()
 	requireNonNullJSONType(t, schema, "object")

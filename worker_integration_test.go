@@ -94,17 +94,17 @@ func TestServerExecuteWorkerNumberPreservation(t *testing.T) {
 	}
 }
 
-// TestServerExecuteWorkerIssue12Deadline proves monolithic list built-ins are hard-preempted.
+// TestServerExecuteWorkerIssue12Deadline proves the worker deadline hard-preempts monolithic list built-ins.
 func TestServerExecuteWorkerIssue12Deadline(t *testing.T) {
 	limits := codemode.DefaultLimits()
 	limits.MaxExecutionTime = 20 * time.Millisecond
 	limits.MaxExecutionSteps = math.MaxUint64
 	server := buildWorkerOnlyServer(t, limits)
 	tests := []struct {
-		// name identifies the issue #12 reproducer.
+		// name identifies the monolithic built-in case.
 		name string
 
-		// source is the exact reported monolithic payload.
+		// source is the Starlark program for that case.
 		source codemode.Program
 	}{
 		{name: "list", source: `def main(): return list(range(8000000))`},
