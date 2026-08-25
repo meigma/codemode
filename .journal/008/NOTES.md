@@ -73,3 +73,8 @@ Configured formatting, scoped `golangci-lint`, `mise exec -- go test ./... -coun
 
 ## 2026-08-24 23:07 — Increment 4 pull request
 Committed and pushed `feat/worker-supervision` as `504b648`, then opened PR #30, `feat(worker): add worker process supervision`. The PR is mergeable and clean; GitHub CI, GitHub Pages, and Kusari Inspector all pass.
+
+## 2026-08-25 08:15 — Increment 5 started
+Maintainer approved PR #30. Squash-merged it to `master` as `0dee26a`, refreshed the default worktree, removed the integrated Increment 4 worktree, and created `feat/worker-only-execution` from `origin/master`.
+
+Increment 5 is the atomic public cutover: root `Build` will derive the filtered manifest, construct and probe the runner, and every valid `Server.Execute` will use one fresh worker. The clean cutover removes `MaxResultBytes`, in-process elapsed cancellation, and the temporary final-byte wrapper; it adds worker facades, first-statement `main`/`TestMain` wiring, process-boundary regressions, and all affected documentation. The plan's frozen documentation list leaves `README.md` and `SECURITY.md` knowingly false after this behavior change; repository rule D6 and security accuracy require updating those two existing claims in the same PR rather than shipping stale boundary guidance.
