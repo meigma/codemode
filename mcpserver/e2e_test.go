@@ -82,6 +82,57 @@ type StatusResult struct {
 	State string `json:"state"`
 }
 
+// searchInput is the widened records.search argument contract.
+type searchInput struct {
+	// Count is the required integer argument.
+	Count int64 `json:"count"`
+
+	// Active is the required Boolean argument.
+	Active bool `json:"active"`
+
+	// Score is the required floating-point argument.
+	Score float64 `json:"score"`
+
+	// Label is the optional string omitted from the canonical map when absent.
+	Label *string `json:"label,omitempty"`
+}
+
+// NamedItem is one nested search row whose Go identifier must not cross MCP.
+type NamedItem struct {
+	// ID is the nested row identifier.
+	ID string `json:"id"`
+
+	// Active reports whether the row survives the program filter.
+	Active bool `json:"active"`
+
+	// Score is one finite floating-point row value.
+	Score float64 `json:"score"`
+}
+
+// searchOutput is the composite records.search handler output.
+type searchOutput struct {
+	// Items is the compiled list of nested objects.
+	Items []NamedItem `json:"items"`
+}
+
+// compositeDigest is the only value the composite program may return.
+type compositeDigest struct {
+	// Count is the number of active rows.
+	Count int64 `json:"count"`
+
+	// Score is the sum of active row scores.
+	Score float64 `json:"score"`
+
+	// IDs are the active row identifiers in encounter order.
+	IDs []string `json:"ids"`
+}
+
+// compositeExecuteEnvelope is the exact structured execute payload for the digest.
+type compositeExecuteEnvelope struct {
+	// Result is main's final converted digest.
+	Result compositeDigest `json:"result"`
+}
+
 // executeEnvelope is the exact structured execute payload.
 type executeEnvelope struct {
 	// Result is main's final converted value.
@@ -177,6 +228,42 @@ func (recorder *lookupRecorder) snapshot() (int, []authz.Subject, []lookupInput,
 		append([]authz.Subject(nil), recorder.subjects...),
 		append([]lookupInput(nil), recorder.inputs...),
 		recorder.sawCanary
+}
+
+// searchRecorder is the enabled composite handler that records trusted dispatch.
+type searchRecorder struct {
+	// mu protects recorded handler observations.
+	mu sync.Mutex
+
+	// calls is the number of handler dispatches.
+	calls int
+
+	// inputs are cloned typed arguments observed at dispatch.
+	inputs []searchInput
+}
+
+// invoke records typed arguments and returns multiple nested rows in one call.
+func (recorder *searchRecorder) invoke(
+	_ context.Context,
+	_ authz.Subject,
+	input searchInput,
+) (searchOutput, error) {
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	recorder.calls++
+	recorder.inputs = append(recorder.inputs, cloneSearchInput(input))
+	return searchOutput{Items: []NamedItem{
+		{ID: "keep-a", Active: true, Score: 1.5},
+		{ID: "drop-b", Active: false, Score: 10},
+		{ID: "keep-c", Active: true, Score: 2.25},
+	}}, nil
+}
+
+// snapshot returns a copy of recorded composite handler observations.
+func (recorder *searchRecorder) snapshot() (int, []searchInput) {
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	return recorder.calls, append([]searchInput(nil), recorder.inputs...)
 }
 
 // TestActualMCPSecureLoop proves the official in-memory MCP boundary preserves the secure loop.
@@ -407,6 +494,140 @@ def main():
 	assert.NotEqual(t, string(attackerSubjectID), string(authorizations[1].Subject.ID))
 }
 
+// TestActualMCPCompositeProgram proves one native call can return nested rows
+// that a Starlark program loops, filters, and reduces to a digest.
+func TestActualMCPCompositeProgram(t *testing.T) {
+	authorizer := &recordingAuthorizer{}
+	search := &searchRecorder{}
+	builder := codemode.New(codemode.Options{
+		Authorizer: authorizer,
+		Limits:     codemode.DefaultLimits(),
+	})
+	require.NoError(t, codemode.Register(builder, codemode.Capability[searchInput, searchOutput]{
+		ID:          "records.entry.search",
+		Name:        "records.search",
+		Summary:     "Search records and return nested items.",
+		Description: "Returns multiple nested rows for one widened search call.",
+		Handler:     search.invoke,
+	}))
+	root, err := builder.Build()
+	require.NoError(t, err)
+
+	mcpServer, err := mcpserver.New(root, contextResolver{})
+	require.NoError(t, err)
+
+	trustedCtx := withInvocationIdentity(t.Context(), invocationIdentity{
+		Subject: authz.Subject{ID: trustedSubjectID},
+		Canary:  credentialCanary,
+	})
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	serverSession, err := mcpServer.Connect(trustedCtx, serverTransport, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = serverSession.Close() })
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "codemode-e2e", Version: "test"}, nil)
+	session, err := client.Connect(t.Context(), clientTransport, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = session.Close() })
+
+	const (
+		compositeSignature = "records.search(*, count: int, active: bool, score: float, label: str | None)"
+		compositeItemsType = "list[{id: str, active: bool, score: float}]"
+	)
+
+	searched, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      "search_api",
+		Arguments: map[string]any{"query": "record"},
+	})
+	require.NoError(t, err)
+	assertSuccessfulTool(t, searched)
+	searchResults := decodeStructured[[]codemode.SearchResult](t, searched)
+	require.Len(t, searchResults, 1)
+	assert.Equal(t, "records.search", searchResults[0].Name)
+	assert.Equal(t, compositeSignature, searchResults[0].Signature)
+	assert.Equal(t, "Search records and return nested items.", searchResults[0].Summary)
+	assertDiscoveryOmitsGoTypeNames(t, searched, "NamedItem", "searchOutput")
+
+	described, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      "describe_api",
+		Arguments: map[string]any{"name": "records.search"},
+	})
+	require.NoError(t, err)
+	assertSuccessfulTool(t, described)
+	description := decodeStructured[codemode.Description](t, described)
+	assert.Equal(t, "records.search", description.Name)
+	assert.Equal(t, compositeSignature, description.Signature)
+	require.Len(t, description.Input, 4)
+	assert.Equal(t, "count", description.Input[0].Name)
+	assert.Equal(t, "int", description.Input[0].Type)
+	assert.True(t, description.Input[0].Required)
+	assert.Equal(t, "active", description.Input[1].Name)
+	assert.Equal(t, "bool", description.Input[1].Type)
+	assert.True(t, description.Input[1].Required)
+	assert.Equal(t, "score", description.Input[2].Name)
+	assert.Equal(t, "float", description.Input[2].Type)
+	assert.True(t, description.Input[2].Required)
+	assert.Equal(t, "label", description.Input[3].Name)
+	assert.Equal(t, "str | None", description.Input[3].Type)
+	assert.False(t, description.Input[3].Required)
+	require.Len(t, description.Output, 1)
+	assert.Equal(t, "items", description.Output[0].Name)
+	assert.Equal(t, compositeItemsType, description.Output[0].Type)
+	assert.True(t, description.Output[0].Required)
+	assertDiscoveryOmitsGoTypeNames(t, described, "NamedItem", "searchOutput")
+	requireNonNullDescribeFieldArrays(t, described)
+
+	executed, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "execute",
+		Arguments: map[string]any{
+			"source": `
+def main():
+    response = records.search(count=3, active=True, score=1.5)
+    ids = []
+    total = 0.0
+    count = 0
+    for item in response["items"]:
+        if item["active"]:
+            ids.append(item["id"])
+            total += item["score"]
+            count += 1
+    return {"count": count, "score": total, "ids": ids}
+`,
+		},
+	})
+	require.NoError(t, err)
+	assertSuccessfulTool(t, executed)
+	wantDigest := compositeExecuteEnvelope{Result: compositeDigest{
+		Count: 2,
+		Score: 3.75,
+		IDs:   []string{"keep-a", "keep-c"},
+	}}
+	assert.Equal(t, wantDigest, decodeStructured[compositeExecuteEnvelope](t, executed))
+	assertExactExecuteEnvelope(t, executed.StructuredContent)
+	resultObject := requireJSONObject(t, requireJSONObject(t, executed.StructuredContent)["result"])
+	require.Len(t, resultObject, 3)
+	requireJSONTextMirror(t, executed, wantDigest)
+
+	handlerCalls, inputs := search.snapshot()
+	require.Equal(t, 1, handlerCalls)
+	require.Len(t, inputs, 1)
+	assert.Equal(t, searchInput{Count: 3, Active: true, Score: 1.5}, inputs[0])
+	assert.Nil(t, inputs[0].Label)
+
+	authorizations := authorizer.snapshot()
+	require.Len(t, authorizations, 1)
+	assert.Equal(t, authz.Subject{ID: trustedSubjectID}, authorizations[0].Subject)
+	assert.Equal(t, "records.entry.search", authorizations[0].CapabilityID)
+	assert.Equal(t, "records.search", authorizations[0].CapabilityName)
+	assert.Equal(t, map[string]any{
+		"count":  int64(3),
+		"active": true,
+		"score":  1.5,
+	}, authorizations[0].Arguments)
+	_, hasLabel := authorizations[0].Arguments["label"]
+	assert.False(t, hasLabel, "omitted optional string must not appear in the canonical map")
+}
+
 // withInvocationIdentity stores trusted identity on the server-owned context.
 func withInvocationIdentity(ctx context.Context, identity invocationIdentity) context.Context {
 	return context.WithValue(ctx, invocationContextKey{}, identity)
@@ -434,6 +655,16 @@ func cloneLookupInput(input lookupInput) lookupInput {
 	if input.Limit != nil {
 		limit := *input.Limit
 		cloned.Limit = &limit
+	}
+	return cloned
+}
+
+// cloneSearchInput copies one typed search input including the optional label.
+func cloneSearchInput(input searchInput) searchInput {
+	cloned := input
+	if input.Label != nil {
+		label := *input.Label
+		cloned.Label = &label
 	}
 	return cloned
 }

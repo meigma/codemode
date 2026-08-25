@@ -2,6 +2,7 @@ package codemode_test
 
 import (
 	"context"
+	"encoding/json"
 	"math"
 	"os/exec"
 	"strings"
@@ -30,6 +31,44 @@ type builderOutput struct {
 type invalidBuilderInput struct {
 	// Count is intentionally unsupported as a 32-bit integer.
 	Count int32 `json:"count"`
+}
+
+// interfaceBuilderOutput is an unsupported interface/any nested output.
+type interfaceBuilderOutput struct {
+	// Value is intentionally an unconstrained interface.
+	Value any `json:"value"`
+}
+
+// rawMessageBuilderOutput is an unsupported [json.RawMessage] nested output.
+type rawMessageBuilderOutput struct {
+	// Value is intentionally opaque JSON.
+	Value json.RawMessage `json:"value"`
+}
+
+// cyclicBuilderOutput is an unsupported cyclic nested output.
+type cyclicBuilderOutput struct {
+	// Next is a self-referential pointer that must fail registration.
+	Next *cyclicBuilderOutput `json:"next"`
+}
+
+// marshalerBuilderValue is a custom JSON marshaler used only as a rejected fixture.
+type marshalerBuilderValue struct{}
+
+// MarshalJSON exists so registration rejects custom marshalers.
+func (marshalerBuilderValue) MarshalJSON() ([]byte, error) {
+	return []byte(`""`), nil
+}
+
+// marshalerBuilderOutput is an unsupported custom-marshaler nested output.
+type marshalerBuilderOutput struct {
+	// Value is intentionally a custom JSON marshaler.
+	Value marshalerBuilderValue `json:"value"`
+}
+
+// mapKeyBuilderOutput is an unsupported non-string map key nested output.
+type mapKeyBuilderOutput struct {
+	// Value is intentionally keyed by integers.
+	Value map[int]string `json:"value"`
 }
 
 // nilPolicy is a typed-nil authorization implementation used to test Build validation.
@@ -131,6 +170,105 @@ func TestRegisterRejectsInvalidContractsBeforeRetention(t *testing.T) {
 		"cap.nil_builder",
 		"records.nil_builder",
 	)), codemode.ErrInvalidRegistration)
+}
+
+// TestRegisterRejectsUnsupportedNestedOutputsBeforeRetention proves representative
+// unsupportable output graphs never enter the builder.
+func TestRegisterRejectsUnsupportedNestedOutputsBeforeRetention(t *testing.T) {
+	tests := []struct {
+		// name identifies the unsupported nested output.
+		name string
+
+		// register attempts one invalid public registration.
+		register func(*codemode.Builder) error
+	}{
+		{
+			name: "interface any",
+			register: func(builder *codemode.Builder) error {
+				return codemode.Register(builder, codemode.Capability[builderInput, interfaceBuilderOutput]{
+					ID:          "cap.interface",
+					Name:        "records.interface",
+					Summary:     "Unsupported interface output.",
+					Description: "Rejected before retention.",
+					Handler: func(context.Context, authz.Subject, builderInput) (interfaceBuilderOutput, error) {
+						return interfaceBuilderOutput{}, nil
+					},
+				})
+			},
+		},
+		{
+			name: "json.RawMessage",
+			register: func(builder *codemode.Builder) error {
+				return codemode.Register(builder, codemode.Capability[builderInput, rawMessageBuilderOutput]{
+					ID:          "cap.raw",
+					Name:        "records.raw",
+					Summary:     "Unsupported raw message output.",
+					Description: "Rejected before retention.",
+					Handler: func(context.Context, authz.Subject, builderInput) (rawMessageBuilderOutput, error) {
+						return rawMessageBuilderOutput{}, nil
+					},
+				})
+			},
+		},
+		{
+			name: "cyclic type",
+			register: func(builder *codemode.Builder) error {
+				return codemode.Register(builder, codemode.Capability[builderInput, cyclicBuilderOutput]{
+					ID:          "cap.cycle",
+					Name:        "records.cycle",
+					Summary:     "Unsupported cyclic output.",
+					Description: "Rejected before retention.",
+					Handler: func(context.Context, authz.Subject, builderInput) (cyclicBuilderOutput, error) {
+						return cyclicBuilderOutput{}, nil
+					},
+				})
+			},
+		},
+		{
+			name: "custom marshaler",
+			register: func(builder *codemode.Builder) error {
+				return codemode.Register(builder, codemode.Capability[builderInput, marshalerBuilderOutput]{
+					ID:          "cap.marshaler",
+					Name:        "records.marshaler",
+					Summary:     "Unsupported marshaler output.",
+					Description: "Rejected before retention.",
+					Handler: func(context.Context, authz.Subject, builderInput) (marshalerBuilderOutput, error) {
+						return marshalerBuilderOutput{}, nil
+					},
+				})
+			},
+		},
+		{
+			name: "non-string map key",
+			register: func(builder *codemode.Builder) error {
+				return codemode.Register(builder, codemode.Capability[builderInput, mapKeyBuilderOutput]{
+					ID:          "cap.mapkey",
+					Name:        "records.mapkey",
+					Summary:     "Unsupported map key output.",
+					Description: "Rejected before retention.",
+					Handler: func(context.Context, authz.Subject, builderInput) (mapKeyBuilderOutput, error) {
+						return mapKeyBuilderOutput{}, nil
+					},
+				})
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll(), Limits: codemode.DefaultLimits()})
+
+			err := tt.register(builder)
+
+			require.ErrorIs(t, err, codemode.ErrInvalidRegistration)
+			require.NoError(t, codemode.Register(builder, validBuilderCapability("cap.retained", "records.retained")))
+			server, buildErr := builder.Build()
+			require.NoError(t, buildErr)
+			results, searchErr := server.Search("unsupported")
+			require.NoError(t, searchErr)
+			assert.Empty(t, results)
+		})
+	}
 }
 
 // TestRegisterRejectsObviousDuplicates proves duplicate stable and model-facing identities fail immediately.

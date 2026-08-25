@@ -72,7 +72,7 @@ tasks:
   # trailing single-dash `-flag=value` into two arguments; `script` runs the line
   # through the shell verbatim.
   mcp-smoke:
-    script: "go test ./mcpserver -run '^TestActualMCPSecureLoop$' -count=1"
+    script: "go test ./mcpserver -run '^(TestActualMCPSecureLoop|TestActualMCPCompositeProgram)$' -count=1"
     inputs:
       - '@group(goSources)'
     options:
