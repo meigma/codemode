@@ -28,7 +28,7 @@ func main() {
 ```
 
 `ServeWorkerAndExit` returns immediately in an ordinary host process. In a
-CodeMode worker, it serves exactly one private probe or execution request over
+worker process, it serves exactly one private probe or execution request over
 standard input and output and then terminates the process. Because it may call
 `os.Exit`, deferred functions in the worker do not run.
 
@@ -43,9 +43,9 @@ func TestMain(m *testing.M) {
 ```
 
 `IsWorker()` reports whether the current process was re-executed as a CodeMode
-worker. Most hosts should call `ServeWorkerAndExit` directly. `IsWorker` exists
-for frameworks that must perform minimal setup before they can delegate to the
-worker service; it is not a substitute for serving worker mode.
+worker. Unless a framework requires minimal setup before worker delegation,
+call `ServeWorkerAndExit` directly. For such frameworks, use `IsWorker` only
+to perform that setup; `IsWorker` does not serve worker mode.
 
 ### Capability registration
 
@@ -129,9 +129,12 @@ options, or capability visibility.
 `Build` rejects a missing authorizer, non-positive limits, namespace
 collisions, duplicate disabled IDs, and disabled IDs that do not match a
 registered capability. It also re-executes the current binary and performs a
-fixed five-second private worker probe. A missing or incorrectly ordered worker
-entry returns `ErrInvalidRegistration` with an actionable host-wiring
-diagnostic. The fixed probe deadline is independent of `MaxExecutionTime`.
+fixed five-second private worker probe. The probe detects an absent or
+nonfunctional worker entry and returns `ErrInvalidRegistration` with a
+host-wiring diagnostic that identifies the missing or misplaced
+`ServeWorkerAndExit` call. It cannot detect ordinary host work that completes
+silently before `ServeWorkerAndExit`; first-statement ordering is a host
+obligation. The fixed probe deadline is independent of `MaxExecutionTime`.
 
 ### Static capability filtering
 
@@ -152,13 +155,13 @@ The filter is deployment configuration, not a per-request policy. Use an `authz.
 | --- | ---: | --- |
 | `MaxSourceBytes int` | 65,536 bytes (64 KiB) | Starlark source before execution. |
 | `MaxExecutionSteps uint64` | 1,000,000 | Starlark bytecode steps for one execution. |
-| `MaxExecutionTime time.Duration` | 5 seconds | Elapsed time from waiting for a worker slot through worker reap. |
+| `MaxExecutionTime time.Duration` | 5 seconds | Elapsed time starting before waiting for a worker slot; covers spawn, protocol exchange, Starlark execution, and parent dispatch. |
 | `MaxNativeCalls uint64` | 100 | Attempted native calls in one execution. |
 | `MaxValueDepth int` | 32 | Inclusive nesting depth of any value crossing the worker boundary. |
 | `MaxValueBytes int` | 1,048,576 bytes (1 MiB) | Type-preserving encoding of any value crossing the worker boundary. |
 | `MaxSearchQueryBytes int` | 256 bytes | Raw search query before trimming or case normalization. Whitespace padding counts. |
 | `MaxSearchResults int` | 20 | Search results returned. |
-| `MaxConcurrentExecutions int` | 8 | Live execution-worker processes. |
+| `MaxConcurrentExecutions int` | 8 | Concurrent spawn attempts and live worker processes. |
 
 `Limits.Validate()` returns `ErrInvalidRegistration` if any field is zero or
 otherwise non-positive. Zero never means unlimited. Passing a zero-value
@@ -175,16 +178,17 @@ complete protocol frame. The worker frame cap adds the fixed envelope and, for
 native calls, the longest enabled encoded capability ID. Build rejects a
 catalog and limit combination whose largest legal frame cannot be represented.
 
-`MaxExecutionTime` includes semaphore waiting, process startup, protocol
-exchange, Starlark work, parent authorization and dispatch, and worker cleanup.
+`MaxExecutionTime` starts before waiting for a worker slot and covers spawn,
+protocol exchange, Starlark execution, and parent dispatch. Killing and
+reaping the worker can add operating-system overhead beyond the budget.
 If the request context ends first, its cancellation or deadline wins.
-`MaxConcurrentExecutions` bounds live execution workers only; the one-shot
-build probe is outside that semaphore.
+`MaxConcurrentExecutions` bounds concurrent spawn attempts and live worker
+processes. The one-shot build probe is outside that semaphore.
 
 The parent kills and reaps the Starlark worker when the execution context ends.
 Authorizers and handlers run in the parent. CodeMode can return without waiting
 for dispatched Go code, but it cannot forcibly stop that code or undo its side
-effects. See [Security model](../explanation/security-model.md#cancellation-and-host-code).
+effects. See [Understanding CodeMode's security model](../explanation/security-model.md#cancellation-and-host-code).
 
 ### Server operations
 
@@ -241,7 +245,7 @@ Execute(ctx context.Context, subject authz.Subject, program Program) (any, error
 
 `Program` is Starlark source. The context must be non-nil and the subject ID must be non-empty. A nil context is a caller-contract violation and is currently classified as `ErrInternal`.
 
-Every call creates a fresh interpreter and fresh budgets. Module loading is disabled. The enabled capability names form the predeclared namespace. Source loading must define a function named `main` that accepts no positional parameters, keyword-only parameters, variadic positional parameters, or variadic keyword parameters. Native capability calls are accepted only while `main` is running.
+Every call creates a fresh interpreter and fresh budgets. Module loading is disabled. The enabled capability names form the predeclared namespace. Top-level source loading must define a function named `main` that accepts no positional parameters, keyword-only parameters, variadic positional parameters, or variadic keyword parameters. Native calls are accepted only while `main` is running.
 
 For each native call, CodeMode performs these operations in order:
 
@@ -252,7 +256,7 @@ For each native call, CodeMode performs these operations in order:
 
 After `main` returns, CodeMode converts only its final value. Supported final values are `None`, booleans, strings, signed 64-bit integers, finite floats, tuples, lists, and dictionaries with string keys, recursively within configured limits. `None` becomes JSON `null`, and tuples and lists become JSON arrays.
 
-Printed text, globals, and intermediate values do not cross the execution boundary.
+Only that converted return value is exposed to the caller. Printed text, globals, and interpreter-local intermediate values are not returned. During execution, each native-call argument map and each validated native result crosses the private worker protocol, and each crossing value is independently subject to `MaxValueDepth` and `MaxValueBytes`.
 
 ### Error classifications
 
@@ -306,7 +310,7 @@ Authorize(context.Context, AuthorizationInput) error
 
 Return `nil` to allow dispatch. Return an error that wraps `ErrDenied` for a recognized denial. Any other error is a policy evaluation failure. CodeMode maps these outcomes to `ErrPermissionDenied` and `ErrPolicyFailure`, respectively, without dispatching the handler.
 
-`AllowAllAuthorizer` permits every valid native call. `AllowAll()` constructs it explicitly. This policy is deliberate in the simple example so that the authorization choice is visible; production hosts normally supply policy that evaluates the trusted subject, stable capability ID, and canonical arguments.
+`AllowAllAuthorizer` permits every native call whose arguments bind successfully. `AllowAll()` constructs it explicitly. Use `AllowAll()` only when every resolved subject may call every enabled capability; otherwise supply an `authz.Authorizer` that evaluates the trusted subject, stable capability ID, and canonical arguments.
 
 ## `authz/rego`
 
@@ -373,7 +377,7 @@ A ground decision is either undefined or yields one value. That value must be Bo
 
 Only Boolean `false` is a recognized denial. CodeMode maps it to `ErrPermissionDenied`; it maps the ordinary policy errors to `ErrPolicyFailure`. Define a total Boolean decision with `default allow := false` so that unmatched input is an intentional denial rather than an undefined policy failure.
 
-See [Use Rego for authorization](../how-to/use-rego-authorization.md) for server wiring and [Security model](../explanation/security-model.md#rego-policy-runs-in-process) for the in-process trust boundary.
+See [Use Rego for authorization](../how-to/use-rego-authorization.md) for server wiring and [Understanding CodeMode's security model](../explanation/security-model.md#rego-policy-runs-in-process) for the in-process trust boundary.
 
 ## `mcpserver`
 
@@ -407,4 +411,4 @@ New(service Service, resolver InvocationResolver) (*mcp.Server, error)
 
 `New` rejects nil and typed-nil dependencies with `ErrInvalidRegistration`. The returned official SDK server exposes exactly `search_api`, `describe_api`, and `execute`. It does not own authentication, transport creation, listeners, cancellation, or shutdown. The host connects the returned server to an official MCP transport and owns that lifecycle.
 
-See [MCP tool reference](mcp-tools.md) for the wire contracts and [Security model](../explanation/security-model.md) for the trust boundary.
+See [MCP tool reference](mcp-tools.md) for the wire contracts and [Understanding CodeMode's security model](../explanation/security-model.md) for the trust boundary.

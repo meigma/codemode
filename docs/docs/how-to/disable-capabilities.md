@@ -25,23 +25,33 @@ Use the stable ID, `records.entry.lookup`, not the model-facing dotted name, `re
 
 Continue to call `codemode.Register` for `records.entry.lookup` before `builder.Build()`. CodeMode validates the complete registration set before applying the filter, and `Build` rejects a disabled ID that does not identify a registered capability. Static filtering cannot hide invalid or conflicting registrations.
 
-The explicit `authz.AllowAll()` remains deliberate only for the simple tutorial. Production hosts normally supply an authorization policy. Static filtering and per-call authorization solve different problems: filtering fixes the deployment-wide surface, while the authorizer decides whether a trusted subject may make an enabled native call.
+The explicit `authz.AllowAll()` remains deliberate only for the simple tutorial. Use `authz.AllowAll()` only when every resolved subject may call every enabled capability; otherwise supply an `authz.Authorizer`. Static filtering and per-call authorization solve different problems: filtering fixes the deployment-wide surface, while the authorizer decides whether a trusted subject may make an enabled native call.
 
 ## Replace the built server
 
-Call `Build` after registering all capabilities, then pass the resulting server to `mcpserver.New` as usual. An existing immutable server does not change when the builder options change. Replace the server instance and its host-owned transport lifecycle to deploy a different enabled set.
+After registering all capabilities, call `Build`. Pass the returned server to `mcpserver.New`. To deploy a different enabled set, replace the existing server instance and its host-owned transport lifecycle.
 
-## Check the resulting surface
+## Verify the filtered surface
 
-With the tutorial's unchanged call order, `search_api` prints `[]`, then `describe_api` returns the expected tool error and the helper exits. The later `execute` call is not reached in that run. The list below describes the complete contract of the built server, not the output of one sequential client run.
+The tutorial's `callTool` helper returns on the first tool error, so `describe_api` would stop the program before `execute`. Replace the `result.IsError` branch in `callTool` with:
 
-After `records.entry.lookup` is disabled:
+```go
+if result.IsError {
+	text, ok := result.Content[0].(*mcp.TextContent)
+	if !ok {
+		return fmt.Errorf("%s returned a tool error: %v", params.Name, result.Content)
+	}
+	fmt.Printf("%s: %s\n", params.Name, text.Text)
+	return nil
+}
+```
 
-- `search_api` does not return `records.lookup`, even when the query matches its name or summary.
-- `describe_api` for `records.lookup` returns the same not-found classification used for any unavailable name.
-- The generated Starlark namespace has no `records.lookup` callable. If no other enabled capability starts with `records.`, the `records` namespace is absent; otherwise only `lookup` is absent.
-- An `execute` program cannot call the disabled capability. The request fails before authorization or handler dispatch.
+Run `go run .`. The program prints:
 
-These effects come from one filtered catalog used by discovery and execution. The filter does not leave a hidden execution path.
+```
+search_api: []
+describe_api: capability not found
+execute: invalid program
+```
 
-See the [public API reference](../reference/public-api.md) for `Options` and build validation, and the [MCP tools reference](../reference/mcp-tools.md) for discovery and execution results.
+See the [public API reference](../reference/public-api.md#static-capability-filtering) for the complete filter contract, and the [MCP tools reference](../reference/mcp-tools.md) for discovery and execution results.

@@ -53,7 +53,13 @@ Starting from the [first-server tutorial](../tutorials/first-server.md), import 
 import "github.com/meigma/codemode/authz/rego"
 ```
 
-Keep the policy in memory, then replace the tutorial's builder initialization with:
+Fetch the adapter's dependencies:
+
+```sh
+go mod tidy
+```
+
+Define the policy at package scope:
 
 ```go
 const authorizationPolicy = `package codemode.authz
@@ -65,7 +71,11 @@ allow if {
     input.capability.id == "records.entry.lookup"
     input.arguments.key != "forbidden"
 }`
+```
 
+Then replace the tutorial's builder initialization with the following code:
+
+```go
 authorizer, err := rego.New(
 	ctx,
 	"data.codemode.authz.allow",
@@ -82,6 +92,8 @@ builder := codemode.New(codemode.Options{
 	Limits:     codemode.DefaultLimits(),
 })
 ```
+
+The replacement declares `err`. In the tutorial's next statement, change `err := codemode.Register(` to `err = codemode.Register(` so the program still compiles.
 
 `rego.New` validates the ground reference syntax, compiles every supplied module, and prepares the policy synchronously. It cannot prove that the decision is defined and Boolean for every future input. Return the error instead of building a server with another authorizer. The returned authorizer is immutable and can serve concurrent calls.
 
@@ -107,4 +119,39 @@ CodeMode calls the authorizer after argument binding and before handler dispatch
 
 Do not use an undefined decision as denial behavior. Keep `default allow := false` so an unmatched input produces the intentional Boolean `false` result.
 
-See the [`authz/rego` API reference](../reference/public-api.md#authzrego) for constructor validation and exact result semantics. See the [security model](../explanation/security-model.md#rego-policy-runs-in-process) for the policy trust boundary and runtime restrictions.
+## Verify the policy
+
+Run the adapted first-server program with the tutorial's `execute` source, which calls `records.lookup(key="alpha", limit=2)`:
+
+```sh
+go run .
+```
+
+The `execute` line is:
+
+```
+execute: {"result":{"count":2,"key":"alpha"}}
+```
+
+Change the `execute` source to `return records.lookup(key="forbidden", limit=2)`.
+
+The tutorial's `callTool` helper formats a tool error with `%v` and stops the program, so the denial text is not visible as written. To print it, replace the `result.IsError` branch in `callTool` with:
+
+```go
+if result.IsError {
+	text, ok := result.Content[0].(*mcp.TextContent)
+	if !ok {
+		return fmt.Errorf("%s returned a tool error: %v", params.Name, result.Content)
+	}
+	fmt.Printf("%s: %s\n", params.Name, text.Text)
+	return nil
+}
+```
+
+Run `go run .` again. `search_api` and `describe_api` still succeed, and the `execute` line is:
+
+```
+execute: permission denied
+```
+
+See the [`authz/rego` API reference](../reference/public-api.md#authzrego) for constructor validation and exact result semantics. See [Understanding CodeMode's security model](../explanation/security-model.md#rego-policy-runs-in-process) for the policy trust boundary and runtime restrictions.

@@ -34,8 +34,10 @@ Keep the root [README](README.md) concise and link to the detailed pages instead
    mise install
    ```
 
-2. Keep the change focused. Add or update behavior tests when a public contract changes. Update the user documentation when behavior visible through the root, `authz`, or `mcpserver` packages changes.
-3. Validate compile-checked examples and documentation directly when either changes:
+2. Keep the change focused.
+3. When a public contract changes, add or update behavior tests.
+4. When behavior visible through the root, `authz`, or `mcpserver` packages changes, update the user documentation.
+5. When compile-checked examples or documentation change, validate them directly:
 
    ```sh
    go test ./... -count=1
@@ -43,7 +45,7 @@ Keep the root [README](README.md) concise and link to the detailed pages instead
    ```
 
    `go test` compiles and runs the Go examples with the package tests. `docs:build` runs the strict MkDocs build with the locked documentation environment.
-4. Before requesting review, run the complete repository check:
+6. Before requesting review, run the complete repository check:
 
    ```sh
    moon run root:check
