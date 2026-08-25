@@ -1,11 +1,8 @@
 package binding
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
-
-	"go.starlark.net/starlark"
 )
 
 // ConvertOutput converts the plan's exact handler output to a process-neutral object.
@@ -25,25 +22,6 @@ func (plan *Plan) ConvertOutput(output any) (map[string]any, error) {
 			return nil, err
 		}
 		converted[field.name] = item
-	}
-	return converted, nil
-}
-
-// ConvertFinal converts a final Starlark value to MCP-safe JSON data under depth and byte limits.
-//
-// Exact JSON byte measurement stays in this compatibility wrapper until the
-// worker codec becomes the only encoded-size owner.
-func ConvertFinal(value starlark.Value, maxDepth int, maxBytes int) (any, error) {
-	converted, err := FromStarlark(value, maxDepth, maxBytes)
-	if err != nil {
-		return nil, err
-	}
-	encoded, err := json.Marshal(converted)
-	if err != nil {
-		return nil, fmt.Errorf("%w: encode final value: %w", ErrUnsupportedValue, err)
-	}
-	if len(encoded) > maxBytes {
-		return nil, fmt.Errorf("%w: final result is %d bytes; maximum is %d", ErrValueLimit, len(encoded), maxBytes)
 	}
 	return converted, nil
 }

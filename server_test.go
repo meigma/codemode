@@ -289,8 +289,8 @@ def main():
 	}
 }
 
-// TestServerExecuteEnforcesSourceCallStepAndResultLimits proves each public budget fails safely.
-func TestServerExecuteEnforcesSourceCallStepAndResultLimits(t *testing.T) {
+// TestServerExecuteEnforcesSourceCallStepAndValueLimits proves each public budget fails safely.
+func TestServerExecuteEnforcesSourceCallStepAndValueLimits(t *testing.T) {
 	t.Run("source bytes", func(t *testing.T) {
 		limits := codemode.DefaultLimits()
 		limits.MaxSourceBytes = 8
@@ -348,9 +348,9 @@ def main():
 		require.ErrorIs(t, err, codemode.ErrResourceLimit)
 	})
 
-	t.Run("result bytes", func(t *testing.T) {
+	t.Run("value bytes", func(t *testing.T) {
 		limits := codemode.DefaultLimits()
-		limits.MaxResultBytes = 4
+		limits.MaxValueBytes = 4
 		server := buildTestServer(
 			t,
 			authz.AllowAll(),

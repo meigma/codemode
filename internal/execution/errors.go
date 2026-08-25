@@ -15,7 +15,7 @@ var (
 	// ErrPolicyFailure classifies an authorization evaluation error or panic.
 	ErrPolicyFailure = errors.New("authorization policy failure")
 
-	// ErrResourceLimit classifies source, step, time, call, depth, or result-size exhaustion.
+	// ErrResourceLimit classifies source, step, native-call, depth, or value-size exhaustion.
 	ErrResourceLimit = errors.New("resource limit exceeded")
 
 	// ErrCapabilityFailure classifies a native handler or handler-result failure.

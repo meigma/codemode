@@ -1,10 +1,8 @@
 package execution_test
 
 import (
-	"context"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,15 +10,6 @@ import (
 	"github.com/meigma/codemode/internal/binding"
 	"github.com/meigma/codemode/internal/execution"
 )
-
-// testExecutionResult carries one asynchronous execution outcome.
-type testExecutionResult struct {
-	// value is main's converted final value.
-	value any
-
-	// err is the classified execution failure.
-	err error
-}
 
 // TestNewRejectsInvalidBindings proves Engine construction fails closed.
 func TestNewRejectsInvalidBindings(t *testing.T) {
@@ -83,7 +72,6 @@ func TestNewCopiesCallerBindings(t *testing.T) {
 	capability.Input[0].Name = "mutated"
 
 	result, err := engine.Execute(
-		t.Context(),
 		`def main(): return records.lookup(value="alpha")`,
 		echoNativeCall(),
 		defaultExecutionLimits(),
@@ -123,7 +111,7 @@ def main():
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := engine.Execute(t.Context(), tt.source, nativeCall, defaultExecutionLimits())
+			_, err := engine.Execute(tt.source, nativeCall, defaultExecutionLimits())
 
 			require.ErrorIs(t, err, execution.ErrInvalidProgram)
 		})
@@ -135,14 +123,14 @@ def main():
 func TestExecuteBindsThenDispatches(t *testing.T) {
 	var gotID string
 	var gotArguments map[string]any
+	nativeCall := func(id string, arguments map[string]any) (any, error) {
+		gotID = id
+		gotArguments = arguments
+		return map[string]any{"value": "alpha"}, nil
+	}
 	result, err := buildEngine(t).Execute(
-		t.Context(),
 		`def main(): return records.lookup(value="alpha")`,
-		func(id string, arguments map[string]any) (any, error) {
-			gotID = id
-			gotArguments = arguments
-			return map[string]any{"value": "alpha"}, nil
-		},
+		nativeCall,
 		defaultExecutionLimits(),
 	)
 
@@ -156,7 +144,6 @@ func TestExecuteBindsThenDispatches(t *testing.T) {
 func TestExecuteRejectsMalformedArgumentsBeforeNativeCall(t *testing.T) {
 	var nativeCalls atomic.Int64
 	_, err := buildEngine(t).Execute(
-		t.Context(),
 		`def main(): return records.lookup()`,
 		countingNativeCall(&nativeCalls),
 		defaultExecutionLimits(),
@@ -169,85 +156,12 @@ func TestExecuteRejectsMalformedArgumentsBeforeNativeCall(t *testing.T) {
 // TestExecuteRejectsDuplicateKeywordSyntaxAsInvalidProgram proves repeated keywords fail at parse time.
 func TestExecuteRejectsDuplicateKeywordSyntaxAsInvalidProgram(t *testing.T) {
 	var nativeCalls atomic.Int64
-	_, err := buildEngine(t).Execute(
-		t.Context(),
-		`def main(): return records.lookup(value="alpha", value="beta")`,
-		countingNativeCall(&nativeCalls),
-		defaultExecutionLimits(),
-	)
+	_, err := buildEngine(
+		t,
+	).Execute(`def main(): return records.lookup(value="alpha", value="beta")`, countingNativeCall(&nativeCalls), defaultExecutionLimits())
 
 	require.ErrorIs(t, err, execution.ErrInvalidProgram)
 	assert.Zero(t, nativeCalls.Load())
-}
-
-// TestExecuteCancellationBetweenNativeCallsPreventsDispatch proves a live cancel cannot start a later native call.
-func TestExecuteCancellationBetweenNativeCallsPreventsDispatch(t *testing.T) {
-	engine := buildEngine(t)
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	var nativeCalls atomic.Int64
-
-	value, err := engine.Execute(
-		ctx,
-		`
-def main():
-    records.lookup(value="first")
-    return records.lookup(value="second")
-`,
-		func(string, map[string]any) (any, error) {
-			nativeCalls.Add(1)
-			cancel()
-			return map[string]any{"value": "first"}, nil
-		},
-		defaultExecutionLimits(),
-	)
-
-	assert.Nil(t, value)
-	require.ErrorIs(t, err, context.Canceled)
-	assert.Equal(t, int64(1), nativeCalls.Load())
-}
-
-// TestExecuteCancelsInFlightStarlark proves the watcher interrupts evaluation after execution begins.
-func TestExecuteCancelsInFlightStarlark(t *testing.T) {
-	handlerStarted := make(chan struct{})
-	releaseHandler := make(chan struct{})
-	handlerReturned := make(chan struct{})
-	engine := buildEngine(t)
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	limits := defaultExecutionLimits()
-	limits.MaxExecutionSteps = ^uint64(0)
-	result := make(chan testExecutionResult, 1)
-	go func() {
-		value, err := engine.Execute(
-			ctx,
-			`
-def main():
-    records.lookup(value="alpha")
-    total = 0
-    for item in range(1000000000):
-        total += item
-    return total
-`,
-			func(string, map[string]any) (any, error) {
-				close(handlerStarted)
-				<-releaseHandler
-				close(handlerReturned)
-				return map[string]any{"value": "alpha"}, nil
-			},
-			limits,
-		)
-		result <- testExecutionResult{value: value, err: err}
-	}()
-
-	<-handlerStarted
-	close(releaseHandler)
-	<-handlerReturned
-	cancel()
-	outcome := <-result
-
-	assert.Nil(t, outcome.value)
-	require.ErrorIs(t, outcome.err, context.Canceled)
 }
 
 // TestExecuteCreatesFreshStateAndReturnsOnlyMain proves executions share no globals or counters.
@@ -262,16 +176,16 @@ def main():
 	limits := defaultExecutionLimits()
 	limits.MaxNativeCalls = 1
 
-	first, err := engine.Execute(t.Context(), source, echoNativeCall(), limits)
+	first, err := engine.Execute(source, echoNativeCall(), limits)
 	require.NoError(t, err)
-	second, err := engine.Execute(t.Context(), source, echoNativeCall(), limits)
+	second, err := engine.Execute(source, echoNativeCall(), limits)
 
 	require.NoError(t, err)
 	assert.Equal(t, map[string]any{"value": "visible"}, first)
 	assert.Equal(t, map[string]any{"value": "visible"}, second)
 }
 
-// TestExecuteEnforcesEveryRuntimeBudget proves source, steps, calls, time, depth, and bytes fail safely.
+// TestExecuteEnforcesEveryRuntimeBudget proves source, steps, calls, depth, and materialization bounds fail safely.
 func TestExecuteEnforcesEveryRuntimeBudget(t *testing.T) {
 	engine := buildEngine(t)
 	var nativeCalls atomic.Int64
@@ -280,14 +194,14 @@ func TestExecuteEnforcesEveryRuntimeBudget(t *testing.T) {
 	t.Run("source bytes", func(t *testing.T) {
 		limits := defaultExecutionLimits()
 		limits.MaxSourceBytes = 8
-		_, err := engine.Execute(t.Context(), `def main(): return None`, countingCall, limits)
+		_, err := engine.Execute(`def main(): return None`, countingCall, limits)
 		require.ErrorIs(t, err, execution.ErrResourceLimit)
 	})
 
 	t.Run("execution steps", func(t *testing.T) {
 		limits := defaultExecutionLimits()
 		limits.MaxExecutionSteps = 20
-		_, err := engine.Execute(t.Context(), `
+		_, err := engine.Execute(`
 def main():
     total = 0
     for item in range(1000000):
@@ -301,7 +215,7 @@ def main():
 		nativeCalls.Store(0)
 		limits := defaultExecutionLimits()
 		limits.MaxNativeCalls = 1
-		_, err := engine.Execute(t.Context(), `
+		_, err := engine.Execute(`
 def main():
     records.lookup(value="first")
     return records.lookup(value="second")
@@ -310,25 +224,17 @@ def main():
 		assert.Equal(t, int64(1), nativeCalls.Load())
 	})
 
-	t.Run("elapsed time", func(t *testing.T) {
-		limits := defaultExecutionLimits()
-		limits.MaxExecutionTime = time.Nanosecond
-		_, err := engine.Execute(t.Context(), `def main(): return None`, countingCall, limits)
-		require.ErrorIs(t, err, execution.ErrResourceLimit)
-		require.ErrorIs(t, err, context.DeadlineExceeded)
-	})
-
 	t.Run("value depth", func(t *testing.T) {
 		limits := defaultExecutionLimits()
 		limits.MaxValueDepth = 2
-		_, err := engine.Execute(t.Context(), `def main(): return [[["deep"]]]`, countingCall, limits)
+		_, err := engine.Execute(`def main(): return [[["deep"]]]`, countingCall, limits)
 		require.ErrorIs(t, err, execution.ErrResourceLimit)
 	})
 
-	t.Run("result bytes", func(t *testing.T) {
+	t.Run("value materialization", func(t *testing.T) {
 		limits := defaultExecutionLimits()
-		limits.MaxResultBytes = 4
-		_, err := engine.Execute(t.Context(), `def main(): return "oversized"`, countingCall, limits)
+		limits.MaxValueBytes = 4
+		_, err := engine.Execute(`def main(): return [1, 2, 3, 4, 5]`, countingCall, limits)
 		require.ErrorIs(t, err, execution.ErrResourceLimit)
 	})
 
@@ -336,7 +242,6 @@ def main():
 		limits := defaultExecutionLimits()
 		limits.MaxValueDepth = 2
 		_, err := engine.Execute(
-			t.Context(),
 			`def main(): return records.lookup(value="alpha")`,
 			func(string, map[string]any) (any, error) {
 				return []any{[]any{[]any{"deep"}}}, nil
@@ -347,20 +252,11 @@ def main():
 	})
 }
 
-// TestExecutePreservesCancellationAndRejectsUnsupportedFinalValues proves terminal failures remain classified.
-func TestExecutePreservesCancellationAndRejectsUnsupportedFinalValues(t *testing.T) {
+// TestExecuteRejectsUnsupportedFinalValues proves terminal values remain classified.
+func TestExecuteRejectsUnsupportedFinalValues(t *testing.T) {
 	engine := buildEngine(t)
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
 
-	_, err := engine.Execute(ctx, `def main(): return None`, echoNativeCall(), defaultExecutionLimits())
-	require.ErrorIs(t, err, context.Canceled)
-	_, err = engine.Execute(
-		t.Context(),
-		`def main(): return main`,
-		echoNativeCall(),
-		defaultExecutionLimits(),
-	)
+	_, err := engine.Execute(`def main(): return main`, echoNativeCall(), defaultExecutionLimits())
 	require.ErrorIs(t, err, execution.ErrInvalidProgram)
 }
 
@@ -388,14 +284,11 @@ func TestExecuteClassifiesNativePortErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := buildEngine(t).Execute(
-				t.Context(),
-				`def main(): return records.lookup(value="alpha")`,
-				func(string, map[string]any) (any, error) {
-					return tt.result, tt.err
-				},
-				defaultExecutionLimits(),
-			)
+			_, err := buildEngine(
+				t,
+			).Execute(`def main(): return records.lookup(value="alpha")`, func(string, map[string]any) (any, error) {
+				return tt.result, tt.err
+			}, defaultExecutionLimits())
 
 			require.ErrorIs(t, err, tt.target)
 		})
@@ -404,39 +297,31 @@ func TestExecuteClassifiesNativePortErrors(t *testing.T) {
 
 // TestExecuteRecoversNativeCallPanic proves a request-port panic stays inside the interpreter boundary.
 func TestExecuteRecoversNativeCallPanic(t *testing.T) {
-	_, err := buildEngine(t).Execute(
-		t.Context(),
-		`def main(): return records.lookup(value="alpha")`,
-		func(string, map[string]any) (any, error) {
-			panic("native boom")
-		},
-		defaultExecutionLimits(),
-	)
+	_, err := buildEngine(
+		t,
+	).Execute(`def main(): return records.lookup(value="alpha")`, func(string, map[string]any) (any, error) {
+		panic("native boom")
+	}, defaultExecutionLimits())
 
 	require.ErrorIs(t, err, execution.ErrInternal)
 }
 
 // TestExecutePreservesSortedNativeDictionaryKeys proves ToStarlark insertion order is observable.
 func TestExecutePreservesSortedNativeDictionaryKeys(t *testing.T) {
-	result, err := buildEngine(t).Execute(
-		t.Context(),
-		`
+	result, err := buildEngine(t).Execute(`
 def main():
     result = records.lookup(value="alpha")
     keys = []
     for key in result:
         keys.append(key)
     return keys
-`,
-		func(string, map[string]any) (any, error) {
-			return map[string]any{
-				"zeta":  int64(1),
-				"alpha": int64(2),
-				"mu":    int64(3),
-			}, nil
-		},
-		defaultExecutionLimits(),
-	)
+`, func(string, map[string]any) (any, error) {
+		return map[string]any{
+			"zeta":  int64(1),
+			"alpha": int64(2),
+			"mu":    int64(3),
+		}, nil
+	}, defaultExecutionLimits())
 
 	require.NoError(t, err)
 	assert.Equal(t, []any{"alpha", "mu", "zeta"}, result)
@@ -494,9 +379,8 @@ func defaultExecutionLimits() execution.Limits {
 	return execution.Limits{
 		MaxSourceBytes:    64 * 1024,
 		MaxExecutionSteps: 1_000_000,
-		MaxExecutionTime:  5 * time.Second,
 		MaxNativeCalls:    10,
 		MaxValueDepth:     16,
-		MaxResultBytes:    64 * 1024,
+		MaxValueBytes:     64 * 1024,
 	}
 }

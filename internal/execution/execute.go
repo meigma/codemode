@@ -1,7 +1,6 @@
 package execution
 
 import (
-	"context"
 	"errors"
 	"fmt"
 
@@ -24,7 +23,6 @@ type executionOutcome struct {
 
 // Execute runs source in a fresh restricted interpreter and converts only main's final value.
 func (engine *Engine) Execute(
-	ctx context.Context,
 	source string,
 	nativeCall NativeCall,
 	limits Limits,
@@ -37,33 +35,23 @@ func (engine *Engine) Execute(
 				outcome.err = ErrInternal
 			}
 		}()
-		outcome.value, outcome.err = execute(ctx, source, engine.predeclared, nativeCall, limits)
+		outcome.value, outcome.err = execute(source, engine.predeclared, nativeCall, limits)
 	}()
 	return outcome.value, outcome.err
 }
 
 // execute performs one execution after the panic-recovery boundary is installed.
 func execute(
-	ctx context.Context,
 	source string,
 	predeclared starlark.StringDict,
 	nativeCall NativeCall,
 	limits Limits,
 ) (any, error) {
-	if ctx == nil || predeclared == nil || nativeCall == nil {
+	if predeclared == nil || nativeCall == nil {
 		return nil, ErrInternal
 	}
 	if len(source) > limits.MaxSourceBytes {
 		return nil, ErrResourceLimit
-	}
-	if contextErr := contextFailure(ctx); contextErr != nil {
-		return nil, contextErr
-	}
-
-	runCtx, cancel := context.WithTimeout(ctx, limits.MaxExecutionTime)
-	defer cancel()
-	if contextErr := contextFailure(runCtx); contextErr != nil {
-		return nil, contextErr
 	}
 
 	state := &executionState{
@@ -71,11 +59,9 @@ func execute(
 		nativeCalls: checkedCounter{
 			maximum: limits.MaxNativeCalls,
 		},
-		call: wrapNativeCall(runCtx, nativeCall, limits),
+		call: wrapNativeCall(nativeCall, limits),
 	}
 	thread := newThread(state, limits.MaxExecutionSteps)
-	stopCancellation := watchCancellation(runCtx, thread)
-	defer stopCancellation()
 
 	globals, executionErr := starlark.ExecFileOptions(
 		&syntax.FileOptions{},
@@ -85,7 +71,7 @@ func execute(
 		predeclared,
 	)
 	if executionErr != nil {
-		return nil, classifyRuntimeError(runCtx, state, executionErr)
+		return nil, classifyRuntimeError(state, executionErr)
 	}
 	mainFunction, mainErr := requireMain(globals)
 	if mainErr != nil {
@@ -97,16 +83,13 @@ func execute(
 	finalValue, callErr := starlark.Call(thread, mainFunction, nil, nil)
 	state.finishMain()
 	if callErr != nil {
-		return nil, classifyRuntimeError(runCtx, state, callErr)
-	}
-	if contextErr := contextFailure(runCtx); contextErr != nil {
-		return nil, contextErr
+		return nil, classifyRuntimeError(state, callErr)
 	}
 
-	converted, conversionErr := binding.ConvertFinal(
+	converted, conversionErr := binding.FromStarlark(
 		finalValue,
 		limits.MaxValueDepth,
-		limits.MaxResultBytes,
+		limits.MaxValueBytes,
 	)
 	if conversionErr != nil {
 		if errors.Is(conversionErr, binding.ErrValueLimit) {
@@ -114,23 +97,17 @@ func execute(
 		}
 		return nil, fmt.Errorf("%w: %w", ErrInvalidProgram, conversionErr)
 	}
-	if contextErr := contextFailure(runCtx); contextErr != nil {
-		return nil, contextErr
-	}
 	return converted, nil
 }
 
-// wrapNativeCall captures request context and conversion limits for one execution.
-func wrapNativeCall(ctx context.Context, nativeCall NativeCall, limits Limits) nativeInvoker {
+// wrapNativeCall captures conversion limits for one execution.
+func wrapNativeCall(nativeCall NativeCall, limits Limits) nativeInvoker {
 	return func(id string, arguments map[string]any) (starlark.Value, error) {
-		if contextErr := contextFailure(ctx); contextErr != nil {
-			return nil, contextErr
-		}
 		result, err := nativeCall(id, arguments)
 		if err != nil {
 			return nil, err
 		}
-		converted, conversionErr := binding.ToStarlark(result, limits.MaxValueDepth, limits.MaxResultBytes)
+		converted, conversionErr := binding.ToStarlark(result, limits.MaxValueDepth, limits.MaxValueBytes)
 		if conversionErr != nil {
 			if errors.Is(conversionErr, binding.ErrValueLimit) {
 				return nil, fmt.Errorf("%w: %w", ErrResourceLimit, conversionErr)
@@ -159,21 +136,6 @@ func newThread(state *executionState, maxSteps uint64) *starlark.Thread {
 	}
 	thread.SetMaxExecutionSteps(maxSteps)
 	return thread
-}
-
-// watchCancellation interrupts Starlark evaluation when the request or elapsed deadline ends.
-func watchCancellation(ctx context.Context, thread *starlark.Thread) func() {
-	stopped := make(chan struct{})
-	go func() {
-		select {
-		case <-ctx.Done():
-			thread.Cancel("execution canceled")
-		case <-stopped:
-		}
-	}()
-	return func() {
-		close(stopped)
-	}
 }
 
 // requireMain returns the exact zero-argument main function required by the execution contract.
@@ -221,13 +183,10 @@ func callCapability(
 	return state.call(id, canonical)
 }
 
-// classifyRuntimeError prefers request and budget state before classifying evaluator causes.
-func classifyRuntimeError(ctx context.Context, state *executionState, err error) error {
+// classifyRuntimeError prefers deterministic budget state before classifying evaluator causes.
+func classifyRuntimeError(state *executionState, err error) error {
 	if state.stepLimited {
 		return ErrResourceLimit
-	}
-	if contextErr := contextFailure(ctx); contextErr != nil {
-		return contextErr
 	}
 	switch {
 	case errors.Is(err, ErrInvalidArguments):
@@ -246,17 +205,5 @@ func classifyRuntimeError(ctx context.Context, state *executionState, err error)
 		return ErrInvalidProgram
 	default:
 		return fmt.Errorf("%w: %w", ErrInvalidProgram, err)
-	}
-}
-
-// contextFailure projects request cancellation directly and deadlines as resource exhaustion.
-func contextFailure(ctx context.Context) error {
-	switch err := ctx.Err(); {
-	case errors.Is(err, context.Canceled):
-		return context.Canceled
-	case errors.Is(err, context.DeadlineExceeded):
-		return fmt.Errorf("%w: %w", ErrResourceLimit, context.DeadlineExceeded)
-	default:
-		return nil
 	}
 }

@@ -2,6 +2,9 @@ package codemode_test
 
 import (
 	"context"
+	"math"
+	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -172,6 +175,56 @@ func TestBuildRejectsWholeCatalogFailures(t *testing.T) {
 		require.ErrorIs(t, err, codemode.ErrInvalidRegistration)
 		assert.Nil(t, server)
 	})
+}
+
+// TestBuilderBuildsWorkerProbe proves Build completes the real same-binary handshake.
+func TestBuilderBuildsWorkerProbe(t *testing.T) {
+	builder := codemode.New(codemode.Options{
+		Authorizer: authz.AllowAll(),
+		Limits:     codemode.DefaultLimits(),
+	})
+
+	server, err := builder.Build()
+
+	require.NoError(t, err)
+	require.NotNil(t, server)
+}
+
+// TestBuilderRejectsWorkerFrameOverflow proves catalog-dependent cap arithmetic fails registration.
+func TestBuilderRejectsWorkerFrameOverflow(t *testing.T) {
+	limits := codemode.DefaultLimits()
+	limits.MaxValueBytes = int(math.MaxUint32) - 64
+	builder := codemode.New(codemode.Options{
+		Authorizer: authz.AllowAll(),
+		Limits:     limits,
+	})
+	require.NoError(t, codemode.Register(
+		builder,
+		validBuilderCapability(
+			codemode.CapabilityID("cap."+strings.Repeat("x", 128)),
+			"records.lookup",
+		),
+	))
+
+	server, err := builder.Build()
+
+	require.ErrorIs(t, err, codemode.ErrInvalidRegistration)
+	assert.Nil(t, server)
+	assert.Equal(t, 1, strings.Count(err.Error(), "invalid registration:"))
+}
+
+// TestBuilderReportsMiswiredWorker proves a final binary without the worker entry gets bounded guidance.
+func TestBuilderReportsMiswiredWorker(t *testing.T) {
+	command := exec.CommandContext(t.Context(), "go", "run", "./testdata/miswired")
+
+	output, err := command.CombinedOutput()
+
+	require.Error(t, err)
+	message := string(output)
+	assert.Contains(t, message, "CodeMode worker probe failed: child exited with status 1")
+	assert.Contains(t, message, "worker stderr:")
+	assert.Contains(t, message, "Build ran in CodeMode worker mode")
+	assert.Less(t, len(output), 12*1024)
 }
 
 // validBuilderCapability constructs one valid representative registration.

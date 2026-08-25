@@ -6,14 +6,15 @@ import (
 )
 
 const (
-	defaultMaxSourceBytes      = 64 * 1024
-	defaultMaxExecutionSteps   = 1_000_000
-	defaultMaxExecutionTime    = 5 * time.Second
-	defaultMaxNativeCalls      = 100
-	defaultMaxValueDepth       = 32
-	defaultMaxResultBytes      = 1024 * 1024
-	defaultMaxSearchQueryBytes = 256
-	defaultMaxSearchResults    = 20
+	defaultMaxSourceBytes          = 64 * 1024
+	defaultMaxExecutionSteps       = 1_000_000
+	defaultMaxExecutionTime        = 5 * time.Second
+	defaultMaxNativeCalls          = 100
+	defaultMaxValueDepth           = 32
+	defaultMaxValueBytes           = 1024 * 1024
+	defaultMaxSearchQueryBytes     = 256
+	defaultMaxSearchResults        = 20
+	defaultMaxConcurrentExecutions = 8
 )
 
 // Limits bounds one execution and the model-facing catalog search surface.
@@ -24,36 +25,53 @@ type Limits struct {
 	// MaxExecutionSteps is the maximum number of Starlark bytecode steps.
 	MaxExecutionSteps uint64
 
-	// MaxExecutionTime is the maximum elapsed duration of one execution.
+	// MaxExecutionTime is the maximum elapsed execution budget. The budget starts
+	// before waiting for a worker slot and covers spawn, protocol exchange,
+	// Starlark execution, and parent dispatch. Killing and reaping can add
+	// operating-system overhead.
+	//
+	// Process startup consumes part of this budget. The worker spike observed
+	// 2.25–2.93 ms for a trivial end-to-end execution on one Apple M4 Max; that
+	// measurement is not a portable lower bound. Measure deployment behavior
+	// before configuring a low-millisecond value.
 	MaxExecutionTime time.Duration
 
 	// MaxNativeCalls is the maximum number of attempted native capability calls.
 	MaxNativeCalls uint64
 
-	// MaxValueDepth is the maximum converted-value nesting depth.
+	// MaxValueDepth is the maximum nesting depth of any JSON-shaped value crossing
+	// the worker boundary, including arguments, native results, and the final value.
 	MaxValueDepth int
 
-	// MaxResultBytes is the maximum encoded final-result size in bytes.
-	MaxResultBytes int
+	// MaxValueBytes is the maximum encoded size of any JSON-shaped value crossing
+	// the worker boundary, including arguments, native results, and the final value.
+	// Size is measured by CodeMode's type-preserving JSON value encoder.
+	MaxValueBytes int
 
 	// MaxSearchQueryBytes is the maximum capability-search query size in bytes.
 	MaxSearchQueryBytes int
 
 	// MaxSearchResults is the maximum number of capability-search results.
 	MaxSearchResults int
+
+	// MaxConcurrentExecutions is the maximum number of concurrent spawn attempts
+	// and live execution-worker children. Waiting for a slot consumes
+	// MaxExecutionTime and remains cancelable through the request context.
+	MaxConcurrentExecutions int
 }
 
 // DefaultLimits returns positive development defaults for every supported budget.
 func DefaultLimits() Limits {
 	return Limits{
-		MaxSourceBytes:      defaultMaxSourceBytes,
-		MaxExecutionSteps:   defaultMaxExecutionSteps,
-		MaxExecutionTime:    defaultMaxExecutionTime,
-		MaxNativeCalls:      defaultMaxNativeCalls,
-		MaxValueDepth:       defaultMaxValueDepth,
-		MaxResultBytes:      defaultMaxResultBytes,
-		MaxSearchQueryBytes: defaultMaxSearchQueryBytes,
-		MaxSearchResults:    defaultMaxSearchResults,
+		MaxSourceBytes:          defaultMaxSourceBytes,
+		MaxExecutionSteps:       defaultMaxExecutionSteps,
+		MaxExecutionTime:        defaultMaxExecutionTime,
+		MaxNativeCalls:          defaultMaxNativeCalls,
+		MaxValueDepth:           defaultMaxValueDepth,
+		MaxValueBytes:           defaultMaxValueBytes,
+		MaxSearchQueryBytes:     defaultMaxSearchQueryBytes,
+		MaxSearchResults:        defaultMaxSearchResults,
+		MaxConcurrentExecutions: defaultMaxConcurrentExecutions,
 	}
 }
 
@@ -70,12 +88,14 @@ func (limits Limits) Validate() error {
 		return fmt.Errorf("%w: MaxNativeCalls must be positive", ErrInvalidRegistration)
 	case limits.MaxValueDepth <= 0:
 		return fmt.Errorf("%w: MaxValueDepth must be positive", ErrInvalidRegistration)
-	case limits.MaxResultBytes <= 0:
-		return fmt.Errorf("%w: MaxResultBytes must be positive", ErrInvalidRegistration)
+	case limits.MaxValueBytes <= 0:
+		return fmt.Errorf("%w: MaxValueBytes must be positive", ErrInvalidRegistration)
 	case limits.MaxSearchQueryBytes <= 0:
 		return fmt.Errorf("%w: MaxSearchQueryBytes must be positive", ErrInvalidRegistration)
 	case limits.MaxSearchResults <= 0:
 		return fmt.Errorf("%w: MaxSearchResults must be positive", ErrInvalidRegistration)
+	case limits.MaxConcurrentExecutions <= 0:
+		return fmt.Errorf("%w: MaxConcurrentExecutions must be positive", ErrInvalidRegistration)
 	default:
 		return nil
 	}

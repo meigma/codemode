@@ -45,6 +45,10 @@ type Builder struct {
 }
 
 // New creates a mutable one-shot Builder and copies caller-owned option slices.
+//
+// The final binary must call ServeWorkerAndExit as the first statement of main
+// before it calls New or performs ordinary host setup. Test binaries that call
+// Build must make the same call as the first statement of TestMain.
 func New(options Options) *Builder {
 	disabled := make([]string, len(options.DisabledCapabilities))
 	for index, id := range options.DisabledCapabilities {
@@ -103,7 +107,18 @@ func Register[Input, Output any](builder *Builder, capability Capability[Input, 
 	return nil
 }
 
-// Build closes the Builder and returns an immutable concurrency-safe Server after full validation.
+// Build closes the Builder and returns an immutable concurrency-safe Server
+// after full validation and a same-executable worker probe.
+//
+// Build allows up to five seconds for the probe exchange, then kills and reaps
+// the probe child; operating-system spawn and kill/reap overhead can extend the
+// call beyond that exchange deadline. Build has no context and the probe
+// deadline is not configurable.
+//
+// The final binary must call ServeWorkerAndExit as the first statement of main,
+// and a test binary that calls Build must do the same in TestMain. The probe
+// detects an absent or nonfunctional worker entry, but it cannot detect ordinary
+// host work that completes silently before ServeWorkerAndExit is called.
 func (builder *Builder) Build() (*Server, error) {
 	if builder == nil {
 		return nil, fmt.Errorf("%w: nil builder", ErrInvalidRegistration)

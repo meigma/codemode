@@ -14,6 +14,39 @@ CodeMode has four public packages:
 
 ## `codemode`
 
+### Host wiring
+
+Every final binary that calls `Builder.Build` must call
+`ServeWorkerAndExit()` as the first statement of `main`, before flag parsing or
+ordinary host setup:
+
+```go
+func main() {
+	codemode.ServeWorkerAndExit()
+	// Parse flags and construct the host.
+}
+```
+
+`ServeWorkerAndExit` returns immediately in an ordinary host process. In a
+CodeMode worker, it serves exactly one private probe or execution request over
+standard input and output and then terminates the process. Because it may call
+`os.Exit`, deferred functions in the worker do not run.
+
+Test binaries that call `Builder.Build` need the equivalent first statement in
+`TestMain`:
+
+```go
+func TestMain(m *testing.M) {
+	codemode.ServeWorkerAndExit()
+	os.Exit(m.Run())
+}
+```
+
+`IsWorker()` reports whether the current process was re-executed as a CodeMode
+worker. Most hosts should call `ServeWorkerAndExit` directly. `IsWorker` exists
+for frameworks that must perform minimal setup before they can delegate to the
+worker service; it is not a substitute for serving worker mode.
+
 ### Capability registration
 
 `CapabilityID` is the stable deployment and policy identity of a capability. `CapabilityName` is the dotted name visible in discovery and Starlark. A name has at least two valid Starlark identifier segments, such as `records.lookup`.
@@ -88,9 +121,17 @@ Every output field is required. `omitempty` is rejected on output fields. A `flo
 2. Call `Build` once.
 3. Use the returned immutable `*Server` concurrently.
 
-The first `Build` call closes the builder before full validation. This remains true when the build fails. Later `Register` and `Build` calls return `ErrInvalidRegistration`. Create another builder to change registrations, options, or capability visibility.
+The first `Build` call closes the builder before full validation. This remains
+true when the build fails. Later `Register` and `Build` calls return
+`ErrInvalidRegistration`. Create another builder to change registrations,
+options, or capability visibility.
 
-`Build` also rejects a missing authorizer, non-positive limits, namespace collisions, duplicate disabled IDs, and disabled IDs that do not match a registered capability.
+`Build` rejects a missing authorizer, non-positive limits, namespace
+collisions, duplicate disabled IDs, and disabled IDs that do not match a
+registered capability. It also re-executes the current binary and performs a
+fixed five-second private worker probe. A missing or incorrectly ordered worker
+entry returns `ErrInvalidRegistration` with an actionable host-wiring
+diagnostic. The fixed probe deadline is independent of `MaxExecutionTime`.
 
 ### Static capability filtering
 
@@ -111,18 +152,39 @@ The filter is deployment configuration, not a per-request policy. Use an `authz.
 | --- | ---: | --- |
 | `MaxSourceBytes int` | 65,536 bytes (64 KiB) | Starlark source before execution. |
 | `MaxExecutionSteps uint64` | 1,000,000 | Starlark bytecode steps for one execution. |
-| `MaxExecutionTime time.Duration` | 5 seconds | Elapsed time for one execution. |
+| `MaxExecutionTime time.Duration` | 5 seconds | Elapsed time from waiting for a worker slot through worker reap. |
 | `MaxNativeCalls uint64` | 100 | Attempted native calls in one execution. |
-| `MaxValueDepth int` | 32 | Inclusive nesting depth of the converted final value. |
-| `MaxResultBytes int` | 1,048,576 bytes (1 MiB) | JSON encoding of the final value. |
+| `MaxValueDepth int` | 32 | Inclusive nesting depth of any value crossing the worker boundary. |
+| `MaxValueBytes int` | 1,048,576 bytes (1 MiB) | Type-preserving encoding of any value crossing the worker boundary. |
 | `MaxSearchQueryBytes int` | 256 bytes | Raw search query before trimming or case normalization. Whitespace padding counts. |
 | `MaxSearchResults int` | 20 | Search results returned. |
+| `MaxConcurrentExecutions int` | 8 | Live execution-worker processes. |
 
-`Limits.Validate()` returns `ErrInvalidRegistration` if any field is zero or otherwise non-positive. Zero never means unlimited. Passing a zero-value `Limits` does not select defaults; use `DefaultLimits()` explicitly.
+`Limits.Validate()` returns `ErrInvalidRegistration` if any field is zero or
+otherwise non-positive. Zero never means unlimited. Passing a zero-value
+`Limits` does not select defaults; use `DefaultLimits()` explicitly.
 
-`MaxValueDepth` is inclusive. A scalar or `None` is depth 1. Each tuple, list, or dictionary wrapper adds one. A scalar with limit 1 succeeds, a one-level container with limit 2 succeeds, and one more wrapper with limit 2 fails.
+`MaxValueDepth` is inclusive. A scalar or `None` is depth 1. Each tuple, list,
+or dictionary wrapper adds one. A scalar with limit 1 succeeds, a one-level
+container with limit 2 succeeds, and one more wrapper with limit 2 fails.
 
-Execution limits constrain an in-process interpreter. `MaxExecutionTime` cancels Starlark evaluation, but it cannot forcibly interrupt blocking Go authorizers or handlers. See [Security model](../explanation/security-model.md#cancellation-and-host-code).
+`MaxValueDepth` and `MaxValueBytes` apply independently to native-call
+arguments, native results, and the final value. `MaxValueBytes` measures
+CodeMode's type-preserving worker encoding, not canonical JSON and not the
+complete protocol frame. The worker frame cap adds the fixed envelope and, for
+native calls, the longest enabled encoded capability ID. Build rejects a
+catalog and limit combination whose largest legal frame cannot be represented.
+
+`MaxExecutionTime` includes semaphore waiting, process startup, protocol
+exchange, Starlark work, parent authorization and dispatch, and worker cleanup.
+If the request context ends first, its cancellation or deadline wins.
+`MaxConcurrentExecutions` bounds live execution workers only; the one-shot
+build probe is outside that semaphore.
+
+The parent kills and reaps the Starlark worker when the execution context ends.
+Authorizers and handlers run in the parent. CodeMode can return without waiting
+for dispatched Go code, but it cannot forcibly stop that code or undo its side
+effects. See [Security model](../explanation/security-model.md#cancellation-and-host-code).
 
 ### Server operations
 
