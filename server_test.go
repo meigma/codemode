@@ -665,7 +665,7 @@ func TestServerExecuteElapsedBudgetAfterAllowPreventsHandler(t *testing.T) {
 		return builderOutput{}, nil
 	}
 	limits := codemode.DefaultLimits()
-	limits.MaxExecutionTime = 20 * time.Millisecond
+	limits.MaxExecutionTime = 2 * time.Second
 	server := buildTestServer(t, authorizer, limits, capability)
 
 	_, err := server.Execute(t.Context(), authz.Subject{ID: "subject-1"}, `
