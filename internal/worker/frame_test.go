@@ -526,6 +526,37 @@ func TestProtocolChildUsesExecCapThenParentCap(t *testing.T) {
 	require.ErrorIs(t, err, errFrameTooLarge)
 }
 
+// TestProtocolParentReadsChildNativeCallAboveParentCap proves parentConn uses the
+// child read cap. A swapped newParentExecConn write/read pair would reject this
+// native_call, whose payload sits strictly above parentCap and at or below childCap.
+func TestProtocolParentReadsChildNativeCallAboveParentCap(t *testing.T) {
+	exec := validExecFrame()
+	parentCap, err := parentPayloadCap(exec.Limits.MaxValueBytes)
+	require.NoError(t, err)
+	childCap, err := childPayloadCap(exec.Limits.MaxValueBytes, exec.Manifest)
+	require.NoError(t, err)
+	require.Greater(t, childCap, parentCap)
+
+	arguments := map[string]any{"org": strings.Repeat("a", 217)}
+	payload, err := encodeNativeCall("cap.lookup", arguments)
+	require.NoError(t, err)
+	require.Greater(t, uint32(len(payload)), parentCap)
+	require.LessOrEqual(t, uint32(len(payload)), childCap)
+
+	parent, child := newBufferedExecPair(t, exec)
+	require.NoError(t, parent.writeExec(exec))
+	_, err = child.read()
+	require.NoError(t, err)
+	require.NoError(t, child.writeNativeCall("cap.lookup", arguments))
+
+	frame, err := parent.read()
+	require.NoError(t, err)
+	call, ok := frame.(nativeCallFrame)
+	require.True(t, ok)
+	assert.Equal(t, "cap.lookup", call.CapabilityID)
+	assert.Equal(t, arguments, call.Arguments)
+}
+
 // TestFrameLimitsValidateChildLimits proves zero never means unlimited.
 func TestFrameLimitsValidateChildLimits(t *testing.T) {
 	valid := validExecFrame().Limits
@@ -774,7 +805,7 @@ func newExecPair(t *testing.T, exec execFrame) (*parentConn, *childConn, func())
 		_ = childWriter.Close()
 	}
 	t.Cleanup(closePipes)
-	return newParentExecConn(parentWriter, parentReader, childCap, parentCap),
+	return newParentExecConn(parentWriter, parentReader, parentCap, childCap),
 		newChildExecConn(childReader, childWriter, execCap, parentCap, childCap),
 		closePipes
 }
@@ -801,7 +832,7 @@ func newBufferedExecPair(t *testing.T, exec execFrame) (*parentConn, *childConn)
 
 	var toChild bytes.Buffer
 	var toParent bytes.Buffer
-	return newParentExecConn(&toChild, &toParent, childCap, parentCap),
+	return newParentExecConn(&toChild, &toParent, parentCap, childCap),
 		newChildExecConn(&toChild, &toParent, execCap, parentCap, childCap)
 }
 
