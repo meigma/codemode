@@ -32,6 +32,25 @@ func TestConvertOutputUsesCompiledFields(t *testing.T) {
 	}, converted)
 }
 
+// TestConvertTypedOutputPreservesExactKinds proves handler output becomes process-neutral data without type erasure.
+func TestConvertTypedOutputPreservesExactKinds(t *testing.T) {
+	plan, err := CompileFor[representativeInput, representativeOutput]()
+	require.NoError(t, err)
+	output := representativeOutput{Name: "alpha", Count: 3, Active: true, Score: 1.0}
+
+	converted, err := plan.convertTypedOutput(output)
+	require.NoError(t, err)
+
+	assert.Equal(t, map[string]any{
+		"name":   "alpha",
+		"count":  int64(3),
+		"active": true,
+		"score":  1.0,
+	}, converted)
+	assert.IsType(t, int64(0), converted["count"])
+	assert.IsType(t, float64(0), converted["score"])
+}
+
 // TestConvertOutputRejectsTypeDriftAndNonFiniteFloats proves outputs cannot bypass their compiled shape.
 func TestConvertOutputRejectsTypeDriftAndNonFiniteFloats(t *testing.T) {
 	plan, err := CompileFor[representativeInput, representativeOutput]()
