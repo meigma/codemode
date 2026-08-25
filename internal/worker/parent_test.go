@@ -34,13 +34,14 @@ const (
 // testLimits returns positive budgets used by runner tests.
 func testLimits() Limits {
 	return Limits{
-		MaxSourceBytes:          64 * 1024,
-		MaxExecutionSteps:       1_000_000,
-		MaxExecutionTime:        5 * time.Second,
-		MaxNativeCalls:          100,
-		MaxValueDepth:           32,
-		MaxValueBytes:           1024 * 1024,
-		MaxConcurrentExecutions: 2,
+		MaxSourceBytes:            64 * 1024,
+		MaxExecutionSteps:         1_000_000,
+		MaxExecutionTime:          5 * time.Second,
+		MaxNativeCalls:            100,
+		MaxValueDepth:             32,
+		MaxValueBytes:             1024 * 1024,
+		MaxIntermediateValueBytes: 1024 * 1024,
+		MaxConcurrentExecutions:   2,
 	}
 }
 
@@ -239,6 +240,7 @@ func TestRunnerNewValidatesBudgetsAndManifest(t *testing.T) {
 		{name: "zero time", bindings: nil, limits: withTime(valid, 0), dispatch: dispatch},
 		{name: "zero concurrency", bindings: nil, limits: withConcurrency(valid, 0), dispatch: dispatch},
 		{name: "zero source", bindings: nil, limits: withSource(valid, 0), dispatch: dispatch},
+		{name: "zero intermediate", bindings: nil, limits: withIntermediate(valid, 0), dispatch: dispatch},
 		{
 			name:     "empty id",
 			bindings: []execution.CapabilityBinding{withID(lookupBinding(), "")},
@@ -260,6 +262,102 @@ func TestRunnerNewValidatesBudgetsAndManifest(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+// TestRunnerIntermediateBudget proves one Execute owns a fresh exact-body budget.
+func TestRunnerIntermediateBudget(t *testing.T) {
+	const twoCallSource = "def main():\n    records.lookup(value=\"a\")\n    return records.lookup(value=\"b\")\n"
+	body, err := encodeNormalizedValue("xx")
+	require.NoError(t, err)
+	result := "xx"
+
+	t.Run("below limit", func(t *testing.T) {
+		limits := testLimits()
+		limits.MaxIntermediateValueBytes = len(body)*2 + 1
+		var calls int
+		runner := newTestRunner(t, limits, func(context.Context, authz.Subject, string, map[string]any) (any, error) {
+			calls++
+			return result, nil
+		})
+
+		got, err := runner.Execute(context.Background(), authz.Subject{ID: "s"}, twoCallSource)
+
+		require.NoError(t, err)
+		assert.Equal(t, result, got)
+		assert.Equal(t, 2, calls)
+	})
+
+	t.Run("inclusive edge", func(t *testing.T) {
+		limits := testLimits()
+		limits.MaxIntermediateValueBytes = len(body) * 2
+		runner := newTestRunner(t, limits, func(context.Context, authz.Subject, string, map[string]any) (any, error) {
+			return result, nil
+		})
+
+		got, err := runner.Execute(context.Background(), authz.Subject{ID: "s"}, twoCallSource)
+
+		require.NoError(t, err)
+		assert.Equal(t, result, got)
+	})
+
+	t.Run("over limit aborts before second delivery", func(t *testing.T) {
+		limits := testLimits()
+		limits.MaxIntermediateValueBytes = len(body)*2 - 1
+		var calls int
+		runner := newTestRunner(t, limits, func(context.Context, authz.Subject, string, map[string]any) (any, error) {
+			calls++
+			return result, nil
+		})
+
+		_, err := runner.Execute(context.Background(), authz.Subject{ID: "s"}, twoCallSource)
+
+		require.ErrorIs(t, err, execution.ErrResourceLimit)
+		assert.Equal(t, 2, calls)
+	})
+
+	t.Run("fresh next execution", func(t *testing.T) {
+		limits := testLimits()
+		limits.MaxIntermediateValueBytes = len(body)
+		runner := newTestRunner(t, limits, func(context.Context, authz.Subject, string, map[string]any) (any, error) {
+			return result, nil
+		})
+
+		_, err := runner.Execute(context.Background(), authz.Subject{ID: "s"}, twoCallSource)
+		require.ErrorIs(t, err, execution.ErrResourceLimit)
+
+		got, err := runner.Execute(context.Background(), authz.Subject{ID: "s"}, nativeSource)
+		require.NoError(t, err)
+		assert.Equal(t, result, got)
+	})
+
+	t.Run("concurrent executions stay isolated", func(t *testing.T) {
+		limits := testLimits()
+		limits.MaxIntermediateValueBytes = len(body)
+		limits.MaxConcurrentExecutions = 2
+		runner := newTestRunner(t, limits, func(context.Context, authz.Subject, string, map[string]any) (any, error) {
+			return result, nil
+		})
+
+		var wg sync.WaitGroup
+		errCh := make(chan error, 2)
+		gotCh := make(chan any, 2)
+		for range 2 {
+			wg.Go(func() {
+				got, err := runner.Execute(context.Background(), authz.Subject{ID: "s"}, nativeSource)
+				errCh <- err
+				gotCh <- got
+			})
+		}
+		wg.Wait()
+		close(errCh)
+		close(gotCh)
+		for err := range errCh {
+			require.NoError(t, err)
+		}
+		for got := range gotCh {
+			assert.Equal(t, result, got)
+		}
+	})
 }
 
 // TestRunnerNewCopiesManifest proves caller slices are not retained.
@@ -666,6 +764,12 @@ func withConcurrency(limits Limits, value int) Limits {
 // withSource returns a copy of limits with MaxSourceBytes replaced.
 func withSource(limits Limits, value int) Limits {
 	limits.MaxSourceBytes = value
+	return limits
+}
+
+// withIntermediate returns a copy of limits with MaxIntermediateValueBytes replaced.
+func withIntermediate(limits Limits, value int) Limits {
+	limits.MaxIntermediateValueBytes = value
 	return limits
 }
 

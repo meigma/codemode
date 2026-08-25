@@ -367,6 +367,33 @@ def main():
 	})
 }
 
+// TestServerExecuteEnforcesAggregateIntermediateLimit proves aggregate exhaustion
+// projects only ErrResourceLimit and stays independent of MaxValueBytes.
+func TestServerExecuteEnforcesAggregateIntermediateLimit(t *testing.T) {
+	const result = "xx"
+	body := `{"value":"` + result + `"}`
+	limits := codemode.DefaultLimits()
+	limits.MaxValueBytes = 64
+	limits.MaxIntermediateValueBytes = len(body)*2 - 1
+	var handlerCalls atomic.Int64
+	capability := validBuilderCapability("cap.lookup", "records.lookup")
+	capability.Handler = func(_ context.Context, _ authz.Subject, _ builderInput) (builderOutput, error) {
+		handlerCalls.Add(1)
+		return builderOutput{Value: result}, nil
+	}
+	server := buildTestServer(t, authz.AllowAll(), limits, capability)
+
+	_, err := server.Execute(t.Context(), authz.Subject{ID: "subject-1"}, `
+def main():
+    records.lookup(value="first")
+    return records.lookup(value="second")
+`)
+
+	require.ErrorIs(t, err, codemode.ErrResourceLimit)
+	assert.Equal(t, codemode.ErrResourceLimit, err)
+	assert.Equal(t, int64(2), handlerCalls.Load())
+}
+
 // TestServerExecuteReturnsOnlyMainResult proves top-level values and printed text do not escape.
 func TestServerExecuteReturnsOnlyMainResult(t *testing.T) {
 	server := buildTestServer(

@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/meigma/codemode/internal/execution"
 )
 
 // TestServeProbe proves one probe request is acknowledged and serve returns nil.
@@ -222,6 +224,41 @@ func TestServeFinalWriteClassification(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// TestNativeForwarderClassifiesBoundedWriteErrors proves oversized or nil
+// argument maps fail as a resource limit before a native_call is written.
+func TestNativeForwarderClassifiesBoundedWriteErrors(t *testing.T) {
+	tests := []struct {
+		// name identifies the rejected argument map.
+		name string
+
+		// arguments are presented to the native forwarder.
+		arguments map[string]any
+	}{
+		{name: "nil arguments", arguments: nil},
+		{name: "oversized arguments", arguments: map[string]any{"org": "meigma"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exec := validExecFrame()
+			exec.Limits.MaxValueBytes = 8
+			parent, child := newBufferedExecPair(t, exec)
+			require.NoError(t, parent.writeExec(exec))
+			_, err := child.read()
+			require.NoError(t, err)
+			written, ok := parent.r.(*bytes.Buffer)
+			require.True(t, ok)
+			require.Zero(t, written.Len())
+
+			_, err = nativeForwarder(child)("cap.lookup", tt.arguments)
+
+			require.ErrorIs(t, err, execution.ErrResourceLimit)
+			require.NotErrorIs(t, err, errChildService)
+			assert.Zero(t, written.Len())
+		})
+	}
+}
+
 // TestServeEngineAbortSuppressesFinalError proves a real Engine native_abort
 // exits successfully without a terminal child frame.
 func TestServeEngineAbortSuppressesFinalError(t *testing.T) {
@@ -250,7 +287,7 @@ func startServeExec(t *testing.T, exec execFrame) (*parentConn, <-chan error, fu
 
 	childReader, parentWriter := io.Pipe()
 	parentReader, childWriter := io.Pipe()
-	parent := newParentExecConn(parentWriter, parentReader, parentCap, childCap)
+	parent := newParentExecConn(parentWriter, parentReader, parentCap, childCap, exec.Limits.MaxValueBytes)
 	done := make(chan error, 1)
 	go func() {
 		done <- serve(childReader, childWriter)

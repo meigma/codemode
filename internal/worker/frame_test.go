@@ -696,6 +696,53 @@ func TestFrameLimitsCheckedCaps(t *testing.T) {
 	assert.Greater(t, expanded, unexpanded)
 }
 
+// TestFrameNativeResultChargesValueBodyOnly proves the envelope is excluded from accounting.
+func TestFrameNativeResultChargesValueBodyOnly(t *testing.T) {
+	exec := validExecFrame()
+	result := map[string]any{"zeta": int64(1), "alpha": true}
+	body, err := encodeNormalizedValue(result)
+	require.NoError(t, err)
+	frame, err := encodeNativeResult(result)
+	require.NoError(t, err)
+	assert.Equal(t, encodeNativeResultBytes(body), frame)
+	assert.Len(t, frame, len(nativeResultPrefix)+len(body)+len(nativeResultSuffix))
+	assert.Greater(t, len(frame), len(body))
+
+	parent, child := newBufferedExecPair(t, exec)
+	parent.remainingIntermediate = len(body)
+	require.NoError(t, parent.writeExec(exec))
+	_, err = child.read()
+	require.NoError(t, err)
+	require.NoError(t, child.writeNativeCall("cap.lookup", map[string]any{"org": "meigma"}))
+	_, err = parent.read()
+	require.NoError(t, err)
+	require.NoError(t, parent.writeNativeResult(result))
+	assert.Zero(t, parent.remainingIntermediate)
+	reply, err := child.read()
+	require.NoError(t, err)
+	got, ok := reply.(nativeResultFrame)
+	require.True(t, ok)
+	assert.Equal(t, result, got.Result)
+	require.NoError(t, child.writeNativeCall("cap.lookup", map[string]any{"org": "meigma"}))
+	_, err = parent.read()
+	require.NoError(t, err)
+	err = parent.writeNativeResult(result)
+	require.ErrorIs(t, err, errFrameTooLarge)
+}
+
+// TestWriteNativeCallRejectsNilArguments proves a nil map never encodes as JSON null.
+func TestWriteNativeCallRejectsNilArguments(t *testing.T) {
+	exec := validExecFrame()
+	parent, child := newBufferedExecPair(t, exec)
+	require.NoError(t, parent.writeExec(exec))
+	_, err := child.read()
+	require.NoError(t, err)
+
+	err = child.writeNativeCall("cap.lookup", nil)
+
+	require.ErrorIs(t, err, errInvalidValue)
+}
+
 // TestFrameLimitsRejectUint32Overflow proves checked addition never wraps the prefix.
 func TestFrameLimitsRejectUint32Overflow(t *testing.T) {
 	manifest := validManifest()
@@ -805,7 +852,7 @@ func newExecPair(t *testing.T, exec execFrame) (*parentConn, *childConn, func())
 		_ = childWriter.Close()
 	}
 	t.Cleanup(closePipes)
-	return newParentExecConn(parentWriter, parentReader, parentCap, childCap),
+	return newParentExecConn(parentWriter, parentReader, parentCap, childCap, exec.Limits.MaxValueBytes),
 		newChildExecConn(childReader, childWriter, execCap, parentCap, childCap),
 		closePipes
 }
@@ -832,7 +879,7 @@ func newBufferedExecPair(t *testing.T, exec execFrame) (*parentConn, *childConn)
 
 	var toChild bytes.Buffer
 	var toParent bytes.Buffer
-	return newParentExecConn(&toChild, &toParent, parentCap, childCap),
+	return newParentExecConn(&toChild, &toParent, parentCap, childCap, exec.Limits.MaxValueBytes),
 		newChildExecConn(&toChild, &toParent, execCap, parentCap, childCap)
 }
 

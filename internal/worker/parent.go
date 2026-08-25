@@ -103,6 +103,11 @@ type Limits struct {
 	// MaxValueBytes bounds type-preserving encoded value size.
 	MaxValueBytes int
 
+	// MaxIntermediateValueBytes bounds cumulative successful native-result
+	// value-body bytes for one Execute call. It is independent of MaxValueBytes
+	// and is never projected to the child.
+	MaxIntermediateValueBytes int
+
 	// MaxConcurrentExecutions bounds live worker children.
 	MaxConcurrentExecutions int
 }
@@ -200,7 +205,7 @@ func NewRunner(bindings []execution.CapabilityBinding, limits Limits, dispatch D
 	if dispatch == nil {
 		return nil, errors.New("nil dispatch")
 	}
-	if limits.MaxExecutionTime <= 0 || limits.MaxConcurrentExecutions <= 0 {
+	if limits.MaxExecutionTime <= 0 || limits.MaxConcurrentExecutions <= 0 || limits.MaxIntermediateValueBytes <= 0 {
 		return nil, errInvalidLimits
 	}
 	child := childLimits{
@@ -669,7 +674,7 @@ func (r *Runner) runExecExchange(
 	subject authz.Subject,
 	source string,
 ) execOutcome {
-	conn := newParentExecConn(stdin, stdout, r.writeCap, r.readCap)
+	conn := newParentExecConn(stdin, stdout, r.writeCap, r.readCap, r.limits.MaxIntermediateValueBytes)
 	frame := execFrame{
 		Type:     frameTypeExec,
 		Version:  protocolVersion,
