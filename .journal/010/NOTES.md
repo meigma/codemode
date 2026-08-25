@@ -19,3 +19,8 @@ Replaced the first-server tutorial with a real stdio host, updated README, refer
 Focused root, authz, and mcpserver tests passed. `moon run root:check` passed format, lint, build, MCP smoke, strict docs build, and the full race suite. The pre-existing race deadline test used a 20 ms budget that expired during race-instrumented worker startup before reaching its expected authorizer; increased that test-only budget to two seconds and confirmed the targeted race case before the full gate.
 
 Next: push the implementation branch, open the issue-closing PR, and monitor its required checks.
+
+## 2026-08-25 11:18 — Pull request ready
+Pushed `feat/issue-25-first-touch` and opened PR #34, `feat(api): reduce first-touch server ceremony`, closing issue #25. GitHub CI, GitHub Pages, and Kusari Inspector all passed; the PR reports a clean merge state and has no review comments yet.
+
+PR: https://github.com/meigma/codemode/pull/34
