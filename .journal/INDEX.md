@@ -12,3 +12,4 @@
 | 008 | 2026-08-24 | Implement worker execution isolation | complete | Implemented and merged five increments that move every Starlark execution into a bounded re-executed worker process and close issue #12. |
 | 009 | 2026-08-25 | New work session | in-progress | Started a new journal session and is awaiting the developer's substantive request. |
 | 010 | 2026-08-25 | Reduce first-touch API ceremony | in-progress | Review and implement issue #25's host-side API ergonomics without weakening authorization or worker boundaries. |
+| 011 | 2026-08-25 | Review capability binding matrix | in-progress | Review issue #23's composite outputs and richer scalar inputs against current worker, authorization, discovery, and resource-limit contracts. |
