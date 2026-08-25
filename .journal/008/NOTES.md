@@ -58,3 +58,8 @@ Configured formatting, scoped `golangci-lint`, `mise exec -- go test ./internal/
 
 ## 2026-08-24 21:19 — Increment 3 pull request
 Committed and pushed `feat/worker-protocol-framing` as `d643ea4`, then opened PR #29, `feat(worker): add bounded protocol framing`. The PR is mergeable and clean; GitHub CI, GitHub Pages, and Kusari Inspector all pass.
+
+## 2026-08-24 21:58 — Increment 4 started
+Maintainer approved PR #29. Squash-merged it to `master` as `ca0a490`, refreshed the default worktree, removed the integrated Increment 3 worktree, and created `feat/worker-supervision` from `origin/master`.
+
+Increment 4 completes `internal/worker` without changing the root execution owner: one parallel Programmer slice owns the stream-level child service and same-binary worker entry, while another owns the concrete parent Runner, fresh-process launch, semaphore, dispatch callback, probe, and deterministic kill/reap supervision. The persistent Reviewer continues across the contract, both slices, integration, fixes, and lint-only changes. The frozen cross-slice API is `Runner`/`NewRunner`/`Probe`/`Execute`, marker-mode `IsWorker`/`Serve`, process-neutral execution bindings, worker limits, and a context/subject parent dispatch callback.
