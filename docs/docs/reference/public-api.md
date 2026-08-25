@@ -55,7 +55,7 @@ to perform that setup; `IsWorker` does not serve worker mode.
 
 | Field | Contract |
 | --- | --- |
-| `ID CapabilityID` | Stable deployment and policy identity. An empty ID defaults to `Name`; explicit IDs must have no surrounding whitespace and must be unique. Set it before writing policy or deployment filters that must survive a rename. |
+| `ID CapabilityID` | Stable deployment and policy identity. An empty ID defaults to `Name`; explicit IDs must have no surrounding whitespace and must be unique. An explicit `ID` preserves policy and filter identity across `Name` changes. |
 | `Name CapabilityName` | A unique dotted Starlark name. A complete capability name cannot also be another capability's namespace. |
 | `Summary string` | Non-empty compact text searched by `Search`, with no surrounding whitespace. |
 | `Description string` | Detail returned by `Describe`. An empty value defaults to `Summary`; an explicit value must have no surrounding whitespace. |
@@ -165,16 +165,7 @@ Output-depth, per-value byte, and aggregate intermediate-byte exhaustion map to
 | `DisabledCapabilities []CapabilityID` | Stable IDs removed when the immutable catalog is built. `New` copies the slice. |
 | `Limits Limits` | Execution and discovery budgets. `New` copies the value; `Build` replaces each zero-valued field with its `DefaultLimits()` value. |
 
-`New(options)` returns a mutable `*Builder`. A builder is single-threaded and one-shot:
-
-1. Call `Register` for each capability.
-2. Call `Build` once.
-3. Use the returned immutable `*Server` concurrently.
-
-The first `Build` call closes the builder before full validation. This remains
-true when the build fails. A later `Build` returns `ErrInvalidRegistration`, and
-a later `Register` panics. Create another builder to change registrations,
-options, or capability visibility.
+`New(options)` returns a mutable `*Builder`. A builder is single-threaded and one-shot. It accepts registrations until its single `Build` call. `Build` validates the accumulated registrations and returns an immutable, concurrency-safe `*Server`. The first `Build` call closes the builder before full validation. This remains true when the build fails. A later `Build` returns `ErrInvalidRegistration`, and a later `Register` panics. A later change to registrations, options, or capability visibility requires a new builder.
 
 `Build` returns all capability-specific registration failures as one joined
 error. It also rejects a missing authorizer, negative signed limits, namespace
@@ -198,9 +189,8 @@ ordering is a host obligation. The fixed probe deadline is independent of
 - handler dispatch
 
 When a capability omits `ID`, its dotted `Name` is also its filter identity.
-Set `ID` before writing a filter that must remain stable across name changes.
 
-The filter is deployment configuration, not a per-request policy. Use an `authz.Authorizer` for decisions that depend on the subject or validated arguments.
+Static filtering is build-scoped deployment configuration. Subject- or argument-dependent decisions belong to an `authz.Authorizer`.
 
 ### Limits
 

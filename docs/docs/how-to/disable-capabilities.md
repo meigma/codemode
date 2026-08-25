@@ -27,6 +27,10 @@ its deployment identity.
 
 ## Add the ID to the filter
 
+The following block retains the tutorial's `authz.AllowAll()` only to isolate
+the filtering change. In an existing deployment, keep its current
+`authz.Authorizer`.
+
 Replace the builder initialization:
 
 ```go
@@ -47,15 +51,32 @@ complete registration set before applying the filter, and `Build` rejects a
 disabled ID that does not identify a registered capability. Static filtering
 cannot hide invalid or conflicting registrations.
 
-The explicit `authz.AllowAll()` remains deliberate only for the simple
-tutorial. Static filtering fixes the deployment-wide surface; the authorizer
+Static filtering fixes the deployment-wide surface; the authorizer
 decides whether a trusted subject may make an enabled native call.
 
-## Replace and verify the server
+## Replace the server
 
-Build and replace the existing server process, then reload the server in your
-agent. `search_api` no longer returns `records.lookup`, `describe_api` reports
-`capability not found`, and an `execute` program that references
-`records.lookup` reports `invalid program`.
+1. Build the server:
+
+```sh
+go build -o codemode-first-server .
+```
+
+2. Reload the binary in the agent.
+
+## Verify the filter
+
+1. Call `search_api` with `{"query":"records.lookup"}`. The result is `[]` and no longer lists `records.lookup`.
+
+2. Call `describe_api` with `{"name":"records.lookup"}`. The call returns the tool error `capability not found`.
+
+3. Call `execute` with this zero-argument program as the `source` argument:
+
+```python
+def main():
+    return records.lookup(key="alpha", limit=2)
+```
+
+The call returns the tool error `invalid program`.
 
 See the [public API reference](../reference/public-api.md#static-capability-filtering) for the complete filter contract, and the [MCP tools reference](../reference/mcp-tools.md) for discovery and execution results.

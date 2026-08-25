@@ -18,7 +18,14 @@ The module currently requires Go 1.26.6.
 
 Follow [Build your first CodeMode server](docs/docs/tutorials/first-server.md)
 to register `records.lookup`, run a real stdio MCP server, and add it to an
-agent. The server assembly is:
+agent.
+
+`authz.AllowAll()` is deliberate in the simple examples. CodeMode never
+defaults authorization to allow. `mcpserver.StaticSubject` is only for
+single-user transports where process ownership is the authentication boundary;
+multi-user hosts must resolve each authenticated request separately.
+
+The server assembly is:
 
 ```go
 func main() {
@@ -45,13 +52,8 @@ func main() {
 
 The repository also contains shorter, compile-checked examples:
 
-- [`example_test.go`](example_test.go) — typed registration with default identity and limits, plus direct execution
+- [`example_test.go`](example_test.go) — typed registration with default limits and an explicit subject, plus direct execution
 - [`mcpserver/example_test.go`](mcpserver/example_test.go) — a fixed single-user subject and the official in-memory MCP transport
-
-`authz.AllowAll()` is deliberate in the simple examples. CodeMode never
-defaults authorization to allow. `mcpserver.StaticSubject` is only for
-single-user transports where process ownership is the authentication boundary;
-multi-user hosts must resolve each authenticated request separately.
 
 `codemode.ServeWorkerAndExit()` must remain the first statement of `main`,
 before flag parsing or any other setup. Test binaries that call `Builder.Build`
@@ -62,6 +64,7 @@ must make the same call from `TestMain` before `m.Run`.
 - [Documentation home](docs/docs/index.md)
 - [First-server tutorial](docs/docs/tutorials/first-server.md)
 - [Disable capabilities for a deployment](docs/docs/how-to/disable-capabilities.md)
+- [Use Rego for authorization](docs/docs/how-to/use-rego-authorization.md)
 - [Public Go API](docs/docs/reference/public-api.md)
 - [MCP tools](docs/docs/reference/mcp-tools.md)
 - [Security model](docs/docs/explanation/security-model.md)

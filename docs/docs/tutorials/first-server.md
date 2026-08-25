@@ -12,10 +12,15 @@ the server to an agent, the agent can discover and call `records.lookup`.
 
 The repository currently requires Go 1.26.6.
 
+This tutorial builds a local, single-user stdio server. Process ownership is
+the authentication boundary, and every capability is allowed for that one
+subject.
+
 ## Create a module
 
-CodeMode has not published a release. Create a module and add CodeMode and the
-official MCP Go SDK from their current default branches:
+CodeMode has not published a release. Create a module, add CodeMode from
+`master`, and add the official MCP Go SDK. The SDK command resolves to its
+latest release:
 
 ```sh
 mkdir codemode-first-server
@@ -107,8 +112,10 @@ go mod tidy
 go build -o codemode-first-server .
 ```
 
-Add the absolute binary path to your agent's MCP configuration. For agents that
-use the common `mcpServers` shape:
+The binary speaks MCP over stdin/stdout and is not useful to run directly.
+Configure it in an agent as shown next.
+
+Agents that use the `mcpServers` configuration shape accept:
 
 ```json
 {
@@ -120,10 +127,13 @@ use the common `mcpServers` shape:
 }
 ```
 
-Restart or reload the agent's MCP servers. Ask the agent to search for a record
-capability and call `records.lookup` with `key="alpha"` and `limit=2`. The agent
-can use `search_api`, `describe_api`, and `execute`; the final structured result
-is equivalent to:
+Restart or reload the agent's MCP servers.
+
+Ask the agent to search for a record capability.
+
+Ask the agent to call `records.lookup` with `key="alpha"` and `limit=2`. The
+agent can use `search_api`, `describe_api`, and `execute`. The final structured
+result is equivalent to:
 
 ```json
 {"result":{"count":2,"key":"alpha"}}
@@ -131,11 +141,11 @@ is equivalent to:
 
 `ServeWorkerAndExit` must be the first statement in `main`, before flag parsing,
 credential loading, client construction, or other setup. `execute` first binds
-the keyword arguments in the worker. The parent rebinds them to `lookupInput`,
+the keyword arguments in the worker process. The parent rebinds them to `lookupInput`,
 creates a fresh canonical authorization map, authorizes the native call, and
 then dispatches `lookup`. The parent converts the handler output to a
 process-neutral value, and the worker converts it to Starlark. Each `execute`
-call runs a fresh bounded interpreter in a re-executed worker process. Only the
+call runs a fresh bounded interpreter in a re-executed worker. Only the
 final converted value returned by a zero-argument `main()` is exposed in the
 successful MCP result; printed text, globals, and interpreter-local intermediate
 values are not returned. Each native-call argument map, native result, and final
