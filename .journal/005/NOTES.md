@@ -25,3 +25,8 @@ Next: await direction on whether to implement either issue this session.
 
 ## 2026-08-24 10:44 — Filed first-touch DX issue
 Filed #25: reduce first-touch API ceremony in one PR. Four changes: (1) stock resolvers mcpserver.StaticSubject + mcpserver.ContextSubject with exported authz.WithSubject/SubjectFromContext, (2) per-field zero-value Limits defaulting at Build, (3) Register stops returning error and Build joins all registration failures, (4) ID defaults to Name (flagged rename-drift tradeoff; droppable item). Deliberately kept: explicit AllowAll, no Serve() helper, no registration sugar. Target: ~50-line real stdio server replacing the ~180-line in-memory tutorial. Session outcomes so far: #23 binding matrix, #24 error diagnostics, #25 host DX.
+
+## 2026-08-24 (later) — Re-verified #25 after worker cutover
+Parallel sessions landed PRs #26–#31: fresh-process worker execution (ServeWorkerAndExit required as first statement of main, Build runs a same-executable worker probe), MaxResultBytes -> MaxValueBytes, new MaxConcurrentExecutions, MaxExecutionTime now covers spawn+exchange. Issues #12/#13 closed by that work.
+Re-verified all four #25 items against 3b541fc: still applicable and unimplemented (empty ID still rejected in ValidateRegistration, zero Limits still fail Validate, Register still returns error, no stock resolvers in mcpserver/authz).
+Amended #25 body: target example gains codemode.ServeWorkerAndExit(), Limits text updated to nine-field shape, ServeWorkerAndExit added to deliberately-stays; left explanatory comment on the issue.
