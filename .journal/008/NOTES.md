@@ -91,3 +91,6 @@ Committed and pushed `feat/worker-only-execution` as `dbcb7b8`, then opened PR #
 
 ## 2026-08-25 09:35 — Worker-only execution plan complete
 Maintainer approved PR #31. Squash-merged it to `master` as `3b541fc`, refreshed the default worktree, and removed the integrated `feat/worker-only-execution` worktree and branch. This completes all five increments from session 006: internal binding, interpreter native-call port, protocol and frame codec, child/parent supervision, and the atomic public worker-only cutover.
+
+## 2026-08-25 09:49 — Close
+Session goal met. PRs #27–#31 were reviewed, passed local and GitHub validation, and squash-merged to `master`; the final repository is at `3b541fc`, issue #12 is closed, and all five increments from session 006's worker-only execution plan are complete. `SUMMARY.md` records the implementation, decisions, verification, and remaining issue #23 and operating-system containment boundaries. Durable worker wiring, execution, cancellation, and value-budget context was promoted to `TECH_NOTES.md`.
