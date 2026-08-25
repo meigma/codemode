@@ -27,10 +27,13 @@ type fieldKind uint8
 
 const (
 	fieldString fieldKind = iota + 1
-	fieldOptionalInt64
 	fieldInt64
 	fieldBool
 	fieldFloat64
+	fieldOptionalString
+	fieldOptionalInt64
+	fieldOptionalBool
+	fieldOptionalFloat64
 )
 
 // inputField is one immutable input-field conversion step.
@@ -130,22 +133,53 @@ func compileInput(inputType reflect.Type) ([]inputField, map[string]int, error) 
 		}
 
 		compiled := inputField{name: name, index: index}
-		switch {
-		case field.Type.Kind() == reflect.String:
-			if options.omitempty {
-				return nil, nil, fmt.Errorf("%w: required input %q cannot use omitempty", ErrInvalidPlan, name)
-			}
-			compiled.kind = fieldString
-			compiled.required = true
-		case field.Type.Kind() == reflect.Pointer && field.Type.Elem().Kind() == reflect.Int64:
-			compiled.kind = fieldOptionalInt64
-		default:
+		kind, required, ok := compileInputKind(field.Type)
+		if !ok {
 			return nil, nil, fmt.Errorf("%w: input field %q has unsupported type %s", ErrInvalidPlan, name, field.Type)
 		}
+		if required && options.omitempty {
+			return nil, nil, fmt.Errorf("%w: required input %q cannot use omitempty", ErrInvalidPlan, name)
+		}
+		compiled.kind = kind
+		compiled.required = required
 		byName[name] = len(fields)
 		fields = append(fields, compiled)
 	}
 	return fields, byName, nil
+}
+
+// compileInputKind maps one input field type onto a supported scalar conversion.
+//
+// Named aliases are accepted by underlying kind. Pointers to the four scalar
+// kinds are optional; non-pointer scalars are required.
+func compileInputKind(fieldType reflect.Type) (fieldKind, bool, bool) {
+	if fieldType.Kind() == reflect.Pointer {
+		elementKind := fieldType.Elem().Kind()
+		switch elementKind { //nolint:exhaustive // Unsupported pointer element kinds share registration-time rejection.
+		case reflect.String:
+			return fieldOptionalString, false, true
+		case reflect.Int64:
+			return fieldOptionalInt64, false, true
+		case reflect.Bool:
+			return fieldOptionalBool, false, true
+		case reflect.Float64:
+			return fieldOptionalFloat64, false, true
+		default:
+			return 0, false, false
+		}
+	}
+	switch fieldType.Kind() { //nolint:exhaustive // Unsupported reflect kinds share registration-time rejection.
+	case reflect.String:
+		return fieldString, true, true
+	case reflect.Int64:
+		return fieldInt64, true, true
+	case reflect.Bool:
+		return fieldBool, true, true
+	case reflect.Float64:
+		return fieldFloat64, true, true
+	default:
+		return 0, false, false
+	}
 }
 
 // compileOutput validates and compiles the restricted output struct.

@@ -41,7 +41,7 @@ func convertOutputField(field outputField, value reflect.Value) (any, error) {
 			return nil, fmt.Errorf("%w: output field %q is not finite", ErrUnsupportedValue, field.name)
 		}
 		return float, nil
-	case fieldOptionalInt64:
+	case fieldOptionalString, fieldOptionalInt64, fieldOptionalBool, fieldOptionalFloat64:
 		return nil, fmt.Errorf("%w: output field %q has an invalid compiled kind", ErrInvalidPlan, field.name)
 	}
 	return nil, fmt.Errorf("%w: output field %q has an unknown compiled kind", ErrInvalidPlan, field.name)

@@ -28,8 +28,8 @@ type builderOutput struct {
 
 // invalidBuilderInput contains a type outside the restricted binder contract.
 type invalidBuilderInput struct {
-	// Count is intentionally unsupported as a required integer.
-	Count int64 `json:"count"`
+	// Count is intentionally unsupported as a 32-bit integer.
+	Count int32 `json:"count"`
 }
 
 // nilPolicy is a typed-nil authorization implementation used to test Build validation.
