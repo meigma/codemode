@@ -14,7 +14,7 @@ import (
 // ValidateValue reports whether value is a process-neutral MCP value within the supplied limits.
 //
 // Accepted values are nil, bool, string, int64, finite float64, []any, and
-// map[string]any, recursively. json.Number and other numeric types are rejected.
+// map[string]any, recursively. [json.Number] and other numeric types are rejected.
 // maxDepth and maxNodes must be positive. Active cycles are rejected.
 func ValidateValue(value any, maxDepth int, maxNodes int) error {
 	converter, err := newValueConverter(maxDepth, maxNodes)
@@ -429,7 +429,7 @@ func goContainerKey(kind byte, value any) (visitKey, bool) {
 		return visitKey{}, false
 	}
 	reflected := reflect.ValueOf(value)
-	switch reflected.Kind() {
+	switch reflected.Kind() { //nolint:exhaustive // Only Slice and Map have supported container identity.
 	case reflect.Slice:
 		if reflected.IsNil() || reflected.Len() == 0 {
 			return visitKey{}, false

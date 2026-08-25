@@ -8,11 +8,14 @@ import (
 const (
 	unsupportedTypeSignature = "unsupported"
 
-	// requiredStringType is the exact InputShape notation for a required string.
-	requiredStringType = "str"
+	// stringType is the compact Starlark-facing notation for a string value.
+	stringType = "str"
+
+	// integerType is the compact Starlark-facing notation for a signed integer.
+	integerType = "int"
 
 	// optionalIntegerType is the exact InputShape notation for an optional integer.
-	optionalIntegerType = "int | None"
+	optionalIntegerType = integerType + " | None"
 )
 
 // FieldShape is one model-facing field in a supported capability input or output structure.
@@ -103,7 +106,7 @@ func isSupportedInputShape(field FieldShape) bool {
 
 // isRequiredStringShape reports whether field is a required string descriptor.
 func isRequiredStringShape(field FieldShape) bool {
-	return field.Type == requiredStringType && field.Required
+	return field.Type == stringType && field.Required
 }
 
 // isOptionalIntegerShape reports whether field is an optional integer descriptor.
@@ -115,7 +118,7 @@ func isOptionalIntegerShape(field FieldShape) bool {
 func inputKindSignature(kind fieldKind) string {
 	switch kind {
 	case fieldString:
-		return requiredStringType
+		return stringType
 	case fieldOptionalInt64:
 		return optionalIntegerType
 	case fieldInt64, fieldBool, fieldFloat64:
@@ -128,9 +131,9 @@ func inputKindSignature(kind fieldKind) string {
 func outputKindSignature(kind fieldKind) string {
 	switch kind {
 	case fieldString:
-		return "str"
+		return stringType
 	case fieldInt64:
-		return "int"
+		return integerType
 	case fieldBool:
 		return "bool"
 	case fieldFloat64:
