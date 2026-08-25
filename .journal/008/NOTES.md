@@ -70,3 +70,6 @@ Parallel Programmer slices completed `internal/worker`: marker-only same-binary 
 The persistent Reviewer closed the bounded findings: unsupported child finals now classify as `invalid_program` while legal size overflow remains `resource_limit`; parent/child frame caps use the correct direction and have a regression guard; protocol callback violations write no abort and force kill/reap; malformed `final_error` tails force internal failure and kill; the exact capitalized `Builder.Build` worker-mode diagnostic is preserved with a justified ST1005 suppression. Final integrated review found zero blockers.
 
 Configured formatting, scoped `golangci-lint`, `mise exec -- go test ./... -count=1 -timeout=120s`, the same-binary `TestServe|TestRunner|TestProbe` gate, the required `-race` runner gate, and `git diff --check` pass. Every worker source file remains below 1,000 lines.
+
+## 2026-08-24 23:07 — Increment 4 pull request
+Committed and pushed `feat/worker-supervision` as `504b648`, then opened PR #30, `feat(worker): add worker process supervision`. The PR is mergeable and clean; GitHub CI, GitHub Pages, and Kusari Inspector all pass.
