@@ -55,3 +55,6 @@ Parallel Programmer slices completed the private worker protocol and behavioral 
 The persistent Reviewer found and closed four blockers: strict discriminator preview initially rejected every multi-field frame, the working contract incorrectly rejected the architecture's legal `final_error(resource_limit)`, semantic sentinel identities diverged, and version errors discarded the child-reported version needed by later probe diagnostics. Subsequent review and the final test-file split both received zero-blocker verdicts.
 
 Configured formatting, scoped `golangci-lint`, `mise exec -- go test ./internal/worker -count=1`, and `mise exec -- go test ./internal/... -count=1` pass. Increment 3 remains worker-internal and starts no process; process supervision stays in Increment 4.
+
+## 2026-08-24 21:19 — Increment 3 pull request
+Committed and pushed `feat/worker-protocol-framing` as `d643ea4`, then opened PR #29, `feat(worker): add bounded protocol framing`. The PR is mergeable and clean; GitHub CI, GitHub Pages, and Kusari Inspector all pass.
