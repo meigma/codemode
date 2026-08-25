@@ -7,6 +7,10 @@ description: Register a typed Go capability and call it through the official MCP
 
 This tutorial builds an MCP server with one typed capability. You will connect an official MCP client over the SDK's in-memory transport and call `search_api`, `describe_api`, and `execute`.
 
+## Prerequisites
+
+The repository currently requires Go 1.26.6.
+
 ## Create a module
 
 CodeMode has not published a release. To follow the tutorial against the current `master` branch, create a module and add CodeMode and the official MCP Go SDK:
@@ -17,8 +21,6 @@ cd codemode-first-server
 go mod init example.com/codemode-first-server
 go get github.com/meigma/codemode@master github.com/modelcontextprotocol/go-sdk/mcp
 ```
-
-The repository currently requires Go 1.26.6.
 
 ## Add the server
 
@@ -181,16 +183,21 @@ func main() {
 }
 ```
 
-`authz.AllowAll()` is deliberate in this small example: it makes the authorization decision explicit without adding application policy, and it permits every validated invocation. Do not use it in a production host unless that is the intended policy. Production hosts normally supply an `authz.Authorizer` that evaluates the trusted subject, stable capability ID, exposed name, and canonical arguments.
+`authz.AllowAll()` is deliberate in this small example: it makes the authorization decision explicit without adding application policy, and it permits every native call whose arguments bind successfully. Use `authz.AllowAll()` only when every resolved subject may call every enabled capability; otherwise supply an `authz.Authorizer` that evaluates the trusted subject, stable capability ID, exposed name, and canonical arguments.
 
 The resolver reads only the typed, server-side Go context. In a production host, authentication middleware establishes that context before the MCP server handles a request. Do not accept a subject or credentials from Starlark source, tool arguments, or MCP `_meta`.
 
 ## Run the server
 
-Clean up the module metadata, then run the program:
+Clean up the module metadata:
 
 ```sh
 go mod tidy
+```
+
+Run the program:
+
+```sh
 go run .
 ```
 
@@ -200,10 +207,10 @@ The program prints structured results for all three tools. The final line contai
 {"result":{"count":2,"key":"alpha"}}
 ```
 
-`execute` first binds and canonicalizes the keyword arguments in the parent, then authorizes the native call, and then dispatches `lookupRecords` in the parent. Each `execute` call runs a fresh bounded interpreter in a re-executed worker process. Only the final converted value returned by a zero-argument `main()` crosses the worker boundary; printed text, globals, and intermediate values do not.
+`execute` first binds and canonicalizes the keyword arguments in the parent, then authorizes the native call, and then dispatches `lookupRecords` in the parent. Each `execute` call runs a fresh bounded interpreter in a re-executed worker process. Only the final converted value returned by a zero-argument `main()` is exposed in the successful MCP result; printed text, globals, and interpreter-local intermediate values are not returned. During execution, each native-call argument map and each validated native result crosses the private worker protocol, and each crossing value is independently subject to `MaxValueDepth` and `MaxValueBytes`.
 
 `ServeWorkerAndExit` must be the first statement in `main`, before flag parsing, credential loading, client construction, or other application setup. It returns immediately in the ordinary host. In a re-executed worker, it serves one private probe or execution request and terminates the process.
 
-The in-memory MCP transport keeps the client and server in one parent process; Starlark still runs in fresh worker processes. In an application, the host owns authentication, transport selection and startup, listeners, request cancellation, and shutdown. A Go authorizer or handler that can block must honor its context. CodeMode can kill the Starlark worker, but it cannot forcibly stop Go code after parent dispatch.
+The in-memory MCP transport keeps the client and server in one parent process; Starlark still runs in fresh workers. In an application, the host owns authentication, transport selection and startup, listeners, request cancellation, and shutdown. A Go authorizer or handler that can block must honor its context. CodeMode can kill the Starlark worker, but it cannot forcibly stop Go code after parent dispatch.
 
 For shorter compile-checked forms of this setup, see the [typed registration example](https://github.com/meigma/codemode/blob/master/example_test.go) and [official transport example](https://github.com/meigma/codemode/blob/master/mcpserver/example_test.go).

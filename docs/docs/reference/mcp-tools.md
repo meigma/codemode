@@ -68,7 +68,7 @@ The structured content itself is the array described above, not an object that w
 
 ## `describe_api`
 
-Describe one enabled capability by the exact name returned by search_api, without whitespace or case changes.
+Describe one enabled capability by the exact name returned by `search_api`, without whitespace or case changes.
 
 ### Input
 
@@ -153,7 +153,7 @@ The sample capability therefore describes input fields `key` (`str`, required) a
 
 ## `execute`
 
-Execute one Starlark program that defines def main(): with zero arguments, calls only names confirmed through search_api and describe_api inside main, and returns main's final result.
+Execute one Starlark program that defines `def main():` with zero arguments, calls only names confirmed through `search_api` and `describe_api` inside `main`, and returns `main`'s final result.
 
 ### Input
 
@@ -170,7 +170,7 @@ Execute one Starlark program that defines def main(): with zero arguments, calls
 }
 ```
 
-The source must define `def main():` as a function with zero arguments. Source loading cannot call native capabilities; calls are accepted only while `main` runs, and only for names confirmed through `search_api` and `describe_api`. Module loading is disabled.
+The source must define `def main():` as a function with zero arguments. Top-level source loading cannot make native calls; calls are accepted only while `main` runs, and only for names confirmed through `search_api` and `describe_api`. Module loading is disabled.
 
 Capabilities are available by dotted name. The sample native call is `records.lookup(key="alpha", limit=2)`. Native calls accept keyword arguments only. Duplicate keyword syntax is rejected by the Starlark parser as `invalid program` before authorization or handler dispatch. Positional, unknown, missing, incorrectly typed, and out-of-range arguments reach binding and map to `invalid capability arguments`. For the sample, `key` is required and `limit` can be omitted, `None`, or an integer in the signed 64-bit range.
 
@@ -201,7 +201,7 @@ The `result` property is the final converted return value from `main`. Its runti
 
 `MaxValueDepth` is inclusive. A scalar or `None` is depth 1. Each tuple, list, or dictionary wrapper adds one. A scalar with limit 1 succeeds, a one-level container with limit 2 succeeds, and one more wrapper with limit 2 fails. Native arguments, native results, and the final value are independently subject to `MaxValueDepth` and `MaxValueBytes`. Starlark tuples and lists become arrays. `None` becomes `null`. Dictionaries must have string keys.
 
-Only the final converted value crosses from the worker into the successful MCP result. `print` output is discarded. Globals, source-loading values, intermediate expressions, and native results that are not included in the final return value are not added to structured output. The successful envelope contains only `result`.
+Only the final converted value from the worker process is exposed in the successful MCP result. `print` output is discarded. Globals, values created during top-level source loading, intermediate expressions, and native results that are not included in the final return value are not added to structured output. The successful envelope contains only `result`.
 
 ## Authoring and recovery
 
@@ -210,9 +210,12 @@ The listed descriptions above are the model-facing contract. Recovery uses the s
 - Search with a short literal substring over enabled names and summaries. If the result is empty, retry with a shorter term.
 - After `capability not found`, search again and pass `describe_api` an exact returned `name`, without whitespace or case changes.
 - After `invalid capability arguments`, compare the call with the published `signature` and `input` field shapes.
-- After `invalid program`, use a zero-argument `def main():`, call only names confirmed through search and description inside `main`, and return the final value.
+- After `invalid program`, check the program against these requirements:
+  - Define `main` with zero arguments.
+  - Call only names confirmed through `search_api` and `describe_api`, and call them only inside `main`.
+  - Return the final value from `main`.
 - Use `describe_api.output` as the result contract. Do not parse a type name from `signature`.
-- After `resource limit exceeded`, reduce source or result complexity and retry.
+- After `resource limit exceeded`, reduce the applicable bounded quantity: query or source bytes, execution steps or time, native calls, or crossing-value depth or encoded size. Then retry the call.
 - After `permission denied` or `authorization policy failure`, contact the host if the access was expected. One allowed or denied input cannot establish whether the policy is default-open, default-deny, complete, or incomplete.
 
 ## Errors
@@ -235,4 +238,4 @@ After a well-formed call reaches the adapter, a resolver or service failure beco
 
 Malformed MCP arguments are rejected by the SDK's input-schema validation and do not call the invocation resolver. These errors can identify malformed client-owned fields or values because validation occurs before trusted resolution. For well-formed inputs, resolver failure stops the request before search, description, or execution and becomes `unauthenticated` without resolver detail.
 
-See [Public API reference](public-api.md) for Go contracts and [Security model](../explanation/security-model.md) for the resolver and execution trust boundaries.
+See [Public API reference](public-api.md) for Go contracts and [Understanding CodeMode's security model](../explanation/security-model.md) for the resolver and execution trust boundaries.

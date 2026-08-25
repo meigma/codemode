@@ -23,7 +23,7 @@ The repository also contains shorter, compile-checked examples:
 - [`example_test.go`](example_test.go) — typed capability registration, explicit `authz.AllowAll()`, default limits, and direct execution
 - [`mcpserver/example_test.go`](mcpserver/example_test.go) — trusted typed-context resolution and the official in-memory MCP transport
 
-`authz.AllowAll()` is deliberate in the simple examples and permits every validated invocation. Production hosts normally supply an authorization policy.
+`authz.AllowAll()` is deliberate in the simple examples and permits every native call whose arguments bind successfully. Use `authz.AllowAll()` only when every resolved subject may call every enabled capability; otherwise supply an `authz.Authorizer`.
 
 The final host binary must call `codemode.ServeWorkerAndExit()` as the first
 statement of `main`, before flag parsing or any other setup. Test binaries that
@@ -40,10 +40,13 @@ call `Builder.Build` must do the same from `TestMain` before `m.Run`.
 
 ## Security boundary
 
-Each `execute` request runs Starlark in a fresh process created by re-executing
+Each `execute` request runs Starlark in a fresh worker process created by re-executing
 the host binary. The submitted program must define a zero-argument `main()`,
-and only its final converted value crosses the execution boundary. Prints,
-globals, and intermediate values do not.
+and only its final converted value is exposed to the caller. Printed text,
+globals, and interpreter-local intermediate values are not returned. During
+execution, each native-call argument map and each validated native result
+crosses the private worker protocol, and each crossing value is independently
+subject to `MaxValueDepth` and `MaxValueBytes`.
 
 Capabilities are bound and canonicalized in the parent before authorization,
 and authorization completes before handler dispatch. Trusted subjects come

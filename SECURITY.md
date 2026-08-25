@@ -23,19 +23,19 @@ Include the following details when available:
 CodeMode executes each submitted program in a fresh worker process created by
 re-executing the host binary. Module loading is disabled, native capabilities
 are limited to the immutable set registered and enabled by the host, and native
-calls are rejected during top-level program loading. A program must define a
+calls are rejected during top-level source loading. A program must define a
 zero-argument `main()` function, and only its converted return value is
 exposed.
 
 Configured limits bound source bytes, interpreter steps, elapsed time,
-attempted native calls, concurrent worker processes, and the depth and encoded
+attempted native calls, concurrent workers, and the depth and encoded
 size of every value that crosses the worker boundary. Search query bytes and
 search result counts are bounded separately in the parent. An elapsed deadline
-or request cancellation kills and reaps the worker process. Each validated
-native call is rebound in the parent and passes through the host-supplied
-`authz.Authorizer` before its handler runs. The MCP adapter resolves the subject
-from trusted Go context and ignores identity or credential claims in tool
-arguments and request `_meta`.
+or request cancellation kills and reaps the worker. Each native call whose
+arguments bind successfully is rebound in the parent and passes through the
+host-supplied `authz.Authorizer` before its handler runs. The MCP adapter
+resolves the subject from trusted Go context and ignores identity or
+credential claims in tool arguments and request `_meta`.
 
 The worker boundary prevents Starlark from sharing interpreter state with the
 host and permits hard preemption of Starlark execution. It is not a hard tenant

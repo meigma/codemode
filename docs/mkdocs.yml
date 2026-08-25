@@ -44,7 +44,7 @@ nav:
       - Public API: reference/public-api.md
       - MCP tools: reference/mcp-tools.md
   - Explanation:
-      - Security model: explanation/security-model.md
+      - Understanding CodeMode's security model: explanation/security-model.md
 
 plugins:
   - search

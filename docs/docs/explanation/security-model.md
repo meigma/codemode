@@ -1,11 +1,11 @@
 ---
-title: Security model
+title: Understanding CodeMode's security model
 description: Trust boundaries, authorization order, cancellation, and worker-process containment in CodeMode.
 ---
 
-# Security model
+# Understanding CodeMode's security model
 
-CodeMode separates client-controlled Starlark from host-controlled identity, policy, and Go handlers. The separation depends on the host establishing a trusted request context, installing the worker entry point, and ensuring authorizers and handlers follow their contracts. CodeMode does not authenticate clients or provide operating-system tenant quotas.
+CodeMode separates client-controlled Starlark from host-controlled identity, policy, and Go handlers. The separation depends on the host establishing a trusted request context, installing the worker process entry point, and ensuring authorizers and handlers follow their contracts. CodeMode does not authenticate clients or provide operating-system tenant quotas.
 
 ## The host establishes identity
 
@@ -24,13 +24,13 @@ Credentials stay in the host's authentication layer. They are not fields on `aut
 
 ## Validation precedes authority
 
-A native capability call crosses three boundaries in a fixed order:
+A native call crosses three boundaries in a fixed order:
 
 1. **Exact binding and canonicalization.** Duplicate keyword syntax is rejected by the Starlark parser as `ErrInvalidProgram` before this step. Positional, missing, unknown, incorrectly typed, and out-of-range arguments reach binding and map to `ErrInvalidArguments`. Successful binding creates the exact registered Go input and a fresh JSON-shaped argument map.
 2. **Authorization.** CodeMode passes the trusted subject, stable capability ID, dotted capability name, and canonical arguments to `authz.Authorizer`.
 3. **Handler dispatch.** CodeMode calls the typed handler only if authorization returns `nil`.
 
-This order prevents policy from interpreting malformed Starlark values and prevents a handler from running before policy has evaluated the exact input it will receive. The canonical map is separate from the typed handler input, so policy cannot rewrite the handler's arguments by mutating the map.
+This order prevents policy from interpreting malformed Starlark values and prevents a handler from running before policy has evaluated the exact input the handler will receive. The canonical map is separate from the typed handler input, so policy cannot rewrite the handler's arguments by mutating the map.
 
 An authorizer reports a recognized denial with an error that wraps `authz.ErrDenied`. CodeMode classifies that outcome as `permission denied` and does not dispatch the handler. Any other authorizer error, and an authorizer panic recovered at the boundary, becomes `authorization policy failure`. Policy diagnostic text does not cross the MCP boundary.
 
@@ -40,7 +40,7 @@ Authorization is evaluated for every attempted native call whose arguments bind 
 
 `authz.AllowAll()` returns an authorizer because the server never treats a missing authorizer as permission. The simple example uses it deliberately so that a minimal server is complete and the absence of policy logic is visible.
 
-`AllowAll` approves every valid native call for every resolved subject. It is not authentication and does not inspect capability identity or arguments. Production hosts normally supply an authorizer that evaluates the resolved subject, the stable capability ID, and the canonical arguments. A production host should use `AllowAll` only when unrestricted access to every enabled capability is the intended policy.
+`AllowAll` approves every native call for every resolved subject. It is not authentication and does not inspect capability identity or arguments. Use `authz.AllowAll()` only when every resolved subject may call every enabled capability; otherwise supply an `authz.Authorizer` that evaluates the resolved subject, the stable capability ID, and the canonical arguments.
 
 ## Rego policy runs in process
 
@@ -56,7 +56,7 @@ CodeMode installs no schema set and no schema resolver. Metadata `schema["https:
 
 The configured decision is one direct, ground `data` reference. Construction validates that reference syntax and prepares the policy; it cannot prove that the decision is defined and Boolean for every future input. A ground decision is either undefined or yields one value. That value must be Boolean. Boolean `true` allows a call. Boolean `false` is a recognized denial. Undefined and non-Boolean decisions are policy failures, as are evaluation and builtin errors. A total decision with `default allow := false` turns unmatched input into an intentional denial while still failing closed when the policy contract is broken.
 
-These controls restrict policy inputs and evaluator capabilities, not resource consumption or process authority. OPA, authorizers, and handlers run inside the host process; moving Starlark to a worker does not isolate Rego policy. A host that does not trust its policy authors needs an external process or container boundary for policy evaluation.
+These controls restrict policy inputs and evaluator capabilities, not resource consumption or process authority. OPA, authorizers, and handlers run inside the host process; moving Starlark to a worker process does not isolate Rego policy. A host that does not trust its policy authors needs an external process or container boundary for policy evaluation.
 
 See [Use Rego for authorization](../how-to/use-rego-authorization.md) for configuration and the [`authz/rego` API reference](../reference/public-api.md#authzrego) for the exact input and result contracts.
 
@@ -82,20 +82,20 @@ An allowed or denied call proves only the result for that subject, capability, a
 
 ## Execution state does not cross calls
 
-Every `Server.Execute` call starts a fresh process by re-executing the host
-binary. The child receives only the immutable enabled-capability manifest,
-positive execution limits, and one submitted program through CodeMode's private
-protocol. It constructs a fresh Starlark interpreter. Module loading is
-disabled, and the only predeclared application functions are the enabled
-capability namespace. Native calls are rejected while top-level source is
-loading and are accepted only while the required zero-argument `main()`
-function runs.
+Every `Server.Execute` call starts a fresh worker process by re-executing the
+host binary. The worker process is a child of the host process. The worker
+receives only the immutable enabled-capability manifest, positive execution
+limits, and one submitted program through CodeMode's private protocol. It
+constructs a fresh Starlark interpreter. Module loading is disabled, and the
+only predeclared application functions are the enabled capability namespace.
+Native calls are rejected during top-level source loading and are accepted
+only while the required zero-argument `main()` function runs.
 
-After `main` returns, the worker converts only its final value to
-type-preserving wire data under the depth and encoded-size limits. Printed text
-is discarded. Globals, source-loading values, intermediate expressions, and
-unrelated native results do not cross the boundary. No Starlark globals or
-mutable interpreter state carry into the next execute call.
+After `main` returns, only the final converted value is exposed to the caller.
+Printed text, globals, and interpreter-local intermediate values are not
+returned. Unrelated native results are not exposed in that final caller
+result. No Starlark globals or mutable interpreter state carry into the next
+execute call.
 
 Capability handlers do not run in the worker. A native call crosses the private
 protocol, is rebound to the exact registered input type in the parent, is
@@ -111,10 +111,10 @@ gave that process.
 
 CodeMode derives one execution context from `MaxExecutionTime` and the request
 context. The elapsed budget starts before waiting for a worker slot and covers
-process startup, protocol exchange, Starlark execution, parent authorization
-and dispatch, and worker cleanup. The interpreter separately enforces source,
-bytecode-step, attempted-native-call, crossing-value depth, and crossing-value
-size limits.
+spawn, protocol exchange, Starlark execution, and parent dispatch. Killing and
+reaping the worker can add operating-system overhead beyond the budget. The
+interpreter separately enforces source, bytecode-step, attempted-native-call,
+crossing-value depth, and crossing-value size limits.
 
 When the execution context ends, the parent closes the worker pipes, kills the
 worker if necessary, and reaps it exactly once. This hard-preempts Starlark,
@@ -153,7 +153,7 @@ operating-system user and re-executes the host binary. CodeMode supplies an
 environment containing only its private worker marker and passes no extra file
 descriptors, but it provides no operating-system CPU or memory quota. Package
 initialization and any setup placed before the worker entry point still run in
-the child with that user's filesystem and network authority.
+the worker with that user's filesystem and network authority.
 
 The restricted Starlark environment exposes no file, network, environment, or
 process built-ins. Native access is limited to the enabled capability manifest
