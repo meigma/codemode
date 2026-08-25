@@ -70,3 +70,123 @@ func TestSignatureOmitsHostOutputTypeNames(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateInputShapeAcceptsCompiledAndEmptyShapes proves only InputShape combinations are valid.
+func TestValidateInputShapeAcceptsCompiledAndEmptyShapes(t *testing.T) {
+	plan, err := CompileFor[representativeInput, representativeOutput]()
+	require.NoError(t, err)
+	empty, err := CompileFor[struct{}, representativeOutput]()
+	require.NoError(t, err)
+
+	tests := []struct {
+		// name identifies the accepted descriptor.
+		name string
+
+		// fields is the candidate input shape.
+		fields []FieldShape
+	}{
+		{name: "compiled representative", fields: plan.InputShape()},
+		{name: "empty compiled shape", fields: empty.InputShape()},
+		{name: "nil empty shape", fields: nil},
+		{
+			name: "required string",
+			fields: []FieldShape{{
+				Name:     "org",
+				Type:     "str",
+				Required: true,
+			}},
+		},
+		{
+			name: "optional integer",
+			fields: []FieldShape{{
+				Name:     "limit",
+				Type:     "int | None",
+				Required: false,
+			}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.NoError(t, ValidateInputShape(tt.fields))
+		})
+	}
+}
+
+// TestValidateInputShapeRejectsNonCompiledPairs proves the child cannot invent another descriptor matrix.
+func TestValidateInputShapeRejectsNonCompiledPairs(t *testing.T) {
+	tests := []struct {
+		// name identifies the rejected descriptor.
+		name string
+
+		// fields is the invalid input shape.
+		fields []FieldShape
+
+		// contains is the expected diagnostic fragment.
+		contains string
+	}{
+		{
+			name: "optional string Type/Required mismatch",
+			fields: []FieldShape{{
+				Name:     "org",
+				Type:     "str",
+				Required: false,
+			}},
+			contains: "unsupported shape",
+		},
+		{
+			name: "required integer Type/Required mismatch",
+			fields: []FieldShape{{
+				Name:     "limit",
+				Type:     "int | None",
+				Required: true,
+			}},
+			contains: "unsupported shape",
+		},
+		{
+			name: "output integer notation",
+			fields: []FieldShape{{
+				Name:     "count",
+				Type:     "int",
+				Required: true,
+			}},
+			contains: "unsupported shape",
+		},
+		{
+			name: "unsupported notation",
+			fields: []FieldShape{{
+				Name:     "value",
+				Type:     "unsupported",
+				Required: true,
+			}},
+			contains: "unsupported shape",
+		},
+		{
+			name: "duplicate name",
+			fields: []FieldShape{
+				{Name: "org", Type: "str", Required: true},
+				{Name: "org", Type: "int | None", Required: false},
+			},
+			contains: "duplicate input name",
+		},
+		{
+			name: "invalid identifier",
+			fields: []FieldShape{{
+				Name:     "not-valid",
+				Type:     "str",
+				Required: true,
+			}},
+			contains: "Starlark identifier",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateInputShape(tt.fields)
+
+			require.Error(t, err)
+			require.ErrorIs(t, err, ErrInvalidPlan)
+			assert.Contains(t, err.Error(), tt.contains)
+		})
+	}
+}

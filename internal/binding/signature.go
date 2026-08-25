@@ -1,8 +1,19 @@
 package binding
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
-const unsupportedTypeSignature = "unsupported"
+const (
+	unsupportedTypeSignature = "unsupported"
+
+	// requiredStringType is the exact InputShape notation for a required string.
+	requiredStringType = "str"
+
+	// optionalIntegerType is the exact InputShape notation for an optional integer.
+	optionalIntegerType = "int | None"
+)
 
 // FieldShape is one model-facing field in a supported capability input or output structure.
 type FieldShape struct {
@@ -62,13 +73,51 @@ func (plan *Plan) OutputShape() []FieldShape {
 	return shape
 }
 
+// ValidateInputShape reports whether fields is a combination Plan.InputShape can produce.
+//
+// A required string is exactly Type "str" and Required true. An optional integer
+// is exactly Type "int | None" and Required false. An empty shape is valid.
+// Names must be unique Starlark identifiers. Any other pair, including the
+// literal "unsupported" notation, is rejected.
+func ValidateInputShape(fields []FieldShape) error {
+	seen := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		if !ValidIdentifier(field.Name) {
+			return fmt.Errorf("%w: input field %q is not a Starlark identifier", ErrInvalidPlan, field.Name)
+		}
+		if _, exists := seen[field.Name]; exists {
+			return fmt.Errorf("%w: duplicate input name %q", ErrInvalidPlan, field.Name)
+		}
+		if !isSupportedInputShape(field) {
+			return fmt.Errorf("%w: input field %q has an unsupported shape", ErrInvalidPlan, field.Name)
+		}
+		seen[field.Name] = struct{}{}
+	}
+	return nil
+}
+
+// isSupportedInputShape reports whether field is an exact compiled input pair.
+func isSupportedInputShape(field FieldShape) bool {
+	return isRequiredStringShape(field) || isOptionalIntegerShape(field)
+}
+
+// isRequiredStringShape reports whether field is a required string descriptor.
+func isRequiredStringShape(field FieldShape) bool {
+	return field.Type == requiredStringType && field.Required
+}
+
+// isOptionalIntegerShape reports whether field is an optional integer descriptor.
+func isOptionalIntegerShape(field FieldShape) bool {
+	return field.Type == optionalIntegerType && !field.Required
+}
+
 // inputKindSignature returns the model-facing notation for one supported input conversion.
 func inputKindSignature(kind fieldKind) string {
 	switch kind {
 	case fieldString:
-		return "str"
+		return requiredStringType
 	case fieldOptionalInt64:
-		return "int | None"
+		return optionalIntegerType
 	case fieldInt64, fieldBool, fieldFloat64:
 		return unsupportedTypeSignature
 	}
