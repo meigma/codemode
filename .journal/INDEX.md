@@ -11,5 +11,5 @@
 | 007 | 2026-08-24 | Review final-value allocation limit | complete | Confirmed and removed oversized final-conversion allocations, merged PR #26, and preserved the separate intermediate-output budget decision for issue #23. |
 | 008 | 2026-08-24 | Implement worker execution isolation | complete | Implemented and merged five increments that move every Starlark execution into a bounded re-executed worker process and close issue #12. |
 | 009 | 2026-08-25 | New work session | in-progress | Started a new journal session and is awaiting the developer's substantive request. |
-| 010 | 2026-08-25 | Reduce first-touch API ceremony | in-progress | Review and implement issue #25's host-side API ergonomics without weakening authorization or worker boundaries. |
+| 010 | 2026-08-25 | Reduce first-touch API ceremony | complete | Added stock subject resolvers, bounded per-field defaults, consolidated registration diagnostics, derived capability identity, and a real stdio first-server path in PR #34. |
 | 011 | 2026-08-25 | Widen capability binding matrix | complete | Implemented richer scalar inputs, bounded composite outputs, aggregate native-result accounting, derived discovery, end-to-end composition proof, and documentation across PRs #35–#40. |

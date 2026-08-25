@@ -29,3 +29,8 @@ PR: https://github.com/meigma/codemode/pull/34
 Rebased `feat/issue-25-first-touch` onto `origin/master` at `36f38b0`, incorporating PRs #35–#40. Resolved conflicts in `README.md`, `builder_test.go`, `docs/docs/reference/public-api.md`, and `docs/docs/tutorials/first-server.md`. Preserved the widened binding matrix and intermediate-result budget documentation, migrated the new composite registration tests to deferred `Build` errors, and added per-field defaulting for the new `MaxIntermediateValueBytes` limit.
 
 The rebased commit is `ec0fa78`. Focused root, authz, and MCP tests passed. After clearing a stale golangci-lint cache that referenced a removed Worktrunk path, `moon run root:check` passed format, lint, build, MCP smoke, strict docs build, and the full race suite. Force-pushed with lease; GitHub CI, GitHub Pages, and Kusari Inspector passed. PR #34 is mergeable with a clean merge state and no review comments.
+
+## 2026-08-25 15:49 — Close
+User approved PR #34. Squash-merged it to `master` as `715a716bd6bd5d436368db6367310452960fa8d6`, fast-forwarded the local `master` checkout, and removed the `feat/issue-25-first-touch` Worktrunk worktree and branch. Issue #25 is closed, all local and GitHub checks passed, and no session-specific implementation work remains.
+
+Closeout wrote `SUMMARY.md`, marked session 010 complete in `INDEX.md`, and updated `TECH_NOTES.md` with the settled registration, defaulting, identity, and resolver contracts.
