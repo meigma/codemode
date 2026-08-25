@@ -277,14 +277,14 @@ func TestActualMCPSecureLoop(t *testing.T) {
 		DisabledCapabilities: []codemode.CapabilityID{"records.entry.hidden"},
 		Limits:               codemode.DefaultLimits(),
 	})
-	require.NoError(t, codemode.Register(builder, codemode.Capability[lookupInput, lookupResult]{
+	codemode.Register(builder, codemode.Capability[lookupInput, lookupResult]{
 		ID:          "records.entry.lookup",
 		Name:        "records.lookup",
 		Summary:     "Look up one record by key.",
 		Description: "Returns one deterministic record for the supplied key.",
 		Handler:     lookup.invoke,
-	}))
-	require.NoError(t, codemode.Register(builder, codemode.Capability[lookupInput, lookupResult]{
+	})
+	codemode.Register(builder, codemode.Capability[lookupInput, lookupResult]{
 		ID:          "records.entry.hidden",
 		Name:        "records.hidden",
 		Summary:     "Look up one hidden record by key.",
@@ -293,8 +293,8 @@ func TestActualMCPSecureLoop(t *testing.T) {
 			hiddenCalls.Add(1)
 			return lookupResult{}, errors.New("disabled capability invoked")
 		},
-	}))
-	require.NoError(t, codemode.Register(builder, codemode.Capability[struct{}, StatusResult]{
+	})
+	codemode.Register(builder, codemode.Capability[struct{}, StatusResult]{
 		ID:          "health.entry.status",
 		Name:        "health.status",
 		Summary:     "Report current health.",
@@ -302,7 +302,7 @@ func TestActualMCPSecureLoop(t *testing.T) {
 		Handler: func(context.Context, authz.Subject, struct{}) (StatusResult, error) {
 			return StatusResult{State: "ok"}, nil
 		},
-	}))
+	})
 	root, err := builder.Build()
 	require.NoError(t, err)
 
@@ -503,13 +503,13 @@ func TestActualMCPCompositeProgram(t *testing.T) {
 		Authorizer: authorizer,
 		Limits:     codemode.DefaultLimits(),
 	})
-	require.NoError(t, codemode.Register(builder, codemode.Capability[searchInput, searchOutput]{
+	codemode.Register(builder, codemode.Capability[searchInput, searchOutput]{
 		ID:          "records.entry.search",
 		Name:        "records.search",
 		Summary:     "Search records and return nested items.",
 		Description: "Returns multiple nested rows for one widened search call.",
 		Handler:     search.invoke,
-	}))
+	})
 	root, err := builder.Build()
 	require.NoError(t, err)
 

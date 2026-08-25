@@ -55,10 +55,10 @@ to perform that setup; `IsWorker` does not serve worker mode.
 
 | Field | Contract |
 | --- | --- |
-| `ID CapabilityID` | Non-empty, with no surrounding whitespace. IDs must be unique. Use this value for deployment filters and policy rules. |
+| `ID CapabilityID` | Stable deployment and policy identity. An empty ID defaults to `Name`; explicit IDs must have no surrounding whitespace and must be unique. Set it before writing policy or deployment filters that must survive a rename. |
 | `Name CapabilityName` | A unique dotted Starlark name. A complete capability name cannot also be another capability's namespace. |
 | `Summary string` | Non-empty compact text searched by `Search`, with no surrounding whitespace. |
-| `Description string` | Non-empty detail returned by `Describe`, with no surrounding whitespace. |
+| `Description string` | Detail returned by `Describe`. An empty value defaults to `Summary`; an explicit value must have no surrounding whitespace. |
 | `Handler Handler[Input, Output]` | A non-nil function called after argument binding and authorization. |
 
 `Handler[Input, Output]` has this signature:
@@ -69,7 +69,7 @@ func(context.Context, authz.Subject, Input) (Output, error)
 
 The subject is the trusted subject supplied to `Server.Execute`. The input and output are the exact generic types registered for the capability.
 
-The site examples use one capability contract throughout:
+The policy and deployment-filter examples use this explicit capability identity:
 
 | Property | Value |
 | --- | --- |
@@ -139,15 +139,17 @@ their discovery types are `list[T]` or `dict[str, T]`. Non-nil empty slices and
 maps become empty lists and dictionaries. A nil pointer inside a list or map
 becomes `None`; `omitempty` omits only struct fields.
 
-`Register(builder, capability)` compiles and validates the complete reflected
-type graph before retaining the capability. Registration rejects unsupported
-input types; pointer roots; interfaces including `any`; `json.RawMessage`;
-types whose value or pointer method set implements `json.Marshaler` or
+`Register(builder, capability)` compiles the complete reflected type graph.
+Capability-specific failures, including nil handlers, invalid metadata,
+unsupported types, and duplicate IDs or names, are accumulated and returned
+together by `Build`; each diagnostic names the capability. Unsupported types
+include pointer roots; interfaces including `any`; `json.RawMessage`; types
+whose value or pointer method set implements `json.Marshaler` or
 `encoding.TextMarshaler`; functions, channels, complex values,
 `unsafe.Pointer`, and `uintptr`; non-string map keys; cyclic type graphs; and
-invalid fields or tags.
+invalid fields or tags. `Register` panics for a nil or already closed builder
+because no future `Build` call can report those lifecycle violations.
 
-These are registration-time failures and map to `ErrInvalidRegistration`.
 Returned values are checked at call time. An unsigned result above
 `math.MaxInt64` or a non-finite float maps to `ErrCapabilityFailure`.
 Output-depth, per-value byte, and aggregate intermediate-byte exhaustion map to
@@ -161,7 +163,7 @@ Output-depth, per-value byte, and aggregate intermediate-byte exhaustion map to
 | --- | --- |
 | `Authorizer authz.Authorizer` | Required. Nil and typed-nil implementations are rejected by `Build`. |
 | `DisabledCapabilities []CapabilityID` | Stable IDs removed when the immutable catalog is built. `New` copies the slice. |
-| `Limits Limits` | Positive execution and discovery budgets. `New` copies the value. |
+| `Limits Limits` | Execution and discovery budgets. `New` copies the value; `Build` replaces each zero-valued field with its `DefaultLimits()` value. |
 
 `New(options)` returns a mutable `*Builder`. A builder is single-threaded and one-shot:
 
@@ -170,19 +172,21 @@ Output-depth, per-value byte, and aggregate intermediate-byte exhaustion map to
 3. Use the returned immutable `*Server` concurrently.
 
 The first `Build` call closes the builder before full validation. This remains
-true when the build fails. Later `Register` and `Build` calls return
-`ErrInvalidRegistration`. Create another builder to change registrations,
+true when the build fails. A later `Build` returns `ErrInvalidRegistration`, and
+a later `Register` panics. Create another builder to change registrations,
 options, or capability visibility.
 
-`Build` rejects a missing authorizer, non-positive limits, namespace
+`Build` returns all capability-specific registration failures as one joined
+error. It also rejects a missing authorizer, negative signed limits, namespace
 collisions, duplicate disabled IDs, and disabled IDs that do not match a
-registered capability. It also re-executes the current binary and performs a
-fixed five-second private worker probe. The probe detects an absent or
-nonfunctional worker entry and returns `ErrInvalidRegistration` with a
-host-wiring diagnostic that identifies the missing or misplaced
-`ServeWorkerAndExit` call. It cannot detect ordinary host work that completes
-silently before `ServeWorkerAndExit`; first-statement ordering is a host
-obligation. The fixed probe deadline is independent of `MaxExecutionTime`.
+registered capability. It re-executes the current binary and performs a fixed
+five-second private worker probe only after construction validation succeeds.
+The probe detects an absent or nonfunctional worker entry and returns
+`ErrInvalidRegistration` with a host-wiring diagnostic that identifies the
+missing or misplaced `ServeWorkerAndExit` call. It cannot detect ordinary host
+work that completes silently before `ServeWorkerAndExit`; first-statement
+ordering is a host obligation. The fixed probe deadline is independent of
+`MaxExecutionTime`.
 
 ### Static capability filtering
 
@@ -192,6 +196,9 @@ obligation. The fixed probe deadline is independent of `MaxExecutionTime`.
 - `Server.Describe`
 - the Starlark namespace
 - handler dispatch
+
+When a capability omits `ID`, its dotted `Name` is also its filter identity.
+Set `ID` before writing a filter that must remain stable across name changes.
 
 The filter is deployment configuration, not a per-request policy. Use an `authz.Authorizer` for decisions that depend on the subject or validated arguments.
 
@@ -212,9 +219,12 @@ The filter is deployment configuration, not a per-request policy. Use an `authz.
 | `MaxSearchResults int` | 20 | Search results returned. |
 | `MaxConcurrentExecutions int` | 8 | Concurrent spawn attempts and live worker processes. |
 
-`Limits.Validate()` returns `ErrInvalidRegistration` if any field is zero or
-otherwise non-positive. Zero never means unlimited. Passing a zero-value
-`Limits` does not select defaults; use `DefaultLimits()` explicitly.
+`Build` replaces every zero-valued field with the corresponding value from
+`DefaultLimits()`, then validates the complete result. A zero field never means
+unlimited. This permits `Limits{}` and partial overrides without restating
+unrelated budgets. Negative signed fields return `ErrInvalidRegistration`.
+Calling `Limits.Validate()` directly still rejects zero and otherwise
+non-positive fields because it validates an already resolved limit set.
 
 `MaxValueDepth` is inclusive. A scalar or `None` is depth 1. Each tuple, list,
 or dictionary wrapper adds one. A scalar with limit 1 succeeds, a one-level
@@ -382,6 +392,11 @@ Internal packages and trusted authorizer and handler implementations can hold de
 
 Credentials do not belong in `Subject`. The host keeps credentials in its authentication layer and places only the non-secret subject in trusted Go context.
 
+`WithSubject(ctx, subject)` stores a subject under an `authz`-owned private
+context key. `SubjectFromContext(ctx)` returns that subject and reports whether
+it was present. Authentication middleware must validate credentials before
+calling `WithSubject`; these functions do not authenticate a caller.
+
 ### Authorization input
 
 `AuthorizationInput` contains:
@@ -499,7 +514,18 @@ A root `*codemode.Server` implements `Service`. The adapter relies on the servic
 Resolve(context.Context) (authz.Subject, error)
 ```
 
-The resolver reads a subject from typed, host-owned Go context. It must not derive identity from tool arguments, Starlark source, MCP `_meta`, or other client-controlled request metadata. A resolver error or empty subject ID stops every tool before discovery or execution. A resolver must not return credential material.
+Every valid MCP tool call runs the resolver before discovery or execution. A
+resolver error or empty subject ID stops the operation. Resolvers must not
+derive identity from tool arguments, Starlark source, MCP `_meta`, or other
+client-controlled metadata, and must not return credential material.
+
+`StaticSubject(subject)` returns a resolver that uses one fixed identity. It is
+only for single-user transports where process ownership is the authentication
+boundary, such as a local stdio server. Multi-user hosts must not use it.
+
+`ContextSubject()` reads subjects stored with `authz.WithSubject`. The host's
+authentication middleware remains responsible for validating credentials and
+installing a subject for each request.
 
 ### `New`
 

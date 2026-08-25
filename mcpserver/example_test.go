@@ -12,34 +12,12 @@ import (
 	"github.com/meigma/codemode/mcpserver"
 )
 
-// subjectKey is the typed host-owned context key for the authenticated subject.
-type subjectKey struct{}
-
-// subjectResolver reads the trusted subject from typed host-owned Go context.
-type subjectResolver struct{}
-
-// Resolve returns the authenticated subject installed by the host.
-//
-// Resolve does not read tool arguments, program source, or request metadata.
-func (subjectResolver) Resolve(ctx context.Context) (authz.Subject, error) {
-	subject, ok := ctx.Value(subjectKey{}).(authz.Subject)
-	if !ok || subject.ID == "" {
-		return authz.Subject{}, codemode.ErrUnauthenticated
-	}
-	return subject, nil
-}
-
-// withSubject stores a non-secret authenticated subject in trusted host context.
-func withSubject(ctx context.Context, subject authz.Subject) context.Context {
-	return context.WithValue(ctx, subjectKey{}, subject)
-}
-
 // Example_officialTransport connects official MCP sessions and calls execute.
 //
-// The host owns authentication, transport, listeners, cancellation, and
-// shutdown. Trusted subjects come from typed host-owned Go context, never from
-// tool arguments, source, or _meta. authz.AllowAll is deliberate in this
-// sample; production hosts normally supply policy.
+// This in-memory sample has one process-owned identity, matching a single-user
+// stdio host. Multi-user hosts must resolve each request from authenticated,
+// host-owned context instead. authz.AllowAll is deliberate in this sample;
+// production hosts normally supply policy.
 func Example_officialTransport() {
 	// lookupInput is the records.lookup argument contract.
 	type lookupInput struct {
@@ -59,15 +37,10 @@ func Example_officialTransport() {
 		Count int64 `json:"count"`
 	}
 
-	builder := codemode.New(codemode.Options{
-		Authorizer: authz.AllowAll(),
-		Limits:     codemode.DefaultLimits(),
-	})
-	err := codemode.Register(builder, codemode.Capability[lookupInput, lookupOutput]{
-		ID:          "records.entry.lookup",
-		Name:        "records.lookup",
-		Summary:     "Look up one record by key.",
-		Description: "Returns one deterministic record for the supplied key.",
+	builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll()})
+	codemode.Register(builder, codemode.Capability[lookupInput, lookupOutput]{
+		Name:    "records.lookup",
+		Summary: "Look up one record by key.",
 		Handler: func(_ context.Context, _ authz.Subject, input lookupInput) (lookupOutput, error) {
 			count := int64(0)
 			if input.Limit != nil {
@@ -76,23 +49,19 @@ func Example_officialTransport() {
 			return lookupOutput{Key: input.Key, Count: count}, nil
 		},
 	})
-	if err != nil {
-		panic(err)
-	}
 
 	root, err := builder.Build()
 	if err != nil {
 		panic(err)
 	}
 
-	mcpServer, err := mcpserver.New(root, subjectResolver{})
+	mcpServer, err := mcpserver.New(root, mcpserver.StaticSubject(authz.Subject{ID: "example-user"}))
 	if err != nil {
 		panic(err)
 	}
 
-	trusted := withSubject(context.Background(), authz.Subject{ID: "example-user"})
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
-	serverSession, err := mcpServer.Connect(trusted, serverTransport, nil)
+	serverSession, err := mcpServer.Connect(context.Background(), serverTransport, nil)
 	if err != nil {
 		panic(err)
 	}

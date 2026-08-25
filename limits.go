@@ -79,7 +79,44 @@ func DefaultLimits() Limits {
 	}
 }
 
-// Validate rejects zero and negative limits; zero never means unlimited.
+// withDefaults replaces each zero-valued field with its bounded default.
+func (limits Limits) withDefaults() Limits {
+	defaults := DefaultLimits()
+	if limits.MaxSourceBytes == 0 {
+		limits.MaxSourceBytes = defaults.MaxSourceBytes
+	}
+	if limits.MaxExecutionSteps == 0 {
+		limits.MaxExecutionSteps = defaults.MaxExecutionSteps
+	}
+	if limits.MaxExecutionTime == 0 {
+		limits.MaxExecutionTime = defaults.MaxExecutionTime
+	}
+	if limits.MaxNativeCalls == 0 {
+		limits.MaxNativeCalls = defaults.MaxNativeCalls
+	}
+	if limits.MaxValueDepth == 0 {
+		limits.MaxValueDepth = defaults.MaxValueDepth
+	}
+	if limits.MaxValueBytes == 0 {
+		limits.MaxValueBytes = defaults.MaxValueBytes
+	}
+	if limits.MaxIntermediateValueBytes == 0 {
+		limits.MaxIntermediateValueBytes = defaults.MaxIntermediateValueBytes
+	}
+	if limits.MaxSearchQueryBytes == 0 {
+		limits.MaxSearchQueryBytes = defaults.MaxSearchQueryBytes
+	}
+	if limits.MaxSearchResults == 0 {
+		limits.MaxSearchResults = defaults.MaxSearchResults
+	}
+	if limits.MaxConcurrentExecutions == 0 {
+		limits.MaxConcurrentExecutions = defaults.MaxConcurrentExecutions
+	}
+	return limits
+}
+
+// Validate rejects non-positive limits; Build replaces zero-valued fields with
+// bounded defaults before validation.
 func (limits Limits) Validate() error {
 	switch {
 	case limits.MaxSourceBytes <= 0:

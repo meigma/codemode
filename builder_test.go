@@ -81,11 +81,8 @@ func (*nilPolicy) Authorize(context.Context, authz.AuthorizationInput) error {
 
 // TestBuilderBuildsOnceAndClosesRegistration proves the mutable lifecycle ends at the first Build call.
 func TestBuilderBuildsOnceAndClosesRegistration(t *testing.T) {
-	builder := codemode.New(codemode.Options{
-		Authorizer: authz.AllowAll(),
-		Limits:     codemode.DefaultLimits(),
-	})
-	require.NoError(t, codemode.Register(builder, validBuilderCapability("cap.one", "records.one")))
+	builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll()})
+	codemode.Register(builder, validBuilderCapability("cap.one", "records.one"))
 
 	server, err := builder.Build()
 
@@ -93,8 +90,9 @@ func TestBuilderBuildsOnceAndClosesRegistration(t *testing.T) {
 	require.NotNil(t, server)
 	_, err = builder.Build()
 	require.ErrorIs(t, err, codemode.ErrInvalidRegistration)
-	err = codemode.Register(builder, validBuilderCapability("cap.two", "records.two"))
-	require.ErrorIs(t, err, codemode.ErrInvalidRegistration)
+	assert.Panics(t, func() {
+		codemode.Register(builder, validBuilderCapability("cap.two", "records.two"))
+	})
 }
 
 // TestBuilderCopiesStaticFilteringOptions proves caller slice mutation cannot alter retained configuration.
@@ -106,7 +104,7 @@ func TestBuilderCopiesStaticFilteringOptions(t *testing.T) {
 		Limits:               codemode.DefaultLimits(),
 	})
 	disabled[0] = "cap.unknown"
-	require.NoError(t, codemode.Register(builder, validBuilderCapability("cap.disabled", "records.disabled")))
+	codemode.Register(builder, validBuilderCapability("cap.disabled", "records.disabled"))
 
 	server, err := builder.Build()
 
@@ -116,9 +114,10 @@ func TestBuilderCopiesStaticFilteringOptions(t *testing.T) {
 	assert.Empty(t, results)
 }
 
-// TestBuilderRejectsNilAuthorizersAndInvalidLimits proves required construction policy fails closed.
-func TestBuilderRejectsNilAuthorizersAndInvalidLimits(t *testing.T) {
+// TestBuilderRejectsNilAuthorizersAndNegativeLimits proves required construction policy fails closed.
+func TestBuilderRejectsNilAuthorizersAndNegativeLimits(t *testing.T) {
 	var typedNil *nilPolicy
+	negativeLimits := codemode.Limits{MaxSourceBytes: -1}
 	tests := []struct {
 		// name identifies the invalid server options.
 		name string
@@ -126,12 +125,12 @@ func TestBuilderRejectsNilAuthorizersAndInvalidLimits(t *testing.T) {
 		// options contains the construction input.
 		options codemode.Options
 	}{
-		{name: "nil authorizer", options: codemode.Options{Limits: codemode.DefaultLimits()}},
+		{name: "nil authorizer", options: codemode.Options{}},
+		{name: "typed nil authorizer", options: codemode.Options{Authorizer: typedNil}},
 		{
-			name:    "typed nil authorizer",
-			options: codemode.Options{Authorizer: typedNil, Limits: codemode.DefaultLimits()},
+			name:    "negative limit",
+			options: codemode.Options{Authorizer: authz.AllowAll(), Limits: negativeLimits},
 		},
-		{name: "zero limits", options: codemode.Options{Authorizer: authz.AllowAll()}},
 	}
 
 	for _, tt := range tests {
@@ -148,16 +147,17 @@ func TestBuilderRejectsNilAuthorizersAndInvalidLimits(t *testing.T) {
 	}
 }
 
-// TestRegisterRejectsInvalidContractsBeforeRetention proves malformed capabilities never enter the builder.
-func TestRegisterRejectsInvalidContractsBeforeRetention(t *testing.T) {
-	builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll(), Limits: codemode.DefaultLimits()})
-	invalidMetadata := validBuilderCapability("", "records.valid")
+// TestBuildJoinsRegistrationFailures proves one build reports every invalid capability by name.
+func TestBuildJoinsRegistrationFailures(t *testing.T) {
+	builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll()})
+	invalidMetadata := validBuilderCapability("cap.metadata", "records.metadata")
+	invalidMetadata.Summary = ""
 	nilHandler := validBuilderCapability("cap.nil", "records.nil")
 	nilHandler.Handler = nil
 
-	require.ErrorIs(t, codemode.Register(builder, invalidMetadata), codemode.ErrInvalidRegistration)
-	require.ErrorIs(t, codemode.Register(builder, nilHandler), codemode.ErrInvalidRegistration)
-	require.ErrorIs(t, codemode.Register(builder, codemode.Capability[invalidBuilderInput, builderOutput]{
+	codemode.Register(builder, invalidMetadata)
+	codemode.Register(builder, nilHandler)
+	codemode.Register(builder, codemode.Capability[invalidBuilderInput, builderOutput]{
 		ID:          "cap.unsupported",
 		Name:        "records.unsupported",
 		Summary:     "Unsupported input.",
@@ -165,27 +165,37 @@ func TestRegisterRejectsInvalidContractsBeforeRetention(t *testing.T) {
 		Handler: func(context.Context, authz.Subject, invalidBuilderInput) (builderOutput, error) {
 			return builderOutput{}, nil
 		},
-	}), codemode.ErrInvalidRegistration)
-	require.ErrorIs(t, codemode.Register[builderInput, builderOutput](nil, validBuilderCapability(
-		"cap.nil_builder",
-		"records.nil_builder",
-	)), codemode.ErrInvalidRegistration)
+	})
+
+	server, err := builder.Build()
+
+	require.ErrorIs(t, err, codemode.ErrInvalidRegistration)
+	assert.Nil(t, server)
+	require.ErrorContains(t, err, `capability "records.metadata"`)
+	require.ErrorContains(t, err, `capability "records.nil"`)
+	require.ErrorContains(t, err, `capability "records.unsupported"`)
+	assert.Panics(t, func() {
+		codemode.Register[builderInput, builderOutput](nil, validBuilderCapability(
+			"cap.nil_builder",
+			"records.nil_builder",
+		))
+	})
 }
 
-// TestRegisterRejectsUnsupportedNestedOutputsBeforeRetention proves representative
-// unsupportable output graphs never enter the builder.
-func TestRegisterRejectsUnsupportedNestedOutputsBeforeRetention(t *testing.T) {
+// TestBuildRejectsUnsupportedNestedOutputs proves representative unsupportable
+// output graphs are reported during the consolidated build.
+func TestBuildRejectsUnsupportedNestedOutputs(t *testing.T) {
 	tests := []struct {
 		// name identifies the unsupported nested output.
 		name string
 
 		// register attempts one invalid public registration.
-		register func(*codemode.Builder) error
+		register func(*codemode.Builder)
 	}{
 		{
 			name: "interface any",
-			register: func(builder *codemode.Builder) error {
-				return codemode.Register(builder, codemode.Capability[builderInput, interfaceBuilderOutput]{
+			register: func(builder *codemode.Builder) {
+				codemode.Register(builder, codemode.Capability[builderInput, interfaceBuilderOutput]{
 					ID:          "cap.interface",
 					Name:        "records.interface",
 					Summary:     "Unsupported interface output.",
@@ -198,8 +208,8 @@ func TestRegisterRejectsUnsupportedNestedOutputsBeforeRetention(t *testing.T) {
 		},
 		{
 			name: "json.RawMessage",
-			register: func(builder *codemode.Builder) error {
-				return codemode.Register(builder, codemode.Capability[builderInput, rawMessageBuilderOutput]{
+			register: func(builder *codemode.Builder) {
+				codemode.Register(builder, codemode.Capability[builderInput, rawMessageBuilderOutput]{
 					ID:          "cap.raw",
 					Name:        "records.raw",
 					Summary:     "Unsupported raw message output.",
@@ -212,8 +222,8 @@ func TestRegisterRejectsUnsupportedNestedOutputsBeforeRetention(t *testing.T) {
 		},
 		{
 			name: "cyclic type",
-			register: func(builder *codemode.Builder) error {
-				return codemode.Register(builder, codemode.Capability[builderInput, cyclicBuilderOutput]{
+			register: func(builder *codemode.Builder) {
+				codemode.Register(builder, codemode.Capability[builderInput, cyclicBuilderOutput]{
 					ID:          "cap.cycle",
 					Name:        "records.cycle",
 					Summary:     "Unsupported cyclic output.",
@@ -226,8 +236,8 @@ func TestRegisterRejectsUnsupportedNestedOutputsBeforeRetention(t *testing.T) {
 		},
 		{
 			name: "custom marshaler",
-			register: func(builder *codemode.Builder) error {
-				return codemode.Register(builder, codemode.Capability[builderInput, marshalerBuilderOutput]{
+			register: func(builder *codemode.Builder) {
+				codemode.Register(builder, codemode.Capability[builderInput, marshalerBuilderOutput]{
 					ID:          "cap.marshaler",
 					Name:        "records.marshaler",
 					Summary:     "Unsupported marshaler output.",
@@ -240,8 +250,8 @@ func TestRegisterRejectsUnsupportedNestedOutputsBeforeRetention(t *testing.T) {
 		},
 		{
 			name: "non-string map key",
-			register: func(builder *codemode.Builder) error {
-				return codemode.Register(builder, codemode.Capability[builderInput, mapKeyBuilderOutput]{
+			register: func(builder *codemode.Builder) {
+				codemode.Register(builder, codemode.Capability[builderInput, mapKeyBuilderOutput]{
 					ID:          "cap.mapkey",
 					Name:        "records.mapkey",
 					Summary:     "Unsupported map key output.",
@@ -256,36 +266,31 @@ func TestRegisterRejectsUnsupportedNestedOutputsBeforeRetention(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll(), Limits: codemode.DefaultLimits()})
+			builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll()})
 
-			err := tt.register(builder)
+			tt.register(builder)
+			codemode.Register(builder, validBuilderCapability("cap.retained", "records.retained"))
+			server, err := builder.Build()
 
 			require.ErrorIs(t, err, codemode.ErrInvalidRegistration)
-			require.NoError(t, codemode.Register(builder, validBuilderCapability("cap.retained", "records.retained")))
-			server, buildErr := builder.Build()
-			require.NoError(t, buildErr)
-			results, searchErr := server.Search("unsupported")
-			require.NoError(t, searchErr)
-			assert.Empty(t, results)
+			assert.Nil(t, server)
 		})
 	}
 }
 
-// TestRegisterRejectsObviousDuplicates proves duplicate stable and model-facing identities fail immediately.
-func TestRegisterRejectsObviousDuplicates(t *testing.T) {
-	builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll(), Limits: codemode.DefaultLimits()})
-	require.NoError(t, codemode.Register(builder, validBuilderCapability("cap.one", "records.one")))
+// TestBuildJoinsDuplicateRegistrationFailures proves duplicate identities are deferred and complete.
+func TestBuildJoinsDuplicateRegistrationFailures(t *testing.T) {
+	builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll()})
+	codemode.Register(builder, validBuilderCapability("cap.one", "records.one"))
+	codemode.Register(builder, validBuilderCapability("cap.one", "records.two"))
+	codemode.Register(builder, validBuilderCapability("cap.two", "records.one"))
 
-	require.ErrorIs(
-		t,
-		codemode.Register(builder, validBuilderCapability("cap.one", "records.two")),
-		codemode.ErrInvalidRegistration,
-	)
-	require.ErrorIs(
-		t,
-		codemode.Register(builder, validBuilderCapability("cap.two", "records.one")),
-		codemode.ErrInvalidRegistration,
-	)
+	server, err := builder.Build()
+
+	require.ErrorIs(t, err, codemode.ErrInvalidRegistration)
+	assert.Nil(t, server)
+	require.ErrorContains(t, err, `capability "records.two"`)
+	require.ErrorContains(t, err, `capability "records.one"`)
 }
 
 // TestBuildRejectsWholeCatalogFailures proves filtering and namespace checks run before a server escapes.
@@ -305,8 +310,8 @@ func TestBuildRejectsWholeCatalogFailures(t *testing.T) {
 
 	t.Run("function namespace collision", func(t *testing.T) {
 		builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll(), Limits: codemode.DefaultLimits()})
-		require.NoError(t, codemode.Register(builder, validBuilderCapability("cap.lookup", "records.lookup")))
-		require.NoError(t, codemode.Register(builder, validBuilderCapability("cap.detail", "records.lookup.detail")))
+		codemode.Register(builder, validBuilderCapability("cap.lookup", "records.lookup"))
+		codemode.Register(builder, validBuilderCapability("cap.detail", "records.lookup.detail"))
 
 		server, err := builder.Build()
 
@@ -336,13 +341,11 @@ func TestBuilderRejectsWorkerFrameOverflow(t *testing.T) {
 		Authorizer: authz.AllowAll(),
 		Limits:     limits,
 	})
-	require.NoError(t, codemode.Register(
-		builder,
+	codemode.Register(builder,
 		validBuilderCapability(
 			codemode.CapabilityID("cap."+strings.Repeat("x", 128)),
 			"records.lookup",
-		),
-	))
+		))
 
 	server, err := builder.Build()
 

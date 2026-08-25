@@ -14,6 +14,24 @@ type Subject struct {
 	ID SubjectID
 }
 
+// subjectContextKey prevents collisions with context values owned by host packages.
+type subjectContextKey struct{}
+
+// WithSubject returns a child context containing a trusted authenticated subject.
+//
+// Hosts must derive subject from their authentication boundary before calling
+// WithSubject. Tool arguments, program source, and MCP request metadata are not
+// trusted identity sources.
+func WithSubject(ctx context.Context, subject Subject) context.Context {
+	return context.WithValue(ctx, subjectContextKey{}, subject)
+}
+
+// SubjectFromContext returns the trusted subject stored by WithSubject.
+func SubjectFromContext(ctx context.Context) (Subject, bool) {
+	subject, ok := ctx.Value(subjectContextKey{}).(Subject)
+	return subject, ok
+}
+
 // AuthorizationInput contains the complete trusted input for one authorization decision.
 type AuthorizationInput struct {
 	// Subject is the authenticated identity resolved from trusted host context.

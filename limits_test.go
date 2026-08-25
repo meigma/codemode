@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/meigma/codemode"
+	"github.com/meigma/codemode/authz"
 )
 
 // TestDefaultLimitsAreValid proves every exact default budget is positive.
@@ -25,6 +26,31 @@ func TestDefaultLimitsAreValid(t *testing.T) {
 	assert.Equal(t, 256, limits.MaxSearchQueryBytes)
 	assert.Equal(t, 20, limits.MaxSearchResults)
 	assert.Equal(t, 8, limits.MaxConcurrentExecutions)
+}
+
+// TestBuildDefaultsZeroLimitFields proves zero values are bounded defaults and
+// a partial override does not require restating unrelated budgets.
+func TestBuildDefaultsZeroLimitFields(t *testing.T) {
+	defaultBuilder := codemode.New(codemode.Options{Authorizer: authz.AllowAll()})
+
+	defaultServer, err := defaultBuilder.Build()
+
+	require.NoError(t, err)
+	require.NotNil(t, defaultServer)
+
+	partialBuilder := codemode.New(codemode.Options{
+		Authorizer: authz.AllowAll(),
+		Limits:     codemode.Limits{MaxSearchResults: 1},
+	})
+	codemode.Register(partialBuilder, validBuilderCapability("cap.one", "records.one"))
+	codemode.Register(partialBuilder, validBuilderCapability("cap.two", "records.two"))
+
+	partialServer, err := partialBuilder.Build()
+
+	require.NoError(t, err)
+	results, err := partialServer.Search("records")
+	require.NoError(t, err)
+	assert.Len(t, results, 1)
 }
 
 // TestLimitsRejectNonPositiveValues proves zero never selects an unlimited budget.

@@ -17,7 +17,7 @@ package codemode.authz
 default allow := false
 
 allow if {
-    input.subject.id == "example-user"
+    input.subject.id == "local"
     input.capability.id == "records.entry.lookup"
     input.arguments.key != "forbidden"
 }
@@ -25,12 +25,17 @@ allow if {
 
 Use `input.capability.id` for policy identity. In this example, `records.entry.lookup` is the stable capability ID. `input.capability.name` is the dotted discovery and Starlark name, `records.lookup`; it can change independently of the policy identity.
 
+Set `ID: "records.entry.lookup"` in the tutorial's capability registration
+before writing this policy. An omitted ID defaults to `records.lookup`; explicit
+policy identity prevents a later capability rename from changing the decision
+input.
+
 The adapter supplies only this input shape:
 
 ```json
 {
   "subject": {
-    "id": "example-user"
+    "id": "local"
   },
   "capability": {
     "id": "records.entry.lookup",
@@ -67,7 +72,7 @@ const authorizationPolicy = `package codemode.authz
 default allow := false
 
 allow if {
-    input.subject.id == "example-user"
+    input.subject.id == "local"
     input.capability.id == "records.entry.lookup"
     input.arguments.key != "forbidden"
 }`
@@ -76,6 +81,7 @@ allow if {
 Then replace the tutorial's builder initialization with the following code:
 
 ```go
+ctx := context.Background()
 authorizer, err := rego.New(
 	ctx,
 	"data.codemode.authz.allow",
@@ -84,18 +90,17 @@ authorizer, err := rego.New(
 	},
 )
 if err != nil {
-	return fmt.Errorf("prepare authorization policy: %w", err)
+	log.Fatal(err)
 }
 
-builder := codemode.New(codemode.Options{
-	Authorizer: authorizer,
-	Limits:     codemode.DefaultLimits(),
-})
+builder := codemode.New(codemode.Options{Authorizer: authorizer})
 ```
 
-The replacement declares `err`. In the tutorial's next statement, change `err := codemode.Register(` to `err = codemode.Register(` so the program still compiles.
-
-`rego.New` validates the ground reference syntax, compiles every supplied module, and prepares the policy synchronously. It cannot prove that the decision is defined and Boolean for every future input. Return the error instead of building a server with another authorizer. The returned authorizer is immutable and can serve concurrent calls.
+`rego.New` validates the ground reference syntax, compiles every supplied
+module, and prepares the policy synchronously. It cannot prove that the
+decision is defined and Boolean for every future input; those outcomes are
+checked during authorization. Do not build the server when preparation fails.
+The returned authorizer is immutable and can serve concurrent calls.
 
 To embed the policy, save the same module as `policies/authorization.rego` and replace the string constant with:
 

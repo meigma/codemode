@@ -32,15 +32,10 @@ func Example_registerAndExecute() {
 		Count int64 `json:"count"`
 	}
 
-	builder := codemode.New(codemode.Options{
-		Authorizer: authz.AllowAll(),
-		Limits:     codemode.DefaultLimits(),
-	})
-	err := codemode.Register(builder, codemode.Capability[lookupInput, lookupOutput]{
-		ID:          "records.entry.lookup",
-		Name:        "records.lookup",
-		Summary:     "Look up one record by key.",
-		Description: "Returns one deterministic record for the supplied key.",
+	builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll()})
+	codemode.Register(builder, codemode.Capability[lookupInput, lookupOutput]{
+		Name:    "records.lookup",
+		Summary: "Look up one record by key.",
 		Handler: func(_ context.Context, _ authz.Subject, input lookupInput) (lookupOutput, error) {
 			count := int64(0)
 			if input.Limit != nil {
@@ -49,9 +44,6 @@ func Example_registerAndExecute() {
 			return lookupOutput{Key: input.Key, Count: count}, nil
 		},
 	})
-	if err != nil {
-		panic(err)
-	}
 
 	server, err := builder.Build()
 	if err != nil {

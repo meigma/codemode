@@ -26,8 +26,8 @@ func TestServerSearchAndDescribeExposeOnlyEnabledCapabilities(t *testing.T) {
 		DisabledCapabilities: []codemode.CapabilityID{"cap.disabled"},
 		Limits:               codemode.DefaultLimits(),
 	})
-	require.NoError(t, codemode.Register(builder, validBuilderCapability("cap.alpha", "records.alpha")))
-	require.NoError(t, codemode.Register(builder, validBuilderCapability("cap.disabled", "records.disabled")))
+	codemode.Register(builder, validBuilderCapability("cap.alpha", "records.alpha"))
+	codemode.Register(builder, validBuilderCapability("cap.disabled", "records.disabled"))
 	server, err := builder.Build()
 	require.NoError(t, err)
 
@@ -40,6 +40,51 @@ func TestServerSearchAndDescribeExposeOnlyEnabledCapabilities(t *testing.T) {
 	assert.Equal(t, "records.alpha", description.Name)
 	_, err = server.Describe("records.disabled")
 	require.ErrorIs(t, err, codemode.ErrNotFound)
+}
+
+// TestCapabilityIDDefaultsToName proves derived policy identity participates in
+// deployment filtering and authorization.
+func TestCapabilityIDDefaultsToName(t *testing.T) {
+	t.Run("deployment filter", func(t *testing.T) {
+		builder := codemode.New(codemode.Options{
+			Authorizer:           authz.AllowAll(),
+			DisabledCapabilities: []codemode.CapabilityID{"records.lookup"},
+		})
+		codemode.Register(builder, validBuilderCapability("", "records.lookup"))
+
+		server, err := builder.Build()
+
+		require.NoError(t, err)
+		results, err := server.Search("")
+		require.NoError(t, err)
+		assert.Empty(t, results)
+	})
+
+	t.Run("authorization", func(t *testing.T) {
+		authorizer := authzmocks.NewMockAuthorizer(t)
+		authorizer.EXPECT().Authorize(
+			mock.Anything,
+			mock.MatchedBy(func(input authz.AuthorizationInput) bool {
+				return input.CapabilityID == "records.lookup" &&
+					input.CapabilityName == "records.lookup"
+			}),
+		).Return(nil).Once()
+		capability := validBuilderCapability("", "records.lookup")
+		capability.Description = ""
+		server := buildTestServer(t, authorizer, codemode.Limits{}, capability)
+
+		description, err := server.Describe("records.lookup")
+		require.NoError(t, err)
+		assert.Equal(t, capability.Summary, description.Description)
+
+		result, err := server.Execute(t.Context(), authz.Subject{ID: "subject-1"}, `
+def main():
+    return records.lookup(value="alpha")
+`)
+
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{"value": "alpha"}, result)
+	})
 }
 
 // TestServerSearchProjectsQueryLimits proves internal discovery details do not escape the public taxonomy.
@@ -433,13 +478,13 @@ func TestServerExecuteProjectsCompositeOutputFailures(t *testing.T) {
 		capabilityName string
 
 		// register retains one capability that returns an invalid composite value.
-		register func(*codemode.Builder) error
+		register func(*codemode.Builder)
 	}{
 		{
 			name:           "nested NaN",
 			capabilityName: "records.nan",
-			register: func(builder *codemode.Builder) error {
-				return codemode.Register(builder, codemode.Capability[compositeProjectionInput, nanProjectionOutput]{
+			register: func(builder *codemode.Builder) {
+				codemode.Register(builder, codemode.Capability[compositeProjectionInput, nanProjectionOutput]{
 					ID:          "cap.nan",
 					Name:        "records.nan",
 					Summary:     "Return a NaN score.",
@@ -453,8 +498,8 @@ func TestServerExecuteProjectsCompositeOutputFailures(t *testing.T) {
 		{
 			name:           "nested Inf",
 			capabilityName: "records.inf",
-			register: func(builder *codemode.Builder) error {
-				return codemode.Register(builder, codemode.Capability[compositeProjectionInput, nanProjectionOutput]{
+			register: func(builder *codemode.Builder) {
+				codemode.Register(builder, codemode.Capability[compositeProjectionInput, nanProjectionOutput]{
 					ID:          "cap.inf",
 					Name:        "records.inf",
 					Summary:     "Return an infinite score.",
@@ -468,9 +513,8 @@ func TestServerExecuteProjectsCompositeOutputFailures(t *testing.T) {
 		{
 			name:           "uint overflow",
 			capabilityName: "records.overflow",
-			register: func(builder *codemode.Builder) error {
-				return codemode.Register(
-					builder,
+			register: func(builder *codemode.Builder) {
+				codemode.Register(builder,
 					codemode.Capability[compositeProjectionInput, overflowProjectionOutput]{
 						ID:          "cap.overflow",
 						Name:        "records.overflow",
@@ -479,8 +523,7 @@ func TestServerExecuteProjectsCompositeOutputFailures(t *testing.T) {
 						Handler: func(context.Context, authz.Subject, compositeProjectionInput) (overflowProjectionOutput, error) {
 							return overflowProjectionOutput{Count: uint64(1) << 63}, nil
 						},
-					},
-				)
+					})
 			},
 		},
 	}
@@ -488,7 +531,7 @@ func TestServerExecuteProjectsCompositeOutputFailures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll(), Limits: codemode.DefaultLimits()})
-			require.NoError(t, tt.register(builder))
+			tt.register(builder)
 			server, err := builder.Build()
 			require.NoError(t, err)
 
@@ -512,18 +555,15 @@ func TestServerExecuteProjectsCompositeValueLimits(t *testing.T) {
 		limits.MaxValueBytes = 1024
 		limits.MaxIntermediateValueBytes = 1024
 		builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll(), Limits: limits})
-		require.NoError(
-			t,
-			codemode.Register(builder, codemode.Capability[compositeProjectionInput, nestedProjectionOutput]{
-				ID:          "cap.depth",
-				Name:        "records.depth",
-				Summary:     "Return nested items.",
-				Description: "Projects composite depth exhaustion as a resource limit.",
-				Handler: func(context.Context, authz.Subject, compositeProjectionInput) (nestedProjectionOutput, error) {
-					return nestedProjectionOutput{Items: []nestedProjectionItem{{ID: "a"}}}, nil
-				},
-			}),
-		)
+		codemode.Register(builder, codemode.Capability[compositeProjectionInput, nestedProjectionOutput]{
+			ID:          "cap.depth",
+			Name:        "records.depth",
+			Summary:     "Return nested items.",
+			Description: "Projects composite depth exhaustion as a resource limit.",
+			Handler: func(context.Context, authz.Subject, compositeProjectionInput) (nestedProjectionOutput, error) {
+				return nestedProjectionOutput{Items: []nestedProjectionItem{{ID: "a"}}}, nil
+			},
+		})
 		server, err := builder.Build()
 		require.NoError(t, err)
 
@@ -543,19 +583,16 @@ def main():
 		limits.MaxIntermediateValueBytes = 1024
 		var handlerCalls atomic.Int64
 		builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll(), Limits: limits})
-		require.NoError(
-			t,
-			codemode.Register(builder, codemode.Capability[compositeProjectionInput, nestedProjectionOutput]{
-				ID:          "cap.pervalue",
-				Name:        "records.pervalue",
-				Summary:     "Return one nested item.",
-				Description: "Projects one oversized composite result independently of the aggregate budget.",
-				Handler: func(context.Context, authz.Subject, compositeProjectionInput) (nestedProjectionOutput, error) {
-					handlerCalls.Add(1)
-					return nestedProjectionOutput{Items: []nestedProjectionItem{{ID: "xx"}}}, nil
-				},
-			}),
-		)
+		codemode.Register(builder, codemode.Capability[compositeProjectionInput, nestedProjectionOutput]{
+			ID:          "cap.pervalue",
+			Name:        "records.pervalue",
+			Summary:     "Return one nested item.",
+			Description: "Projects one oversized composite result independently of the aggregate budget.",
+			Handler: func(context.Context, authz.Subject, compositeProjectionInput) (nestedProjectionOutput, error) {
+				handlerCalls.Add(1)
+				return nestedProjectionOutput{Items: []nestedProjectionItem{{ID: "xx"}}}, nil
+			},
+		})
 		server, err := builder.Build()
 		require.NoError(t, err)
 
@@ -576,19 +613,16 @@ def main():
 		limits.MaxIntermediateValueBytes = len(body)*2 - 1
 		var handlerCalls atomic.Int64
 		builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll(), Limits: limits})
-		require.NoError(
-			t,
-			codemode.Register(builder, codemode.Capability[compositeProjectionInput, nestedProjectionOutput]{
-				ID:          "cap.aggregate",
-				Name:        "records.aggregate",
-				Summary:     "Return one nested item.",
-				Description: "Projects composite aggregate exhaustion independently of MaxValueBytes.",
-				Handler: func(context.Context, authz.Subject, compositeProjectionInput) (nestedProjectionOutput, error) {
-					handlerCalls.Add(1)
-					return nestedProjectionOutput{Items: []nestedProjectionItem{{ID: "xx"}}}, nil
-				},
-			}),
-		)
+		codemode.Register(builder, codemode.Capability[compositeProjectionInput, nestedProjectionOutput]{
+			ID:          "cap.aggregate",
+			Name:        "records.aggregate",
+			Summary:     "Return one nested item.",
+			Description: "Projects composite aggregate exhaustion independently of MaxValueBytes.",
+			Handler: func(context.Context, authz.Subject, compositeProjectionInput) (nestedProjectionOutput, error) {
+				handlerCalls.Add(1)
+				return nestedProjectionOutput{Items: []nestedProjectionItem{{ID: "xx"}}}, nil
+			},
+		})
 		server, err := builder.Build()
 		require.NoError(t, err)
 
@@ -728,7 +762,7 @@ func buildTestServer(
 ) *codemode.Server {
 	t.Helper()
 	builder := codemode.New(codemode.Options{Authorizer: authorizer, Limits: limits})
-	require.NoError(t, codemode.Register(builder, capability))
+	codemode.Register(builder, capability)
 	server, err := builder.Build()
 	require.NoError(t, err)
 	return server
