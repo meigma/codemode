@@ -43,13 +43,17 @@ call `Builder.Build` must do the same from `TestMain` before `m.Run`.
 Each `execute` request runs Starlark in a fresh worker process created by re-executing
 the host binary. The submitted program must define a zero-argument `main()`,
 and only its final converted value is exposed to the caller. Printed text,
-globals, and interpreter-local intermediate values are not returned. During
-execution, each native-call argument map and each validated native result
-crosses the private worker protocol, and each crossing value is independently
-subject to `MaxValueDepth` and `MaxValueBytes`.
+globals, and interpreter-local intermediate values are not returned. Each
+native-call argument map, native result, and final value is independently
+subject to `MaxValueDepth` and `MaxValueBytes`. Successful native-result value
+bodies also consume the fresh request-scoped `MaxIntermediateValueBytes`
+budget.
 
-Capabilities are bound and canonicalized in the parent before authorization,
-and authorization completes before handler dispatch. Trusted subjects come
+The worker binds keyword arguments first. The parent then rebinds them to the
+registered Go input, creates a fresh canonical authorization map, authorizes
+the call, and dispatches the handler. The parent converts the handler output to
+a process-neutral value, and the worker converts that value to Starlark.
+Trusted subjects come
 from typed, host-owned Go context through `mcpserver.InvocationResolver`; tool
 arguments, Starlark source, and MCP `_meta` are not trusted identity or
 credential sources.

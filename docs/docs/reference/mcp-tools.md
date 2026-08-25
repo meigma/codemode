@@ -134,22 +134,100 @@ For the site-wide sample, the requested name is `records.lookup`. Its stable ID,
 
 The required `input` and `output` properties are always arrays. A capability with no input or output fields uses `[]`, not `null`.
 
-`input` and `output` preserve Go field declaration order. Field-shape types have these values:
+`input` and `output` preserve Go field declaration order. Each array item keeps
+the flat field-shape schema with only `name`, `type`, and `required`; nested
+types are encoded in the `type` string rather than in recursive field-shape
+objects.
 
-| Position | Go field type | `type` value | `required` |
-| --- | --- | --- | --- |
-| Input | `string` | `str` | `true` |
-| Input | `*int64` | `int | None` | `false` |
-| Output | `string` | `str` | `true` |
-| Output | `int64` | `int` | `true` |
-| Output | `bool` | `bool` | `true` |
-| Output | `float64` | `float` | `true` |
+Input field shapes are:
 
-The sample capability therefore describes input fields `key` (`str`, required) and `limit` (`int | None`, optional), and output fields `key` (`str`, required) and `count` (`int`, required).
+| Go field type | `type` | `required` |
+| --- | --- | --- |
+| `string` | `str` | `true` |
+| `int64` | `int` | `true` |
+| `bool` | `bool` | `true` |
+| `float64` | `float` | `true` |
+| `*string` | <code>str &#124; None</code> | `false` |
+| `*int64` | <code>int &#124; None</code> | `false` |
+| `*bool` | <code>bool &#124; None</code> | `false` |
+| `*float64` | <code>float &#124; None</code> | `false` |
 
-`signature` is the same invocation-only keyword signature returned by `search_api`.
+Named input types with these underlying kinds have the same shapes. Required
+integers use the signed 64-bit range, and all floats must be finite. An omitted
+optional argument and explicit `None` both produce a nil pointer and omit the
+field from the canonical authorization map.
 
-`output` is the stable result contract. Models and clients must use these field shapes. Clients that parsed a trailing ` -> <GoType>` suffix on `signature` must stop parsing it and use `describe_api.output` instead. There is no compatibility suffix, alias, or alternate signature field.
+Output `type` strings use this compact notation:
+
+| Value shape | Notation |
+| --- | --- |
+| String, integer, Boolean, or finite float | `str`, `int`, `bool`, or `float` |
+| Array or slice | `list[T]` |
+| String-keyed map | `dict[str, T]` |
+| Struct | `{field: T, optional?: U}` |
+| Pointer | <code>T &#124; None</code> |
+
+Struct fields appear in declaration order. Arrays and slices share `list[T]`.
+Pointer layers append ` | None` once. At the root, an `omitempty` pointer uses
+`required: false` and the pointed-to type without the outer ` | None`. Inside a
+struct, the field name uses `?`, as in `{value: str, detail?: str}`.
+
+For example, one flat `output` array can contain:
+
+```json
+[
+  {
+    "name": "items",
+    "type": "list[{title: str, score: float}]",
+    "required": true
+  },
+  {
+    "name": "alias",
+    "type": "dict[str, bool]",
+    "required": true
+  },
+  {
+    "name": "nested",
+    "type": "{value: str, detail?: str}",
+    "required": true
+  },
+  {
+    "name": "values",
+    "type": "list[str | None] | None",
+    "required": true
+  },
+  {
+    "name": "extra",
+    "type": "str",
+    "required": false
+  }
+]
+```
+
+The output universe includes nested structs, arrays and slices, string-keyed
+maps, pointers, named scalars, all signed and unsigned integer kinds, finite
+`float32` and `float64` values, and byte slices or arrays as integer lists from
+0 through 255. Integers are projected through signed 64-bit values, so a
+returned unsigned value above `math.MaxInt64` is invalid. Byte sequences are
+not base64 encoded.
+
+A nil pointer without `omitempty` remains present as `None`. A nil pointer with
+`omitempty` is omitted. Nil slices, maps, and byte slices also become `None`
+even though discovery shows `list[T]` or `dict[str, T]`; non-nil empty
+containers remain empty. A nil pointer inside a list or map becomes `None`.
+
+The host rejects unsupported reflected shapes when it registers a capability,
+before the MCP service can expose it. Rejected output graphs include
+interfaces, `json.RawMessage`, types with value or pointer methods that
+implement JSON or text marshaling, non-string map keys, cyclic type graphs,
+unsupported scalar kinds, embedded or unexported fields, invalid tags, and
+`omitempty` on a non-pointer field.
+
+`signature` is the same invocation-only keyword signature returned by
+`search_api`. `output` is the stable result contract. Models and clients must
+use these field shapes. Clients that parsed a trailing ` -> <GoType>` suffix
+on `signature` must stop parsing it and use `describe_api.output` instead.
+There is no compatibility suffix, alias, or alternate signature field.
 
 ## `execute`
 
@@ -174,7 +252,29 @@ The source must define `def main():` as a function with zero arguments. Top-leve
 
 Capabilities are available by dotted name. The sample native call is `records.lookup(key="alpha", limit=2)`. Native calls accept keyword arguments only. Duplicate keyword syntax is rejected by the Starlark parser as `invalid program` before authorization or handler dispatch. Positional, unknown, missing, incorrectly typed, and out-of-range arguments reach binding and map to `invalid capability arguments`. For the sample, `key` is required and `limit` can be omitted, `None`, or an integer in the signed 64-bit range.
 
-Each `execute` call gets a fresh interpreter and fresh source, step, elapsed-time, native-call, conversion-depth, and result-size budgets. There is no interpreter state shared between calls.
+For example, a capability described with the signature
+`records.search(*, count: int, active: bool, score: float, label: str | None)`
+and output type `list[{id: str, active: bool, score: float}]` can be composed
+inside one program:
+
+```python
+def main():
+    response = records.search(count=3, active=True, score=1.5)
+    ids = []
+    total = 0.0
+    count = 0
+    for item in response["items"]:
+        if item["active"]:
+            ids.append(item["id"])
+            total += item["score"]
+            count += 1
+    return {"count": count, "score": total, "ids": ids}
+```
+
+Each `execute` call gets a fresh interpreter and fresh source, step,
+elapsed-time, native-call, conversion-depth, per-value size, and aggregate
+intermediate-value budgets. There is no interpreter or aggregate accounting
+shared between calls.
 
 ### Successful structured output
 
@@ -199,7 +299,19 @@ The `result` property is the final converted return value from `main`. Its runti
 - an array containing supported values
 - an object with string keys and supported values
 
-`MaxValueDepth` is inclusive. A scalar or `None` is depth 1. Each tuple, list, or dictionary wrapper adds one. A scalar with limit 1 succeeds, a one-level container with limit 2 succeeds, and one more wrapper with limit 2 fails. Native arguments, native results, and the final value are independently subject to `MaxValueDepth` and `MaxValueBytes`. Starlark tuples and lists become arrays. `None` becomes `null`. Dictionaries must have string keys.
+`MaxValueDepth` is inclusive. A scalar or `None` is depth 1. Each tuple, list,
+or dictionary wrapper adds one. A scalar with limit 1 succeeds, a one-level
+container with limit 2 succeeds, and one more wrapper with limit 2 fails.
+Native arguments, native results, and the final value are independently subject
+to `MaxValueDepth` and `MaxValueBytes`.
+
+`MaxIntermediateValueBytes` separately bounds the request-scoped sum of
+successful parent-to-child native-result value bodies. After each successful
+result is encoded, its encoded body length is checked and debited. The sum
+excludes frame envelopes, native-call arguments, failed handlers, and the final
+program value. Results consume this aggregate budget even when `main` does not
+return them. A new `execute` call starts fresh. Starlark tuples and lists become
+arrays. `None` becomes `null`. Dictionaries must have string keys.
 
 Only the final converted value from the worker process is exposed in the successful MCP result. `print` output is discarded. Globals, values created during top-level source loading, intermediate expressions, and native results that are not included in the final return value are not added to structured output. The successful envelope contains only `result`.
 
@@ -215,7 +327,10 @@ The listed descriptions above are the model-facing contract. Recovery uses the s
   - Call only names confirmed through `search_api` and `describe_api`, and call them only inside `main`.
   - Return the final value from `main`.
 - Use `describe_api.output` as the result contract. Do not parse a type name from `signature`.
-- After `resource limit exceeded`, reduce the applicable bounded quantity: query or source bytes, execution steps or time, native calls, or crossing-value depth or encoded size. Then retry the call.
+- After `resource limit exceeded`, reduce the applicable bounded quantity:
+  query or source bytes, execution steps or time, native calls, crossing-value
+  depth or per-value encoded size, or the cumulative encoded size of successful
+  native results. Then retry the call.
 - After `permission denied` or `authorization policy failure`, contact the host if the access was expected. One allowed or denied input cannot establish whether the policy is default-open, default-deny, complete, or incomplete.
 
 ## Errors
@@ -230,8 +345,8 @@ After a well-formed call reaches the adapter, a resolver or service failure beco
 | `invalid capability arguments` | A native call failed binding: positional, unknown, missing, incorrectly typed, or out-of-range arguments. |
 | `permission denied` | Policy returned a recognized denial. |
 | `authorization policy failure` | Policy evaluation failed. |
-| `resource limit exceeded` | A discovery, execution, or conversion budget was exceeded. |
-| `capability failed` | A handler failed or returned an invalid output. |
+| `resource limit exceeded` | A discovery, execution, depth, per-value, or aggregate intermediate-value budget was exceeded. |
+| `capability failed` | A handler failed or returned an invalid value, including a non-finite float or an unsigned integer above `math.MaxInt64`. |
 | `context canceled` | The request context was canceled. |
 | `context deadline exceeded` | A service returned a bare deadline error. Root CodeMode execution deadlines are normally projected as `resource limit exceeded`. |
 | `internal failure` | Any unknown service error or recovered adapter failure. |
