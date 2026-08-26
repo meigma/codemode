@@ -40,15 +40,17 @@ The module requires Go 1.26.6.
 
 ## Get started
 
-Follow [Build your first CodeMode server](docs/docs/tutorials/first-server.md)
-to register `records.lookup`, run a real stdio MCP server, and add it to an
-agent. The server assembly is:
-
 ```go
 func main() {
-	codemode.ServeWorkerAndExit() // must be the first statement of main
+	// Serve worker mode when this binary is re-executed for a program run.
+	// This must be the first statement of main.
+	codemode.ServeWorkerAndExit()
 
+	// AllowAll is an explicit choice; CodeMode has no default authorizer.
 	builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll()})
+
+	// A capability is a plain typed Go function. The schema agents see is
+	// generated from lookupInput and lookupOutput.
 	codemode.Register(builder, codemode.Capability[lookupInput, lookupOutput]{
 		Name:    "records.lookup",
 		Summary: "Look up one record by key.",
@@ -59,6 +61,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// StaticSubject suits a single-user stdio server; multi-user hosts
+	// resolve each authenticated request with ContextSubject.
 	srv, err := mcpserver.New(server, mcpserver.StaticSubject(authz.Subject{ID: "local"}))
 	if err != nil {
 		log.Fatal(err)
@@ -67,15 +72,11 @@ func main() {
 }
 ```
 
-`authz.AllowAll()` is an explicit choice; CodeMode never defaults
-authorization to allow. `mcpserver.StaticSubject` fits single-user transports
-such as stdio; multi-user hosts resolve each authenticated request with
-`mcpserver.ContextSubject`.
-
-The repository also contains shorter, compile-checked examples:
-
-- [`example_test.go`](example_test.go) — typed registration and direct execution
-- [`mcpserver/example_test.go`](mcpserver/example_test.go) — the official in-memory MCP transport
+For the full walk-through — the input and output types, building the binary,
+and adding it to an agent — follow
+[Build your first CodeMode server](docs/docs/tutorials/first-server.md).
+Shorter compile-checked examples: [`example_test.go`](example_test.go) and
+[`mcpserver/example_test.go`](mcpserver/example_test.go).
 
 ## Documentation
 
