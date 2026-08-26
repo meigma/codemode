@@ -76,3 +76,6 @@ User refreshed token with near-admin scopes (workflow, admin:org, etc.). Merged 
 
 ## Release-please retargeted to 0.1.0
 PR #15 proposed 1.0.0 because a repo with no prior release defaults to 1.0.0 (bump-minor-pre-major only affects later bumps; manifest 0.0.0 is treated as no release). Fixed with "initial-version": "0.1.0" in release-please-config.json (schema-verified knob; self-expiring after first release, unlike release-as). PR #49 merged as 6d0529a; release-please regenerated PR #15 as "chore(master): release 0.1.0". Worktree removed.
+
+## 2026-08-26 00:20 — Close
+Session complete. Merged this session: PRs #47, #48, #49 (README rework, Cloudflare comparison, initial-version 0.1.0) and Dependabot #1/#3/#4/#5. User merged release PR #15: tag v0.1.0 exists, GitHub release is a draft pending manual publish. Issues filed here (#23, #24, #25, #42) all implemented by concurrent sessions and verified live. Open handoff: publish the draft release; issue #45 (JSON recursion hardening); composite inputs deferred. SUMMARY.md written; INDEX row set complete; TECH_NOTES gained release-state and gh-token bullets. Remote session branches pruned; local master at a999285.

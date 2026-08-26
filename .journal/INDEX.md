@@ -6,7 +6,7 @@
 | 002 | 2026-08-23 | Implement CodeMode secure MVP | complete | Proved the product loop, implemented the complete secure source-only library and MCP adapter, and converged repository automation and public documentation. |
 | 003 | 2026-08-23 | Add optional Rego authorization | complete | Designed, spiked, implemented, documented, and merged the optional OPA/Rego authorizer adapter. |
 | 004 | 2026-08-23 | Functional verification and findings remediation | complete | Executed 59 public-contract cases, merged seven product remediation PRs, repaired the reusable harness, and reported OMP argument rewriting upstream. |
-| 005 | 2026-08-24 | New work session | in-progress | Started a new journal session and is awaiting the developer's substantive request. |
+| 005 | 2026-08-24 | UX review and v0.1.0 release preparation | complete | Reviewed CodeMode UX end-to-end, filed and verified issues #23/#24/#25/#42, reworked the README, triaged Dependabot, and retargeted release-please so v0.1.0 was tagged. |
 | 006 | 2026-08-24 | Review execution deadline isolation | complete | Confirmed issue #12, proved the re-exec worker remediation in a spike, and produced the approved worker-only architecture plus a five-increment implementation plan. |
 | 007 | 2026-08-24 | Review final-value allocation limit | complete | Confirmed and removed oversized final-conversion allocations, merged PR #26, and preserved the separate intermediate-output budget decision for issue #23. |
 | 008 | 2026-08-24 | Implement worker execution isolation | complete | Implemented and merged five increments that move every Starlark execution into a bounded re-executed worker process and close issue #12. |
