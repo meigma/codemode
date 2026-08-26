@@ -65,3 +65,8 @@ PR #48: README section "How this differs from Cloudflare's Code Mode" — same-t
 
 ## PR #48 merged
 Squash-merged as a2c33bd (docs: compare with Cloudflare's Code Mode). Section placed between Documentation and Security boundary per user direction. Worktree and branch removed; local master fast-forwarded.
+
+## Dependabot triage
+Four open Dependabot PRs triaged (#1 mkdocs-material 9.7.7, #3 mise-action 4.2.5, #4 checkout 7.0.1, #5 cache 6.1.0). All CI green; verified each new action SHA matches its upstream tag via gh api before merging.
+Merged: #4 (checkout), #1 (mkdocs-material). Blocked: #3 and #5 — gh OAuth token lacks `workflow` scope, so squash merges touching .github/workflows are refused (403); #4 inexplicably slipped through the same check. `@dependabot squash and merge` comments were not acknowledged (comment commands inactive). Interactive `gh auth refresh -s workflow` unworkable from agent PTY (gh prompter ignores piped input). Handed the refresh command to the user; #3/#5 merge pending that or web-UI merge.
+Also observed: PR #15 release-please proposes 1.0.0 while user plans v0.1.0 — flagged.
