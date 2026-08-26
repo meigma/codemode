@@ -10,11 +10,9 @@ import (
 	"github.com/meigma/codemode/internal/execution"
 )
 
-// errNativeAbort is the private interpreter-unwind sentinel returned when the
-// parent answers a native call with native_abort.
-//
-// It does not wrap or equal any execution.Err* sentinel, so Engine's default
-// classifyRuntimeError branch preserves it through multi-%w wrapping.
+// errNativeAbort is the private sentinel used to unwind the interpreter after
+// the parent answers a native call with native_abort. The connection state
+// remains authoritative because Engine intentionally coarsens unknown errors.
 var errNativeAbort = errors.New("native abort")
 
 // errChildService classifies a child protocol or internal service failure that
@@ -106,6 +104,9 @@ func serveExec(r io.Reader, w io.Writer, frame execFrame) error {
 		nativeForwarder(conn),
 		executionLimits(frame.Limits),
 	)
+	if conn.state == stateDone {
+		return nil
+	}
 	if err != nil {
 		return writeExecutionError(conn, err)
 	}
