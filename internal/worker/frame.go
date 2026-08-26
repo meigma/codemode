@@ -32,6 +32,9 @@ const (
 	finalErrorInternal         finalErrorCode = "internal"
 )
 
+// maxDiagnosticBytes is the private raw-byte bound for final_error detail.
+const maxDiagnosticBytes = 4 << 10
+
 // knownFinalError reports whether code is one child-owned terminal class.
 func knownFinalError(code finalErrorCode) bool {
 	switch code {
@@ -71,7 +74,9 @@ const (
 	nativeCallSuffix   = `}`
 	finalPrefix        = `{"type":"final","result":`
 	finalSuffix        = `}`
-	finalErrorLongest  = `{"type":"final_error","code":"invalid_arguments"}`
+	finalErrorPrefix   = `{"type":"final_error","code":"invalid_arguments"`
+	finalErrorDetail   = `,"detail":`
+	finalErrorSuffix   = `}`
 	nativeResultPrefix = `{"type":"native_result","result":`
 	nativeResultSuffix = `}`
 	nativeAbortPayload = `{"type":"native_abort"}`
@@ -157,6 +162,9 @@ type finalErrorFrame struct {
 
 	// Code is one child-owned final error class.
 	Code finalErrorCode `json:"code"`
+
+	// Detail is an optional model-derived suffix for approved codes.
+	Detail string `json:"detail,omitempty"`
 }
 
 type connKind uint8
@@ -392,11 +400,37 @@ func encodeFinalBytes(encoded []byte) []byte {
 }
 
 // encodeFinalError encodes one child-owned terminal failure.
-func encodeFinalError(code finalErrorCode) ([]byte, error) {
+//
+// Absent, oversized, or illegal detail is dropped before any write.
+func encodeFinalError(code finalErrorCode, detail string) ([]byte, error) {
 	if !knownFinalError(code) {
 		return nil, errInvalidValue
 	}
-	return marshalFrame(finalErrorFrame{Type: frameTypeFinalError, Code: code})
+	return marshalFrame(finalErrorFrame{
+		Type:   frameTypeFinalError,
+		Code:   code,
+		Detail: sanitizedFinalErrorDetail(code, detail),
+	})
+}
+
+// sanitizedFinalErrorDetail keeps only a legal non-empty in-budget suffix.
+func sanitizedFinalErrorDetail(code finalErrorCode, detail string) string {
+	if detail == "" || len(detail) > maxDiagnosticBytes || !allowsFinalErrorDetail(code) {
+		return ""
+	}
+	return detail
+}
+
+// allowsFinalErrorDetail reports whether code may carry a model-derived suffix.
+func allowsFinalErrorDetail(code finalErrorCode) bool {
+	switch code {
+	case finalErrorInvalidProgram, finalErrorInvalidArguments:
+		return true
+	case finalErrorResourceLimit, finalErrorInternal:
+		return false
+	default:
+		return false
+	}
 }
 
 // decodePayload decodes exactly one UTF-8 JSON frame object.
@@ -712,11 +746,11 @@ func (c *childConn) writeFinal(result any) error {
 }
 
 // writeFinalError writes one child-owned terminal failure.
-func (c *childConn) writeFinalError(code finalErrorCode) error {
+func (c *childConn) writeFinalError(code finalErrorCode, detail string) error {
 	if c == nil || c.kind != connKindExec || c.state != stateReady {
 		return errIllegalState
 	}
-	payload, err := encodeFinalError(code)
+	payload, err := encodeFinalError(code, detail)
 	if err != nil {
 		return err
 	}

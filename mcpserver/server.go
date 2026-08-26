@@ -11,6 +11,7 @@ import (
 
 	"github.com/meigma/codemode"
 	"github.com/meigma/codemode/authz"
+	"github.com/meigma/codemode/internal/execution"
 )
 
 // searchInput is the exact search_api tool argument object.
@@ -123,7 +124,7 @@ func New(service Service, resolver InvocationResolver) (*mcp.Server, error) {
 	}, bound.describe)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:         "execute",
-		Description:  "Execute one Starlark program that defines def main(): with zero arguments, calls only names confirmed through search_api and describe_api inside main, and returns main's final result.",
+		Description:  "Execute one Starlark program that defines def main(): with zero arguments, calls only names confirmed through search_api and describe_api inside main, and returns main's final result. Starlark is not Python: sum, import, while, and f-strings are unavailable; load is disabled; print is discarded.",
 		OutputSchema: executeOutputSchema,
 	}, bound.execute)
 	return server, nil
@@ -199,7 +200,17 @@ func resolveSubject(ctx context.Context, resolver InvocationResolver) (authz.Sub
 }
 
 // projectToolError removes wrapped service detail and maps failures to fixed client-visible sentinels.
+// Approved SafeDetail for invalid program and invalid capability arguments is formatted as
+// "<sentinel>: <detail>". Arbitrary custom-Service wrapper text remains hidden.
 func projectToolError(err error) error {
+	if detail, ok := execution.SafeDetail(err); ok {
+		switch {
+		case errors.Is(err, codemode.ErrInvalidProgram):
+			return fmt.Errorf("%w: %s", codemode.ErrInvalidProgram, detail)
+		case errors.Is(err, codemode.ErrInvalidArguments):
+			return fmt.Errorf("%w: %s", codemode.ErrInvalidArguments, detail)
+		}
+	}
 	switch {
 	case errors.Is(err, codemode.ErrResourceLimit):
 		return codemode.ErrResourceLimit

@@ -71,6 +71,9 @@ type rawFinalErrorFrame struct {
 
 	// Code is the child-owned error class.
 	Code *finalErrorCode `json:"code"`
+
+	// Detail is the optional model-derived suffix token.
+	Detail json.RawMessage `json:"detail"`
 }
 
 // decodeType reads only the type discriminator without rejecting unknown fields.
@@ -197,7 +200,24 @@ func decodeFinalError(payload []byte) (finalErrorFrame, error) {
 	if raw.Code == nil || !knownFinalError(*raw.Code) {
 		return finalErrorFrame{}, errInvalidValue
 	}
-	return finalErrorFrame{Type: frameTypeFinalError, Code: *raw.Code}, nil
+	detail, err := decodeFinalErrorDetail(*raw.Code, raw.Detail)
+	if err != nil {
+		return finalErrorFrame{}, err
+	}
+	return finalErrorFrame{Type: frameTypeFinalError, Code: *raw.Code, Detail: detail}, nil
+}
+
+// decodeFinalErrorDetail accepts only a legal non-empty in-budget suffix.
+func decodeFinalErrorDetail(code finalErrorCode, raw json.RawMessage) (string, error) {
+	if raw == nil {
+		return "", nil
+	}
+	var detail string
+	if err := json.Unmarshal(raw, &detail); err != nil ||
+		detail == "" || len(detail) > maxDiagnosticBytes || !allowsFinalErrorDetail(code) {
+		return "", errInvalidValue
+	}
+	return detail, nil
 }
 
 // requireProtocolVersion rejects a missing or mismatched protocol version.

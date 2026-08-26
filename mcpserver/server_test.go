@@ -16,6 +16,7 @@ import (
 	"github.com/meigma/codemode"
 	"github.com/meigma/codemode/authz"
 	"github.com/meigma/codemode/authz/rego"
+	"github.com/meigma/codemode/internal/execution"
 	"github.com/meigma/codemode/mcpserver"
 	"github.com/meigma/codemode/mcpserver/mocks"
 )
@@ -102,6 +103,13 @@ func TestNewRegistersExactlyThreeTools(t *testing.T) {
 				"inside main",
 				"confirmed through search_api and describe_api",
 				"final result",
+				"Starlark is not Python",
+				"sum",
+				"import",
+				"while",
+				"f-strings",
+				"load is disabled",
+				"print is discarded",
 			},
 			assertOutput: requireExecuteOutputSchema,
 		},
@@ -436,6 +444,36 @@ func TestToolsProjectStableServiceErrors(t *testing.T) {
 					Once()
 			},
 			want: codemode.ErrInvalidArguments.Error(),
+		},
+		{
+			name:      "invalid program safe detail",
+			tool:      "execute",
+			arguments: map[string]any{"source": "broken"},
+			configure: func(service *mocks.MockService) {
+				service.EXPECT().
+					Execute(mock.Anything, authz.Subject{ID: "subject-1"}, codemode.Program("broken")).
+					Return(nil, fmt.Errorf("trusted parse: %w", execution.WithSafeDetail(
+						codemode.ErrInvalidProgram,
+						"<codemode>:1:1: got '=', want primary expression",
+					))).
+					Once()
+			},
+			want: "invalid program: <codemode>:1:1: got '=', want primary expression",
+		},
+		{
+			name:      "invalid arguments safe detail",
+			tool:      "execute",
+			arguments: map[string]any{"source": "args"},
+			configure: func(service *mocks.MockService) {
+				service.EXPECT().
+					Execute(mock.Anything, authz.Subject{ID: "subject-1"}, codemode.Program("args")).
+					Return(nil, fmt.Errorf("trusted args: %w", execution.WithSafeDetail(
+						codemode.ErrInvalidArguments,
+						"unknown argument \"keu\"",
+					))).
+					Once()
+			},
+			want: "invalid capability arguments: unknown argument \"keu\"",
 		},
 		{
 			name:      "permission denied",

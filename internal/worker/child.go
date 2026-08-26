@@ -10,11 +10,9 @@ import (
 	"github.com/meigma/codemode/internal/execution"
 )
 
-// errNativeAbort is the private interpreter-unwind sentinel returned when the
-// parent answers a native call with native_abort.
-//
-// It does not wrap or equal any execution.Err* sentinel, so Engine's default
-// classifyRuntimeError branch preserves it through multi-%w wrapping.
+// errNativeAbort is the private sentinel used to unwind the interpreter after
+// the parent answers a native call with native_abort. The connection state
+// remains authoritative because Engine intentionally coarsens unknown errors.
 var errNativeAbort = errors.New("native abort")
 
 // errChildService classifies a child protocol or internal service failure that
@@ -95,7 +93,7 @@ func serveExec(r io.Reader, w io.Writer, frame execFrame) error {
 		hasLimits:     true,
 	}
 	if len(frame.Source) > frame.Limits.MaxSourceBytes {
-		return conn.writeFinalError(finalErrorResourceLimit)
+		return conn.writeFinalError(finalErrorResourceLimit, "")
 	}
 	engine, err := execution.New(manifestBindings(frame.Manifest))
 	if err != nil {
@@ -106,6 +104,9 @@ func serveExec(r io.Reader, w io.Writer, frame execFrame) error {
 		nativeForwarder(conn),
 		executionLimits(frame.Limits),
 	)
+	if conn.state == stateDone {
+		return nil
+	}
 	if err != nil {
 		return writeExecutionError(conn, err)
 	}
@@ -168,14 +169,15 @@ func writeExecutionError(conn *childConn, err error) error {
 	if errors.Is(err, errChildService) {
 		return err
 	}
-	return conn.writeFinalError(finalErrorFrom(err))
+	code, detail := finalErrorFrom(err)
+	return conn.writeFinalError(code, detail)
 }
 
 // writeFinalResult writes a successful value or classifies a legal value-byte overflow.
 func writeFinalResult(conn *childConn, result any) error {
 	if err := conn.writeFinal(result); err != nil {
 		if code, ok := finalWriteCode(err); ok {
-			return conn.writeFinalError(code)
+			return conn.writeFinalError(code, "")
 		}
 		return err
 	}
@@ -195,15 +197,27 @@ func finalWriteCode(err error) (finalErrorCode, bool) {
 }
 
 // finalErrorFrom maps a classified Engine error onto a child-owned terminal code.
-func finalErrorFrom(err error) finalErrorCode {
+func finalErrorFrom(err error) (finalErrorCode, string) {
 	switch {
 	case errors.Is(err, execution.ErrInvalidProgram):
-		return finalErrorInvalidProgram
+		return finalErrorInvalidProgram, approvedSafeDetail(finalErrorInvalidProgram, err)
 	case errors.Is(err, execution.ErrInvalidArguments):
-		return finalErrorInvalidArguments
+		return finalErrorInvalidArguments, approvedSafeDetail(finalErrorInvalidArguments, err)
 	case errors.Is(err, execution.ErrResourceLimit):
-		return finalErrorResourceLimit
+		return finalErrorResourceLimit, ""
 	default:
-		return finalErrorInternal
+		return finalErrorInternal, ""
 	}
+}
+
+// approvedSafeDetail extracts contracted detail only for the matching approved code.
+func approvedSafeDetail(code finalErrorCode, err error) string {
+	if !allowsFinalErrorDetail(code) {
+		return ""
+	}
+	detail, ok := execution.SafeDetail(err)
+	if !ok {
+		return ""
+	}
+	return sanitizedFinalErrorDetail(code, detail)
 }

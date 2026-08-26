@@ -3,7 +3,9 @@ package execution
 import (
 	"errors"
 	"fmt"
+	"strings"
 
+	"go.starlark.net/resolve"
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
 
@@ -176,7 +178,7 @@ func callCapability(
 	canonical, bindingErr := binding.BindShape(input, args, kwargs)
 	if bindingErr != nil {
 		if errors.Is(bindingErr, binding.ErrInvalidArguments) {
-			return nil, fmt.Errorf("%w: %w", ErrInvalidArguments, bindingErr)
+			return nil, invalidArgumentDetail(bindingErr)
 		}
 		return nil, fmt.Errorf("%w: %w", ErrInternal, bindingErr)
 	}
@@ -188,22 +190,69 @@ func classifyRuntimeError(state *executionState, err error) error {
 	if state.stepLimited {
 		return ErrResourceLimit
 	}
-	switch {
-	case errors.Is(err, ErrInvalidArguments):
-		return ErrInvalidArguments
-	case errors.Is(err, ErrPermissionDenied):
-		return ErrPermissionDenied
-	case errors.Is(err, ErrPolicyFailure):
-		return ErrPolicyFailure
-	case errors.Is(err, ErrResourceLimit):
-		return ErrResourceLimit
-	case errors.Is(err, ErrCapabilityFailure):
-		return ErrCapabilityFailure
-	case errors.Is(err, ErrInternal):
-		return ErrInternal
-	case errors.Is(err, ErrInvalidProgram):
-		return ErrInvalidProgram
-	default:
-		return fmt.Errorf("%w: %w", ErrInvalidProgram, err)
+	if detail, ok := programDetail(err); ok {
+		return WithSafeDetail(ErrInvalidProgram, detail)
 	}
+	cause := unwrapEvalError(err)
+	switch {
+	case errors.Is(cause, ErrInvalidArguments):
+		return classifiedSafeDetail(ErrInvalidArguments, cause)
+	case errors.Is(cause, ErrPermissionDenied):
+		return ErrPermissionDenied
+	case errors.Is(cause, ErrPolicyFailure):
+		return ErrPolicyFailure
+	case errors.Is(cause, ErrResourceLimit):
+		return ErrResourceLimit
+	case errors.Is(cause, ErrCapabilityFailure):
+		return ErrCapabilityFailure
+	case errors.Is(cause, ErrInternal):
+		return ErrInternal
+	case errors.Is(cause, ErrInvalidProgram):
+		return classifiedSafeDetail(ErrInvalidProgram, cause)
+	default:
+		return ErrInvalidProgram
+	}
+}
+
+// unwrapEvalError returns the evaluator cause without reading EvalError.Msg.
+func unwrapEvalError(err error) error {
+	evalErr, ok := err.(*starlark.EvalError) //nolint:errorlint // Exact type excludes unrelated wrappers.
+	if !ok {
+		return err
+	}
+	return evalErr.Unwrap()
+}
+
+// classifiedSafeDetail reattaches an approved suffix to sentinel, or returns sentinel unchanged.
+func classifiedSafeDetail(sentinel error, err error) error {
+	detail, ok := SafeDetail(err)
+	if !ok {
+		return sentinel
+	}
+	return WithSafeDetail(sentinel, detail)
+}
+
+// programDetail reports a model-derived parse or resolve suffix for a direct evaluator error.
+func programDetail(err error) (string, bool) {
+	if syntaxErr, ok := err.(syntax.Error); ok { //nolint:errorlint // Exact type is the provenance boundary.
+		if strings.HasPrefix(syntaxErr.Msg, "internal error:") {
+			return "", false
+		}
+		return syntaxErr.Error(), true
+	}
+	list, ok := err.(resolve.ErrorList) //nolint:errorlint // Exact type is the provenance boundary.
+	if !ok || len(list) == 0 {
+		return "", false
+	}
+	return list[0].Error(), true
+}
+
+// invalidArgumentDetail attaches the binding suffix after the exact sentinel prefix, or stays coarse.
+func invalidArgumentDetail(err error) error {
+	prefix := binding.ErrInvalidArguments.Error() + ": "
+	suffix, ok := strings.CutPrefix(err.Error(), prefix)
+	if !ok {
+		return ErrInvalidArguments
+	}
+	return WithSafeDetail(ErrInvalidArguments, suffix)
 }

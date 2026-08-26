@@ -506,7 +506,7 @@ func TestRunnerFinalErrorTrailingByteKills(t *testing.T) {
 	runner := newTestRunner(t, testLimits(), nopDispatch())
 	var parentWrites bytes.Buffer
 	var childOut bytes.Buffer
-	payload, err := encodeFinalError(finalErrorInvalidProgram)
+	payload, err := encodeFinalError(finalErrorInvalidProgram, "")
 	require.NoError(t, err)
 	require.NoError(t, writeFrame(&childOut, payload, runner.readCap))
 	require.NoError(t, childOut.WriteByte('x'))
@@ -522,6 +522,71 @@ func TestRunnerFinalErrorTrailingByteKills(t *testing.T) {
 	require.ErrorIs(t, out.err, execution.ErrInternal)
 	assert.True(t, out.kill)
 	assert.NoError(t, out.retained)
+}
+
+// TestMapFinalErrorReconstructsApprovedDetail proves only approved codes regain a suffix.
+func TestMapFinalErrorReconstructsApprovedDetail(t *testing.T) {
+	tests := []struct {
+		// name identifies the mapped terminal frame.
+		name string
+
+		// frame is the child-owned terminal failure.
+		frame finalErrorFrame
+
+		// want is the coarse execution sentinel.
+		want error
+
+		// detail is the reconstructed suffix, if any.
+		detail string
+	}{
+		{
+			name: "invalid program reconstructs suffix",
+			frame: finalErrorFrame{
+				Code:   finalErrorInvalidProgram,
+				Detail: "<codemode>:3:7: got '=', want primary expression",
+			},
+			want:   execution.ErrInvalidProgram,
+			detail: "<codemode>:3:7: got '=', want primary expression",
+		},
+		{
+			name:   "invalid arguments reconstructs suffix",
+			frame:  finalErrorFrame{Code: finalErrorInvalidArguments, Detail: `unknown argument "keu"`},
+			want:   execution.ErrInvalidArguments,
+			detail: `unknown argument "keu"`,
+		},
+		{
+			name:  "code-only invalid program",
+			frame: finalErrorFrame{Code: finalErrorInvalidProgram},
+			want:  execution.ErrInvalidProgram,
+		},
+		{
+			name:  "resource limit stays bare",
+			frame: finalErrorFrame{Code: finalErrorResourceLimit, Detail: "hidden"},
+			want:  execution.ErrResourceLimit,
+		},
+		{
+			name:  "internal stays bare",
+			frame: finalErrorFrame{Code: finalErrorInternal, Detail: "hidden"},
+			want:  execution.ErrInternal,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := mapFinalError(tt.frame)
+
+			require.ErrorIs(t, err, tt.want)
+			assert.Equal(t, tt.want.Error(), err.Error())
+			detail, ok := execution.SafeDetail(err)
+			if tt.detail == "" {
+				assert.False(t, ok)
+				assert.Empty(t, detail)
+				return
+			}
+			require.True(t, ok)
+			assert.Equal(t, tt.detail, detail)
+		})
+	}
 }
 
 // TestRunnerProtocolViolationWritesNoAbort proves ErrProtocol kills without writing native_abort.

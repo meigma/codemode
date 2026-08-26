@@ -135,7 +135,17 @@ func (server *Server) Execute(ctx context.Context, subject authz.Subject, progra
 
 // projectExecutionError removes trusted execution causes at the root boundary.
 // It preserves only safe sentinels and documented context cancellation and deadline wrapping.
+// Contracted SafeDetail on invalid-program and invalid-arguments causes is rewrapped
+// onto the public sentinels; Error remains the coarse sentinel text.
 func projectExecutionError(err error) error {
+	if detail, ok := execution.SafeDetail(err); ok {
+		switch {
+		case errors.Is(err, execution.ErrInvalidProgram):
+			return execution.WithSafeDetail(ErrInvalidProgram, detail)
+		case errors.Is(err, execution.ErrInvalidArguments):
+			return execution.WithSafeDetail(ErrInvalidArguments, detail)
+		}
+	}
 	switch {
 	case errors.Is(err, execution.ErrInvalidProgram):
 		return ErrInvalidProgram

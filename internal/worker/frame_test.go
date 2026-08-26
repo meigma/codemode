@@ -211,7 +211,7 @@ func TestFrameEncodersProduceCompactDiscriminators(t *testing.T) {
 		{name: "final", encode: func() ([]byte, error) { return encodeFinal("ok") }, typ: frameTypeFinal},
 		{
 			name:   "final_error",
-			encode: func() ([]byte, error) { return encodeFinalError(finalErrorInvalidProgram) },
+			encode: func() ([]byte, error) { return encodeFinalError(finalErrorInvalidProgram, "") },
 			typ:    frameTypeFinalError,
 		},
 	}
@@ -226,6 +226,132 @@ func TestFrameEncodersProduceCompactDiscriminators(t *testing.T) {
 			decoded, err := decodePayload(payload)
 			require.NoError(t, err)
 			assertFrameType(t, decoded, tt.typ)
+		})
+	}
+}
+
+// TestEncodeFinalErrorRoundTripsApprovedDetail proves legal suffixes survive encode and decode.
+func TestEncodeFinalErrorRoundTripsApprovedDetail(t *testing.T) {
+	tests := []struct {
+		// name identifies the approved detail class.
+		name string
+
+		// code is the child-owned terminal class.
+		code finalErrorCode
+
+		// detail is the model-derived suffix.
+		detail string
+	}{
+		{
+			name:   "invalid program",
+			code:   finalErrorInvalidProgram,
+			detail: "<codemode>:3:7: got '=', want primary expression",
+		},
+		{
+			name:   "invalid arguments",
+			code:   finalErrorInvalidArguments,
+			detail: `unknown argument "keu"`,
+		},
+		{
+			name:   "max budget",
+			code:   finalErrorInvalidProgram,
+			detail: strings.Repeat("x", maxDiagnosticBytes),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload, err := encodeFinalError(tt.code, tt.detail)
+			require.NoError(t, err)
+			assert.Contains(t, string(payload), `"detail":`)
+
+			decoded, err := decodePayload(payload)
+			require.NoError(t, err)
+			got, ok := decoded.(finalErrorFrame)
+			require.True(t, ok)
+			assert.Equal(t, tt.code, got.Code)
+			assert.Equal(t, tt.detail, got.Detail)
+		})
+	}
+}
+
+// TestDecodeFinalErrorRejectsInvalidDetail proves empty, oversized, and illegal-code detail fail closed.
+func TestDecodeFinalErrorRejectsInvalidDetail(t *testing.T) {
+	tests := []struct {
+		// name identifies the illegal detail.
+		name string
+
+		// payload is the unframed JSON object.
+		payload string
+	}{
+		{
+			name:    "empty detail",
+			payload: `{"type":"final_error","code":"invalid_program","detail":""}`,
+		},
+		{
+			name:    "null detail",
+			payload: `{"type":"final_error","code":"invalid_program","detail":null}`,
+		},
+		{
+			name: "oversized detail",
+			payload: `{"type":"final_error","code":"invalid_program","detail":"` + strings.Repeat(
+				"a",
+				maxDiagnosticBytes+1,
+			) + `"}`,
+		},
+		{
+			name:    "illegal resource_limit detail",
+			payload: `{"type":"final_error","code":"resource_limit","detail":"hidden"}`,
+		},
+		{
+			name:    "illegal internal detail",
+			payload: `{"type":"final_error","code":"internal","detail":"hidden"}`,
+		},
+		{
+			name:    "null detail on illegal code",
+			payload: `{"type":"final_error","code":"internal","detail":null}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := decodePayload([]byte(tt.payload))
+
+			require.Error(t, err)
+			require.ErrorIs(t, err, errInvalidValue)
+		})
+	}
+}
+
+// TestEncodeFinalErrorFallsBackToCodeOnly proves illegal detail is dropped before write.
+func TestEncodeFinalErrorFallsBackToCodeOnly(t *testing.T) {
+	tests := []struct {
+		// name identifies the omitted detail.
+		name string
+
+		// code is the child-owned terminal class.
+		code finalErrorCode
+
+		// detail is the suffix that must not be written.
+		detail string
+	}{
+		{name: "absent detail", code: finalErrorInvalidProgram, detail: ""},
+		{name: "oversized detail", code: finalErrorInvalidProgram, detail: strings.Repeat("a", maxDiagnosticBytes+1)},
+		{name: "illegal code detail", code: finalErrorResourceLimit, detail: "hidden"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload, err := encodeFinalError(tt.code, tt.detail)
+			require.NoError(t, err)
+			assert.NotContains(t, string(payload), `"detail"`)
+
+			decoded, err := decodePayload(payload)
+			require.NoError(t, err)
+			got, ok := decoded.(finalErrorFrame)
+			require.True(t, ok)
+			assert.Equal(t, tt.code, got.Code)
+			assert.Empty(t, got.Detail)
 		})
 	}
 }
@@ -270,7 +396,7 @@ func TestProtocolAcceptsChildResourceLimit(t *testing.T) {
 			t.Errorf("child.read() error = %v", err)
 			return
 		}
-		if err := child.writeFinalError(finalErrorResourceLimit); err != nil {
+		if err := child.writeFinalError(finalErrorResourceLimit, ""); err != nil {
 			t.Errorf("child.writeFinalError() error = %v", err)
 		}
 	})
@@ -351,7 +477,7 @@ func TestProtocolTerminalFinalErrorAndAbort(t *testing.T) {
 				t.Errorf("child.read() error = %v", err)
 				return
 			}
-			if err := child.writeFinalError(finalErrorInvalidArguments); err != nil {
+			if err := child.writeFinalError(finalErrorInvalidArguments, ""); err != nil {
 				t.Errorf("child.writeFinalError() error = %v", err)
 			}
 		})
@@ -441,7 +567,7 @@ func TestProtocolRejectsIllegalStateTransitions(t *testing.T) {
 				require.NoError(t, child.writeFinal(nil))
 				_, err = parent.read()
 				require.NoError(t, err)
-				err = child.writeFinalError(finalErrorInternal)
+				err = child.writeFinalError(finalErrorInternal, "")
 				require.Error(t, err)
 				require.ErrorIs(t, err, errIllegalState)
 			},
@@ -459,7 +585,7 @@ func TestProtocolRejectsIllegalStateTransitions(t *testing.T) {
 				require.NoError(t, parent.writeNativeAbort())
 				_, err = child.read()
 				require.NoError(t, err)
-				err = child.writeFinalError(finalErrorInternal)
+				err = child.writeFinalError(finalErrorInternal, "")
 				require.Error(t, err)
 				require.ErrorIs(t, err, errIllegalState)
 			},
@@ -661,7 +787,7 @@ func TestFrameLimitsCheckedCaps(t *testing.T) {
 
 	abort, err := encodeNativeAbort()
 	require.NoError(t, err)
-	finalError, err := encodeFinalError(finalErrorInvalidArguments)
+	finalError, err := encodeFinalError(finalErrorInvalidArguments, "")
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, childCap, uint32(len(finalError)))
 	assert.GreaterOrEqual(t, parentCap, uint32(len(abort)))
@@ -669,15 +795,26 @@ func TestFrameLimitsCheckedCaps(t *testing.T) {
 	assert.Greater(t, parentCap, uint32(maxValueBytes))
 	assert.Greater(t, execCap, uint32(len(manifestJSON(t, manifest))))
 
+	escapedDetail, err := encodeFinalError(finalErrorInvalidArguments, strings.Repeat("\"", maxDiagnosticBytes))
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, childCap, uint32(len(escapedDetail)))
+	wantFinalError, err := finalErrorPayloadCap()
+	require.NoError(t, err)
+	assert.Equal(t, wantFinalError, childCap)
+
+	largeValueBytes := maxDiagnosticBytes * jsonStringEscapeMax
+	baseCap, err := childPayloadCap(largeValueBytes, manifest)
+	require.NoError(t, err)
+
 	longer := []manifestEntry{{
 		ID:    strings.Repeat("a", 40),
 		Name:  "records.lookup",
 		Input: manifest[0].Input,
 	}}
 	require.NoError(t, validateManifest(longer))
-	longerCap, err := childPayloadCap(maxValueBytes, longer)
+	longerCap, err := childPayloadCap(largeValueBytes, longer)
 	require.NoError(t, err)
-	assert.Greater(t, longerCap, childCap)
+	assert.Greater(t, longerCap, baseCap)
 
 	escaped := []manifestEntry{{
 		ID:    strings.Repeat("\"", 40),
@@ -685,7 +822,7 @@ func TestFrameLimitsCheckedCaps(t *testing.T) {
 		Input: manifest[0].Input,
 	}}
 	require.NoError(t, validateManifest(escaped))
-	escapedCap, err := childPayloadCap(maxValueBytes, escaped)
+	escapedCap, err := childPayloadCap(largeValueBytes, escaped)
 	require.NoError(t, err)
 	assert.Greater(t, escapedCap, longerCap)
 
