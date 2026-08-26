@@ -60,3 +60,6 @@ Verification:
 The review identified recursive depth amplification in upstream JSON encode/decode. The worker process contains a runtime abort to one execution, but a correct remediation must cover both directions and define an internal-compute depth contract. Filed follow-up issue #45 instead of adding a decode-only guard to #42.
 
 Commit `9384308` is pushed. PR: https://github.com/meigma/codemode/pull/46. Follow-up: https://github.com/meigma/codemode/issues/45.
+
+## 2026-08-25 21:20 — Pull request checks
+PR #46 is mergeable. GitHub CI, GitHub Pages, and Kusari Inspector passed; the Pages deployment job was intentionally skipped.
