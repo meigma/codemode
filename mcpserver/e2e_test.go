@@ -326,6 +326,10 @@ func TestActualMCPSecureLoop(t *testing.T) {
 	session, err := client.Connect(t.Context(), clientTransport, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = session.Close() })
+	initialized := session.InitializeResult()
+	require.NotNil(t, initialized)
+	require.NotNil(t, initialized.ServerInfo)
+	assert.Equal(t, "2", initialized.ServerInfo.Version)
 
 	listed, err := session.ListTools(t.Context(), &mcp.ListToolsParams{})
 	require.NoError(t, err)
@@ -346,14 +350,15 @@ func TestActualMCPSecureLoop(t *testing.T) {
 	require.NoError(t, err)
 	assertSuccessfulTool(t, searched)
 	assertNoCanary(t, searched)
-	searchResults := decodeStructured[[]codemode.SearchResult](t, searched)
-	require.Len(t, searchResults, 1)
-	assert.Equal(t, "records.lookup", searchResults[0].Name)
-	assert.Equal(t, "records.lookup(*, key: str, limit: int | None)", searchResults[0].Signature)
-	assert.Equal(t, "Look up one record by key.", searchResults[0].Summary)
+	searchResponse := decodeStructured[codemode.SearchResponse](t, searched)
+	require.Len(t, searchResponse.Results, 1)
+	assert.False(t, searchResponse.Truncated)
+	assert.Equal(t, "records.lookup", searchResponse.Results[0].Name)
+	assert.Equal(t, "records.lookup(*, key: str, limit: int | None)", searchResponse.Results[0].Signature)
+	assert.Equal(t, "Look up one record by key.", searchResponse.Results[0].Summary)
 	assertDiscoveryOmitsGoTypeNames(t, searched, "lookupResult", "StatusResult")
-	requireNonNullJSONArray(t, searched.StructuredContent)
-	requireJSONTextMirror(t, searched, searchResults)
+	requireNonNullSearchResults(t, searched)
+	requireJSONTextMirror(t, searched, searchResponse)
 
 	described, err := session.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      "describe_api",
@@ -389,13 +394,14 @@ func TestActualMCPSecureLoop(t *testing.T) {
 	require.NoError(t, err)
 	assertSuccessfulTool(t, statusSearch)
 	assertNoCanary(t, statusSearch)
-	statusResults := decodeStructured[[]codemode.SearchResult](t, statusSearch)
-	require.Len(t, statusResults, 1)
-	assert.Equal(t, "health.status", statusResults[0].Name)
-	assert.Equal(t, "health.status()", statusResults[0].Signature)
+	statusResponse := decodeStructured[codemode.SearchResponse](t, statusSearch)
+	require.Len(t, statusResponse.Results, 1)
+	assert.False(t, statusResponse.Truncated)
+	assert.Equal(t, "health.status", statusResponse.Results[0].Name)
+	assert.Equal(t, "health.status()", statusResponse.Results[0].Signature)
 	assertDiscoveryOmitsGoTypeNames(t, statusSearch, "lookupResult", "StatusResult")
-	requireNonNullJSONArray(t, statusSearch.StructuredContent)
-	requireJSONTextMirror(t, statusSearch, statusResults)
+	requireNonNullSearchResults(t, statusSearch)
+	requireJSONTextMirror(t, statusSearch, statusResponse)
 
 	statusDescribed, err := session.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      "describe_api",
@@ -421,7 +427,7 @@ func TestActualMCPSecureLoop(t *testing.T) {
 	require.NoError(t, err)
 	assertSuccessfulTool(t, emptySearch)
 	assertNoCanary(t, emptySearch)
-	requireSuccessfulStructuredValue(t, emptySearch, []any{})
+	requireSuccessfulStructuredValue(t, emptySearch, map[string]any{"results": []any{}, "truncated": false})
 
 	hidden, err := session.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      "describe_api",
@@ -533,6 +539,10 @@ func TestActualMCPCompositeProgram(t *testing.T) {
 	session, err := client.Connect(t.Context(), clientTransport, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = session.Close() })
+	initialized := session.InitializeResult()
+	require.NotNil(t, initialized)
+	require.NotNil(t, initialized.ServerInfo)
+	assert.Equal(t, "2", initialized.ServerInfo.Version)
 
 	const (
 		compositeSignature = "records.search(*, count: int, active: bool, score: float, label: str | None)"
@@ -545,11 +555,12 @@ func TestActualMCPCompositeProgram(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assertSuccessfulTool(t, searched)
-	searchResults := decodeStructured[[]codemode.SearchResult](t, searched)
-	require.Len(t, searchResults, 1)
-	assert.Equal(t, "records.search", searchResults[0].Name)
-	assert.Equal(t, compositeSignature, searchResults[0].Signature)
-	assert.Equal(t, "Search records and return nested items.", searchResults[0].Summary)
+	searchResponse := decodeStructured[codemode.SearchResponse](t, searched)
+	require.Len(t, searchResponse.Results, 1)
+	assert.False(t, searchResponse.Truncated)
+	assert.Equal(t, "records.search", searchResponse.Results[0].Name)
+	assert.Equal(t, compositeSignature, searchResponse.Results[0].Signature)
+	assert.Equal(t, "Search records and return nested items.", searchResponse.Results[0].Summary)
 	assertDiscoveryOmitsGoTypeNames(t, searched, "NamedItem", "searchOutput")
 
 	described, err := session.CallTool(t.Context(), &mcp.CallToolParams{
@@ -843,4 +854,14 @@ func requireNonNullDescribeFieldArrays(t *testing.T, result *mcp.CallToolResult)
 	object := requireJSONObject(t, result.StructuredContent)
 	requireNonNullJSONArray(t, object["input"])
 	requireNonNullJSONArray(t, object["output"])
+}
+
+// requireNonNullSearchResults requires search structured content to carry a
+// non-null results array and a Boolean truncated flag.
+func requireNonNullSearchResults(t *testing.T, result *mcp.CallToolResult) {
+	t.Helper()
+	object := requireJSONObject(t, result.StructuredContent)
+	requireNonNullJSONArray(t, object["results"])
+	_, ok := object["truncated"].(bool)
+	require.True(t, ok, "truncated must be a Boolean")
 }

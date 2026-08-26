@@ -32,8 +32,10 @@ attempted native calls, concurrent workers, and the depth and encoded
 size of every value that crosses the worker boundary.
 `MaxIntermediateValueBytes` is the cumulative encoded size of successful
 parent-to-child native-result value bodies per execution, independent of
-the per-value `MaxValueBytes` bound. Search query bytes and
-search result counts are bounded separately in the parent. An elapsed deadline
+the per-value `MaxValueBytes` bound. Search query bytes, result counts, and the
+structured search response size are bounded separately in the parent. The
+structured-response bound excludes the surrounding JSON-RPC envelope and the
+MCP SDK's JSON text mirror. An elapsed deadline
 or request cancellation kills and reaps the worker. Each native call whose
 arguments bind successfully is rebound in the parent and passes through the
 host-supplied `authz.Authorizer` before its handler runs. The MCP adapter

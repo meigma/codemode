@@ -68,13 +68,16 @@ func New(service Service, resolver InvocationResolver) (*mcp.Server, error) {
 		return nil, fmt.Errorf("%w: invocation resolver is required", codemode.ErrInvalidRegistration)
 	}
 
-	searchOutputSchema, schemaErr := jsonschema.For[[]codemode.SearchResult](nil)
+	searchOutputSchema, schemaErr := jsonschema.For[codemode.SearchResponse](nil)
 	if schemaErr != nil {
 		return nil, fmt.Errorf("%w: search_api output schema: %w", codemode.ErrInvalidRegistration, schemaErr)
 	}
-	schemaErr = requireNonNullArray(searchOutputSchema)
+	if searchOutputSchema == nil || searchOutputSchema.Properties == nil {
+		return nil, fmt.Errorf("%w: search_api output schema: missing properties", codemode.ErrInvalidRegistration)
+	}
+	schemaErr = requireNonNullArray(searchOutputSchema.Properties["results"])
 	if schemaErr != nil {
-		return nil, fmt.Errorf("%w: search_api output schema: %w", codemode.ErrInvalidRegistration, schemaErr)
+		return nil, fmt.Errorf("%w: search_api output schema: results: %w", codemode.ErrInvalidRegistration, schemaErr)
 	}
 	schemaErr = requireResolvedSchema(searchOutputSchema)
 	if schemaErr != nil {
@@ -111,10 +114,10 @@ func New(service Service, resolver InvocationResolver) (*mcp.Server, error) {
 	}
 
 	bound := &adapter{service: service, resolver: resolver}
-	server := mcp.NewServer(&mcp.Implementation{Name: "codemode", Version: "1"}, nil)
+	server := mcp.NewServer(&mcp.Implementation{Name: "codemode", Version: "2"}, nil)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:         "search_api",
-		Description:  "Search enabled names and summaries with a short literal substring. Retry an empty result with a shorter term.",
+		Description:  "Search enabled capabilities using task, resource, or exact-name vocabulary. Results are relevance-ranked. Pass the exact returned name to describe_api. If truncated is true and no result fits, submit a more specific task/resource query.",
 		OutputSchema: searchOutputSchema,
 	}, bound.search)
 	mcp.AddTool(server, &mcp.Tool{
@@ -135,15 +138,15 @@ func (bound *adapter) search(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	input searchInput,
-) (*mcp.CallToolResult, []codemode.SearchResult, error) {
-	outcome := runToolOperation(func() ([]codemode.SearchResult, error) {
+) (*mcp.CallToolResult, codemode.SearchResponse, error) {
+	outcome := runToolOperation(func() (codemode.SearchResponse, error) {
 		if _, err := resolveSubject(ctx, bound.resolver); err != nil {
-			return nil, err
+			return codemode.SearchResponse{}, err
 		}
 		return bound.service.Search(input.Query)
 	})
 	if outcome.err == nil {
-		outcome.value = nonNilSlice(outcome.value)
+		outcome.value.Results = nonNilSlice(outcome.value.Results)
 	}
 	return nil, outcome.value, outcome.err
 }

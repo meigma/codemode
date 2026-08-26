@@ -71,9 +71,10 @@ func main() {
 	builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll()})
 
 	codemode.Register(builder, codemode.Capability[lookupInput, lookupOutput]{
-		Name:    "records.lookup",
-		Summary: "Look up one record by key.",
-		Handler: lookup,
+		Name:        "records.lookup",
+		Summary:     "Look up one record by key.",
+		SearchTerms: []string{"fetch entry"},
+		Handler:     lookup,
 	})
 
 	server, err := builder.Build()
@@ -100,8 +101,9 @@ process is the authentication boundary. A multi-user host must not use
 `Build` supplies bounded defaults for each zero-valued `Limits` field. It also
 reports all invalid registrations together. An omitted capability `ID` defaults
 to `Name`; set `ID` explicitly before writing authorization policy or deployment
-filters that must survive a capability rename. An omitted `Description`
-defaults to `Summary`.
+filters that must survive a capability rename. `SearchTerms` supplies
+discovery-only task and resource vocabulary; it does not create callable names.
+An omitted `Description` defaults to `Summary`.
 
 ## Build and configure the server
 
@@ -129,7 +131,9 @@ Agents that use the `mcpServers` configuration shape accept:
 
 Restart or reload the agent's MCP servers.
 
-Ask the agent to search for a record capability.
+Ask the agent to search for a capability that can `fetch entry`. This phrase
+comes from `SearchTerms`, so the agent can discover `records.lookup` even though
+the phrase does not appear in its name or summary.
 
 Ask the agent to call `records.lookup` with `key="alpha"` and `limit=2`. The
 agent can use `search_api`, `describe_api`, and `execute`. The final structured

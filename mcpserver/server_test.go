@@ -86,8 +86,14 @@ func TestNewRegistersExactlyThreeTools(t *testing.T) {
 		assertOutput func(*testing.T, map[string]any)
 	}{
 		{
-			name:         "search_api",
-			cues:         []string{"short literal substring", "shorter term"},
+			name: "search_api",
+			cues: []string{
+				"task, resource, or exact-name vocabulary",
+				"relevance-ranked",
+				"exact returned name to describe_api",
+				"truncated is true",
+				"more specific task/resource query",
+			},
 			assertOutput: requireSearchAPIOutputSchema,
 		},
 		{
@@ -178,10 +184,12 @@ func TestToolsResolveSubjectBeforeServiceWork(t *testing.T) {
 		events = append(events, "resolve")
 		return authz.Subject{ID: "subject-1"}, nil
 	}).Times(3)
-	service.EXPECT().Search("lookup").RunAndReturn(func(string) ([]codemode.SearchResult, error) {
+	service.EXPECT().Search("lookup").RunAndReturn(func(string) (codemode.SearchResponse, error) {
 		events = append(events, "search")
-		return []codemode.SearchResult{
-			{Name: "records.lookup", Signature: "records.lookup()", Summary: "lookup"},
+		return codemode.SearchResponse{
+			Results: []codemode.SearchResult{
+				{Name: "records.lookup", Signature: "records.lookup()", Summary: "lookup"},
+			},
 		}, nil
 	}).Once()
 	service.EXPECT().
@@ -238,7 +246,7 @@ func TestToolsIgnoreUntrustedClientMetadata(t *testing.T) {
 	service := mocks.NewMockService(t)
 	resolver := mocks.NewMockInvocationResolver(t)
 	resolver.EXPECT().Resolve(mock.Anything).Return(authz.Subject{ID: "subject-1"}, nil).Once()
-	service.EXPECT().Search("lookup").Return([]codemode.SearchResult{}, nil).Once()
+	service.EXPECT().Search("lookup").Return(codemode.SearchResponse{Results: []codemode.SearchResult{}}, nil).Once()
 	session := newTestSession(t, service, resolver)
 
 	result, err := session.client.CallTool(t.Context(), &mcp.CallToolParams{
@@ -249,7 +257,7 @@ func TestToolsIgnoreUntrustedClientMetadata(t *testing.T) {
 
 	require.NoError(t, err)
 	require.False(t, result.IsError)
-	assert.Equal(t, []any{}, result.StructuredContent)
+	assert.Equal(t, map[string]any{"results": []any{}, "truncated": false}, result.StructuredContent)
 }
 
 // TestToolsSerializeSuccessfulEmptySlicesAsArrays proves successful nil and empty
@@ -276,34 +284,64 @@ func TestToolsSerializeSuccessfulEmptySlicesAsArrays(t *testing.T) {
 			tool:      "search_api",
 			arguments: map[string]any{"query": "lookup"},
 			configure: func(service *mocks.MockService) {
-				service.EXPECT().Search("lookup").Return(nil, nil).Once()
+				service.EXPECT().Search("lookup").Return(codemode.SearchResponse{}, nil).Once()
 			},
-			want: []any{},
+			want: map[string]any{"results": []any{}, "truncated": false},
 		},
 		{
 			name:      "search empty results",
 			tool:      "search_api",
 			arguments: map[string]any{"query": "lookup"},
 			configure: func(service *mocks.MockService) {
-				service.EXPECT().Search("lookup").Return([]codemode.SearchResult{}, nil).Once()
+				service.EXPECT().Search("lookup").Return(codemode.SearchResponse{
+					Results: []codemode.SearchResult{},
+				}, nil).Once()
 			},
-			want: []any{},
+			want: map[string]any{"results": []any{}, "truncated": false},
 		},
 		{
 			name:      "search populated results",
 			tool:      "search_api",
 			arguments: map[string]any{"query": "lookup"},
 			configure: func(service *mocks.MockService) {
-				service.EXPECT().Search("lookup").Return([]codemode.SearchResult{
-					{Name: "records.lookup", Signature: "records.lookup()", Summary: "lookup"},
+				service.EXPECT().Search("lookup").Return(codemode.SearchResponse{
+					Results: []codemode.SearchResult{
+						{Name: "records.lookup", Signature: "records.lookup()", Summary: "lookup"},
+					},
 				}, nil).Once()
 			},
-			want: []any{
-				map[string]any{
-					"name":      "records.lookup",
-					"signature": "records.lookup()",
-					"summary":   "lookup",
+			want: map[string]any{
+				"results": []any{
+					map[string]any{
+						"name":      "records.lookup",
+						"signature": "records.lookup()",
+						"summary":   "lookup",
+					},
 				},
+				"truncated": false,
+			},
+		},
+		{
+			name:      "search truncated results",
+			tool:      "search_api",
+			arguments: map[string]any{"query": "lookup"},
+			configure: func(service *mocks.MockService) {
+				service.EXPECT().Search("lookup").Return(codemode.SearchResponse{
+					Results: []codemode.SearchResult{
+						{Name: "records.lookup", Signature: "records.lookup()", Summary: "lookup"},
+					},
+					Truncated: true,
+				}, nil).Once()
+			},
+			want: map[string]any{
+				"results": []any{
+					map[string]any{
+						"name":      "records.lookup",
+						"signature": "records.lookup()",
+						"summary":   "lookup",
+					},
+				},
+				"truncated": true,
 			},
 		},
 		{
@@ -506,7 +544,7 @@ func TestToolsProjectStableServiceErrors(t *testing.T) {
 			configure: func(service *mocks.MockService) {
 				service.EXPECT().
 					Search("oversized").
-					Return(nil, fmt.Errorf("trusted budget: %w", codemode.ErrResourceLimit)).
+					Return(codemode.SearchResponse{}, fmt.Errorf("trusted budget: %w", codemode.ErrResourceLimit)).
 					Once()
 			},
 			want: codemode.ErrResourceLimit.Error(),
@@ -552,7 +590,10 @@ func TestToolsProjectStableServiceErrors(t *testing.T) {
 			tool:      "search_api",
 			arguments: map[string]any{"query": "lookup"},
 			configure: func(service *mocks.MockService) {
-				service.EXPECT().Search("lookup").Return(nil, errors.New("trusted stack dump")).Once()
+				service.EXPECT().
+					Search("lookup").
+					Return(codemode.SearchResponse{}, errors.New("trusted stack dump")).
+					Once()
 			},
 			want: codemode.ErrInternal.Error(),
 		},
@@ -645,7 +686,7 @@ func TestToolsSanitizePanics(t *testing.T) {
 				resolver.EXPECT().Resolve(mock.Anything).Return(authz.Subject{ID: "subject-1"}, nil).Once()
 				service.EXPECT().Search("lookup").Run(func(string) {
 					panic("trusted service panic")
-				}).Return(nil, nil).Once()
+				}).Return(codemode.SearchResponse{}, nil).Once()
 			},
 		},
 	}
@@ -692,6 +733,10 @@ func newTestSession(t *testing.T, service mcpserver.Service, resolver mcpserver.
 	t.Cleanup(func() {
 		_ = clientSession.Close()
 	})
+	initialized := clientSession.InitializeResult()
+	require.NotNil(t, initialized)
+	require.NotNil(t, initialized.ServerInfo)
+	assert.Equal(t, "2", initialized.ServerInfo.Version)
 	return &testSession{client: clientSession}
 }
 
@@ -729,11 +774,17 @@ func listedOutputSchema(t *testing.T, tools []*mcp.Tool, name string) map[string
 	return requireJSONObject(t, listedTool(t, tools, name).OutputSchema)
 }
 
-// requireSearchAPIOutputSchema requires search_api to advertise a non-null SearchResult array.
+// requireSearchAPIOutputSchema requires search_api to advertise an object whose
+// required results array is non-null and whose truncated flag is Boolean.
 func requireSearchAPIOutputSchema(t *testing.T, schema map[string]any) {
 	t.Helper()
-	requireNonNullJSONType(t, schema, "array")
-	requireSearchResultItemSchema(t, schema["items"])
+	requireNonNullJSONType(t, schema, "object")
+	requireRequiredNames(t, schema, "results", "truncated")
+	properties := requireJSONObject(t, schema["properties"])
+	results := requireJSONObject(t, properties["results"])
+	requireNonNullJSONType(t, results, "array")
+	requireSearchResultItemSchema(t, results["items"])
+	requireNonNullJSONType(t, requireJSONObject(t, properties["truncated"]), "boolean")
 }
 
 // requireDescribeAPIOutputSchema requires describe_api to advertise an object whose

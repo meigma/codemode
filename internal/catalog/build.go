@@ -3,6 +3,7 @@ package catalog
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -26,6 +27,9 @@ var (
 type candidate struct {
 	// entry contains copied metadata, the supplied plan, and the handler adapter.
 	entry Entry
+
+	// searchTerms is the cloned discovery vocabulary excluded from disabled documents.
+	searchTerms []string
 }
 
 // Build validates every registration, applies static filtering once, and returns an immutable catalog.
@@ -36,64 +40,114 @@ func Build(registrations []Registration, options Options) (*Catalog, error) {
 	if options.MaxSearchResults <= 0 {
 		return nil, fmt.Errorf("%w: MaxSearchResults must be positive", ErrInvalidRegistration)
 	}
-
-	candidates := make([]candidate, 0, len(registrations))
-	ids := make(map[string]struct{}, len(registrations))
-	names := make(map[string]struct{}, len(registrations))
-	for index, registration := range registrations {
-		if err := ValidateRegistration(registration); err != nil {
-			return nil, fmt.Errorf("%w: registration %d: %w", ErrInvalidRegistration, index, err)
-		}
-		if _, duplicate := ids[registration.ID]; duplicate {
-			return nil, fmt.Errorf("%w: duplicate ID %q", ErrInvalidRegistration, registration.ID)
-		}
-		if _, duplicate := names[registration.Name]; duplicate {
-			return nil, fmt.Errorf("%w: duplicate name %q", ErrInvalidRegistration, registration.Name)
-		}
-		ids[registration.ID] = struct{}{}
-		names[registration.Name] = struct{}{}
-		candidates = append(candidates, candidate{entry: Entry{
-			ID:            registration.ID,
-			Name:          registration.Name,
-			Summary:       registration.Summary,
-			Description:   registration.Description,
-			Plan:          registration.Plan,
-			Invoke:        registration.Invoke,
-			signature:     registration.Plan.Signature(registration.Name),
-			searchName:    strings.ToLower(registration.Name),
-			searchSummary: strings.ToLower(registration.Summary),
-			inputShape:    registration.Plan.InputShape(),
-			outputShape:   registration.Plan.OutputShape(),
-		}})
+	if len(registrations) > maxSupportedRegistrations {
+		return nil, fmt.Errorf(
+			"%w: %d registrations exceed the %d capability limit",
+			ErrInvalidRegistration,
+			len(registrations),
+			maxSupportedRegistrations,
+		)
 	}
-	if err := validateNamespaceCollisions(names); err != nil {
+
+	candidates, ids, names, err := collectCandidates(registrations)
+	if err != nil {
 		return nil, err
 	}
-
+	if collisionErr := validateNamespaceCollisions(names); collisionErr != nil {
+		return nil, collisionErr
+	}
 	disabled, err := validateDisabled(options.DisabledCapabilities, ids)
 	if err != nil {
 		return nil, err
 	}
-	enabled := make([]Entry, 0, len(candidates)-len(disabled))
-	for _, candidate := range candidates {
-		if _, isDisabled := disabled[candidate.entry.ID]; isDisabled {
-			continue
-		}
-		enabled = append(enabled, candidate.entry)
+	enabled, searchTerms := filterEnabled(candidates, disabled)
+	search, err := compileSearchIndex(enabled, searchTerms)
+	if err != nil {
+		return nil, err
 	}
-	sort.Slice(enabled, func(left int, right int) bool {
-		return enabled[left].Name < enabled[right].Name
-	})
-
 	catalog := &Catalog{
 		enabled:             enabled,
 		byName:              make(map[string]int, len(enabled)),
 		byID:                make(map[string]int, len(enabled)),
 		namespaces:          make([]NamespaceBinding, 0, len(enabled)),
+		search:              search,
 		maxSearchQueryBytes: options.MaxSearchQueryBytes,
 		maxSearchResults:    options.MaxSearchResults,
 	}
-	for index, entry := range enabled {
+	indexCatalog(catalog)
+	return catalog, nil
+}
+
+// collectCandidates validates registrations, enforces searchable-metadata and identity uniqueness, and copies owned entries.
+func collectCandidates(
+	registrations []Registration,
+) ([]candidate, map[string]struct{}, map[string]struct{}, error) {
+	candidates := make([]candidate, 0, len(registrations))
+	ids := make(map[string]struct{}, len(registrations))
+	names := make(map[string]struct{}, len(registrations))
+	searchableBytes := 0
+	for index, registration := range registrations {
+		if err := ValidateRegistration(registration); err != nil {
+			return nil, nil, nil, fmt.Errorf("%w: registration %d: %w", ErrInvalidRegistration, index, err)
+		}
+		searchableBytes += searchableMetadataBytes(registration)
+		if searchableBytes > maxSearchableMetadataBytes {
+			return nil, nil, nil, fmt.Errorf(
+				"%w: searchable metadata exceeds %d bytes",
+				ErrInvalidRegistration,
+				maxSearchableMetadataBytes,
+			)
+		}
+		if _, duplicate := ids[registration.ID]; duplicate {
+			return nil, nil, nil, fmt.Errorf("%w: duplicate ID %q", ErrInvalidRegistration, registration.ID)
+		}
+		if _, duplicate := names[registration.Name]; duplicate {
+			return nil, nil, nil, fmt.Errorf("%w: duplicate name %q", ErrInvalidRegistration, registration.Name)
+		}
+		ids[registration.ID] = struct{}{}
+		names[registration.Name] = struct{}{}
+		candidates = append(candidates, candidate{
+			entry: Entry{
+				ID:          registration.ID,
+				Name:        registration.Name,
+				Summary:     registration.Summary,
+				Description: registration.Description,
+				Plan:        registration.Plan,
+				Invoke:      registration.Invoke,
+				signature:   registration.Plan.Signature(registration.Name),
+				inputShape:  registration.Plan.InputShape(),
+				outputShape: registration.Plan.OutputShape(),
+			},
+			searchTerms: slices.Clone(registration.SearchTerms),
+		})
+	}
+	return candidates, ids, names, nil
+}
+
+// filterEnabled drops disabled candidates and returns name-sorted enabled entries aligned with search terms.
+func filterEnabled(candidates []candidate, disabled map[string]struct{}) ([]Entry, [][]string) {
+	enabledCandidates := make([]candidate, 0, len(candidates)-len(disabled))
+	for _, current := range candidates {
+		if _, isDisabled := disabled[current.entry.ID]; isDisabled {
+			continue
+		}
+		enabledCandidates = append(enabledCandidates, current)
+	}
+	sort.Slice(enabledCandidates, func(left int, right int) bool {
+		return enabledCandidates[left].entry.Name < enabledCandidates[right].entry.Name
+	})
+	enabled := make([]Entry, len(enabledCandidates))
+	searchTerms := make([][]string, len(enabledCandidates))
+	for index, current := range enabledCandidates {
+		enabled[index] = current.entry
+		searchTerms[index] = current.searchTerms
+	}
+	return enabled, searchTerms
+}
+
+// indexCatalog fills exact-name, exact-ID, and namespace indexes from enabled entries.
+func indexCatalog(catalog *Catalog) {
+	for index, entry := range catalog.enabled {
 		catalog.byName[entry.Name] = index
 		catalog.byID[entry.ID] = index
 		segments := strings.Split(entry.Name, ".")
@@ -103,7 +157,6 @@ func Build(registrations []Registration, options Options) (*Catalog, error) {
 			Capability: entry,
 		})
 	}
-	return catalog, nil
 }
 
 // ValidateRegistration reports whether one copied registration has valid metadata, a compiled plan, and a handler.
@@ -125,6 +178,9 @@ func ValidateRegistration(registration Registration) error {
 	}
 	if registration.Invoke == nil {
 		return errors.New("handler must not be nil")
+	}
+	if err := validateSearchTerms(registration.SearchTerms); err != nil {
+		return err
 	}
 	return nil
 }

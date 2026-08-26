@@ -57,9 +57,27 @@ to perform that setup; `IsWorker` does not serve worker mode.
 | --- | --- |
 | `ID CapabilityID` | Stable deployment and policy identity. An empty ID defaults to `Name`; explicit IDs must have no surrounding whitespace and must be unique. An explicit `ID` preserves policy and filter identity across `Name` changes. |
 | `Name CapabilityName` | A unique dotted Starlark name. A complete capability name cannot also be another capability's namespace. |
-| `Summary string` | Non-empty compact text searched by `Search`, with no surrounding whitespace. |
-| `Description string` | Detail returned by `Describe`. An empty value defaults to `Summary`; an explicit value must have no surrounding whitespace. |
+| `Summary string` | Non-empty compact text used by `Search` and returned by discovery, with no surrounding whitespace. |
+| `Description string` | Detail returned by `Describe` and used by `Search`. An empty value defaults to `Summary`; an explicit value must have no surrounding whitespace. |
+| `SearchTerms []string` | Optional alternative task and resource phrases used only by `Search`. |
 | `Handler Handler[Input, Output]` | A non-nil function called after argument binding and authorization. |
+
+`SearchTerms` is discovery-only metadata. `Register` clones the slice. Search
+terms are not returned by `Search` or `Describe`, are not callable aliases, and
+are not accepted as names by `Describe` or `Execute`. Callers can still infer
+indexed vocabulary by probing search results. Do not include secrets,
+credentials, policy facts, tenant identifiers, or sensitive examples.
+
+A capability can register at most 16 non-empty search-term phrases with no
+surrounding whitespace. Their combined raw size must not exceed 1,024 bytes.
+For example:
+
+```go
+SearchTerms: []string{
+	"fetch entry",
+	"find stored item",
+},
+```
 
 `Handler[Input, Output]` has this signature:
 
@@ -169,9 +187,12 @@ Output-depth, per-value byte, and aggregate intermediate-byte exhaustion map to
 
 `Build` returns all capability-specific registration failures as one joined
 error. It also rejects a missing authorizer, negative signed limits, namespace
-collisions, duplicate disabled IDs, and disabled IDs that do not match a
-registered capability. It re-executes the current binary and performs a fixed
-five-second private worker probe only after construction validation succeeds.
+collisions, duplicate disabled IDs, disabled IDs that do not match a registered
+capability, more than 4,096 registrations, aggregate searchable metadata that
+exceeds the internal build budget, and any enabled compact `SearchResult` that
+cannot fit the internal structured-response cap. It re-executes the current
+binary and performs a fixed five-second private worker probe only after
+construction validation succeeds.
 The probe detects an absent or nonfunctional worker entry and returns
 `ErrInvalidRegistration` with a host-wiring diagnostic that identifies the
 missing or misplaced `ServeWorkerAndExit` call. It cannot detect ordinary host
@@ -205,8 +226,8 @@ Static filtering is build-scoped deployment configuration. Subject- or argument-
 | `MaxValueDepth int` | 32 | Inclusive nesting depth of any value crossing the worker boundary. |
 | `MaxValueBytes int` | 1,048,576 bytes (1 MiB) | Type-preserving encoding of any value crossing the worker boundary. |
 | `MaxIntermediateValueBytes int` | 8,388,608 bytes (8 MiB) | Cumulative encoded successful parent-to-child native-result value bodies in one `Execute` call. |
-| `MaxSearchQueryBytes int` | 256 bytes | Raw search query before trimming or case normalization. Whitespace padding counts. |
-| `MaxSearchResults int` | 20 | Search results returned. |
+| `MaxSearchQueryBytes int` | 256 bytes | Raw search query before trimming or tokenization. Whitespace padding counts. |
+| `MaxSearchResults int` | 20 | Maximum number of entries in `SearchResponse.Results`. |
 | `MaxConcurrentExecutions int` | 8 | Concurrent spawn attempts and live worker processes. |
 
 `Build` replaces every zero-valued field with the corresponding value from
@@ -215,6 +236,27 @@ unlimited. This permits `Limits{}` and partial overrides without restating
 unrelated budgets. Negative signed fields return `ErrInvalidRegistration`.
 Calling `Limits.Validate()` directly still rejects zero and otherwise
 non-positive fields because it validates an already resolved limit set.
+
+The structured search response also has an internal byte bound. This bound
+applies to the compact JSON representation of `SearchResponse`; its exact value
+is not part of the public configuration contract. The surrounding JSON-RPC
+envelope and the MCP SDK's JSON text mirror are outside this bound.
+
+The registration ceiling, aggregate searchable-metadata budget, and
+single-result fit check are hard build constraints rather than configurable
+`Limits` fields. The aggregate covers the raw bytes of every registered
+capability's name, summary, description, and `SearchTerms`; it is checked
+before static filtering, so disabling a capability does not reduce that
+accounting. The single-result check applies after filtering to each enabled
+compact object containing its name, generated signature, and summary.
+Exceeding any of these constraints returns `ErrInvalidRegistration`.
+
+To reduce registration count or aggregate metadata, remove capabilities from
+the server build, split them across servers, or shorten their discovery
+metadata. To make one compact result fit, shorten its capability name, summary,
+or input field names that form the generated signature. The internal
+structured-response cap is not public configuration and cannot be raised
+through `Limits`.
 
 `MaxValueDepth` is inclusive. A scalar or `None` is depth 1. Each tuple, list,
 or dictionary wrapper adds one. A scalar with limit 1 succeeds, a one-level
@@ -260,22 +302,96 @@ effects. See [Understanding CodeMode's security model](../explanation/security-m
 #### `Search`
 
 ```text
-Search(query string) ([]SearchResult, error)
+Search(query string) (SearchResponse, error)
 ```
 
-`Search` first enforces `MaxSearchQueryBytes` on the raw query, then trims surrounding whitespace and normalizes case. Whitespace padding counts toward the byte budget. It performs substring matching against enabled capability names and summaries. Results are sorted by exact capability name and capped by `MaxSearchResults`. A blank normalized query returns an empty, non-nil result.
+`SearchResponse` and `SearchResult` have these JSON shapes:
 
-`SearchResult` contains these JSON fields:
+```go
+type SearchResponse struct {
+	Results   []SearchResult `json:"results"`
+	Truncated bool           `json:"truncated"`
+}
 
-| Field | Type | Meaning |
+type SearchResult struct {
+	Name      string `json:"name"`
+	Signature string `json:"signature"`
+	Summary   string `json:"summary"`
+}
+```
+
+`Search` first enforces `MaxSearchQueryBytes` on the raw query. Whitespace
+padding counts. It then:
+
+1. trims surrounding Unicode whitespace;
+2. treats every rune that is not a Unicode letter or digit as a separator;
+3. splits camel-case, acronym-to-word, and letter/number transitions;
+4. lowercases each token;
+5. removes `a`, `an`, `and`, `by`, `for`, `from`, `in`, `of`, `on`, `or`,
+   `the`, `to`, and `with`; and
+6. deduplicates the remaining query tokens.
+
+A query with more than 16 distinct normalized tokens returns
+`ErrResourceLimit`. A blank query, or one containing only separators and
+removed connector tokens, succeeds with:
+
+```json
+{"results":[],"truncated":false}
+```
+
+Search compares the distinct query tokens with tokens from each enabled
+capability's name, `SearchTerms`, summary, and description. Exact token matches
+are supported. A query token of at least three Unicode characters can also
+match the prefix of a capability token. Arbitrary infix matching, fuzzy
+matching, stemming, and built-in synonym expansion are not supported. Hosts
+must put alternative task and resource vocabulary in `SearchTerms` or other
+descriptive metadata.
+
+For one query token within one field, an exact match ranks above a prefix
+match. Search retains only the strongest contribution for that query token.
+The field precedence used for weighting is the capability name, then
+`SearchTerms`, then the summary, then the description. Terms that occur in
+fewer enabled capabilities contribute more than catalog-wide terms. The
+numeric scoring weights are internal.
+
+Eligibility depends on the number `q` of distinct normalized query tokens:
+
+| Query tokens | Required matched tokens |
+| ---: | ---: |
+| 1 | 1 |
+| 2 | 2 |
+| 3 or more | `ceil(2q / 3)` |
+
+Search ranks every eligible capability before applying output bounds. A
+case-insensitive exact dotted-name query, after trimming surrounding
+whitespace, ranks first. Remaining ordering is relevance score descending,
+then exact dotted name ascending. Static filtering happens before indexing, so
+disabled capabilities cannot match or affect ranking.
+
+`Results` is always a non-nil array on success. CodeMode packs the
+highest-ranked prefix under `MaxSearchResults` and the internal structured
+response-byte bound. `Truncated` is `true` if either bound omits at least one
+eligible capability; it does not expose a total count or provide pagination.
+The response-byte bound covers the compact JSON representation of
+`SearchResponse`, not a surrounding JSON-RPC envelope or the MCP SDK's JSON
+text mirror.
+
+`SearchResult` contains:
+
+| JSON field | Type | Meaning |
 | --- | --- | --- |
 | `name` | string | Exact enabled dotted name. |
 | `signature` | string | Invocation-only keyword signature. It ends after the parameter list and never contains a Go output type. |
 | `summary` | string | Registered summary. |
 
-`signature` contains the dotted name, a `*` keyword-only marker when there are parameters, and the ordered input fields with their type notations. It ends at `)`. The exact forms are `records.lookup(*, key: str, limit: int | None)` and `records.status()`. The result contract is `Description.Output`, not `signature`.
+`signature` contains the dotted name, a `*` keyword-only marker when there are
+parameters, and the ordered input fields with their type notations. It ends at
+`)`. The exact forms are
+`records.lookup(*, key: str, limit: int | None)` and `records.status()`. The
+result contract is `Description.Output`, not `signature`.
 
-An oversized query returns `ErrResourceLimit`. An unexpected server-state failure returns `ErrInternal`.
+An oversized or over-tokenized query returns `ErrResourceLimit`. An unexpected
+server-state failure returns `ErrInternal`.
 
 #### `Describe`
 
@@ -489,7 +605,7 @@ See [Use Rego for authorization](../how-to/use-rego-authorization.md) for server
 `Service` is the adapter's application port:
 
 ```text
-Search(query string) ([]codemode.SearchResult, error)
+Search(query string) (codemode.SearchResponse, error)
 Describe(name codemode.CapabilityName) (codemode.Description, error)
 Execute(context.Context, authz.Subject, codemode.Program) (any, error)
 ```

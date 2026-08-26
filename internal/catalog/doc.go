@@ -1,2 +1,2 @@
-// Package catalog validates, filters, and indexes immutable native capability registrations.
+// Package catalog validates, filters, and compiles immutable native capability registrations.
 package catalog

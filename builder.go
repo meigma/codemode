@@ -103,6 +103,7 @@ func Register[Input, Output any](builder *Builder, capability Capability[Input, 
 		Name:        string(capability.Name),
 		Summary:     capability.Summary,
 		Description: description,
+		SearchTerms: slices.Clone(capability.SearchTerms),
 		Plan:        plan,
 		Invoke: func(ctx context.Context, subject authz.Subject, input any) (any, error) {
 			typed, ok := input.(Input)

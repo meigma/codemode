@@ -33,9 +33,10 @@ func main() {
 
 	builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll()})
 	codemode.Register(builder, codemode.Capability[lookupInput, lookupOutput]{
-		Name:    "records.lookup",
-		Summary: "Look up one record by key.",
-		Handler: lookup,
+		Name:        "records.lookup",
+		Summary:     "Look up one record by key.",
+		SearchTerms: []string{"fetch entry"},
+		Handler:     lookup,
 	})
 
 	server, err := builder.Build()
@@ -49,6 +50,11 @@ func main() {
 	log.Fatal(srv.Run(context.Background(), &mcp.StdioTransport{}))
 }
 ```
+
+`SearchTerms` adds task and resource vocabulary for discovery only. Search
+terms are not returned or callable, but callers can infer them by probing.
+Never put secrets, credentials, policy facts, tenant identifiers, or sensitive
+examples in search terms.
 
 The repository also contains shorter, compile-checked examples:
 
