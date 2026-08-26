@@ -1,48 +1,69 @@
 # CodeMode
 
-CodeMode is a source-only Go library for exposing typed Go capabilities to Model Context Protocol (MCP) clients through bounded Starlark programs. A host registers capabilities, selects the deployment-wide surface, and authorizes each validated native call.
+CodeMode is a Go library for building MCP servers where the agent writes code
+instead of chaining tool calls. You register plain Go functions as
+capabilities. An agent discovers them, then submits a small Starlark program
+that calls several capabilities, filters and combines their results in the
+program, and returns one value.
 
-The `mcpserver` adapter uses the official MCP Go SDK and exposes exactly `search_api`, `describe_api`, and `execute`. CodeMode does not authenticate callers, start transports or listeners, or own request cancellation and shutdown. Those responsibilities remain with the host.
+Every CodeMode server exposes the same three MCP tools through the official
+MCP Go SDK:
+
+- `search_api` — ranked discovery over your capability names, summaries, and
+  search terms
+- `describe_api` — exact call signatures and result shapes, generated from
+  your Go types
+- `execute` — run one Starlark program against those capabilities
+
+Compared to a conventional MCP server with one tool per function:
+
+- Loops, filtering, and aggregation happen inside the program, so multi-step
+  work takes one round trip and intermediate data never enters the model's
+  context window.
+- The schemas the agent sees are derived from your registered Go types, so
+  they cannot drift from handler behavior.
+- Capabilities can be disabled per deployment by stable ID without code
+  changes.
+- Every capability call is authorized before dispatch, fail-closed, with the
+  arguments the handler will receive. The optional [`authz/rego`](docs/docs/how-to/use-rego-authorization.md)
+  adapter evaluates OPA/Rego policy in-process.
+- Each program runs in a fresh worker process under execution budgets, and
+  only the program's final value is returned to the caller.
 
 ## Install
 
-CodeMode has not published a release. To evaluate the current `master` branch from a Go module, run:
-
 ```sh
-go get github.com/meigma/codemode@master
+go get github.com/meigma/codemode@v0.1.0
 ```
 
-The module currently requires Go 1.26.6.
+The module requires Go 1.26.6.
 
 ## Get started
 
-Follow [Build your first CodeMode server](docs/docs/tutorials/first-server.md)
-to register `records.lookup`, run a real stdio MCP server, and add it to an
-agent.
-
-`authz.AllowAll()` is deliberate in the simple examples. CodeMode never
-defaults authorization to allow. `mcpserver.StaticSubject` is only for
-single-user transports where process ownership is the authentication boundary;
-multi-user hosts must resolve each authenticated request separately.
-
-The server assembly is:
-
 ```go
 func main() {
+	// Serve worker mode when this binary is re-executed for a program run.
+	// This must be the first statement of main.
 	codemode.ServeWorkerAndExit()
 
+	// AllowAll is an explicit choice; CodeMode has no default authorizer.
 	builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll()})
+
+	// A capability is a plain typed Go function. The schema agents see is
+	// generated from lookupInput and lookupOutput.
 	codemode.Register(builder, codemode.Capability[lookupInput, lookupOutput]{
-		Name:        "records.lookup",
-		Summary:     "Look up one record by key.",
-		SearchTerms: []string{"fetch entry"},
-		Handler:     lookup,
+		Name:    "records.lookup",
+		Summary: "Look up one record by key.",
+		Handler: lookup,
 	})
 
 	server, err := builder.Build()
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// StaticSubject suits a single-user stdio server; multi-user hosts
+	// resolve each authenticated request with ContextSubject.
 	srv, err := mcpserver.New(server, mcpserver.StaticSubject(authz.Subject{ID: "local"}))
 	if err != nil {
 		log.Fatal(err)
@@ -51,19 +72,11 @@ func main() {
 }
 ```
 
-`SearchTerms` adds task and resource vocabulary for discovery only. Search
-terms are not returned or callable, but callers can infer them by probing.
-Never put secrets, credentials, policy facts, tenant identifiers, or sensitive
-examples in search terms.
-
-The repository also contains shorter, compile-checked examples:
-
-- [`example_test.go`](example_test.go) — typed registration with default limits and an explicit subject, plus direct execution
-- [`mcpserver/example_test.go`](mcpserver/example_test.go) — a fixed single-user subject and the official in-memory MCP transport
-
-`codemode.ServeWorkerAndExit()` must remain the first statement of `main`,
-before flag parsing or any other setup. Test binaries that call `Builder.Build`
-must make the same call from `TestMain` before `m.Run`.
+For the full walk-through — the input and output types, building the binary,
+and adding it to an agent — follow
+[Build your first CodeMode server](docs/docs/tutorials/first-server.md).
+Shorter compile-checked examples: [`example_test.go`](example_test.go) and
+[`mcpserver/example_test.go`](mcpserver/example_test.go).
 
 ## Documentation
 
@@ -77,31 +90,15 @@ must make the same call from `TestMain` before `m.Run`.
 
 ## Security boundary
 
-Each `execute` request runs Starlark in a fresh worker process created by re-executing
-the host binary. The submitted program must define a zero-argument `main()`,
-and only its final converted value is exposed to the caller. Printed text,
-globals, and interpreter-local intermediate values are not returned. Each
-native-call argument map, native result, and final value is independently
-subject to `MaxValueDepth` and `MaxValueBytes`. Successful native-result value
-bodies also consume the fresh request-scoped `MaxIntermediateValueBytes`
-budget.
-
-The worker binds keyword arguments first. The parent then rebinds them to the
-registered Go input, creates a fresh canonical authorization map, authorizes
-the call, and dispatches the handler. The parent converts the handler output to
-a process-neutral value, and the worker converts that value to Starlark. Every
-MCP operation gets a trusted subject through `mcpserver.InvocationResolver`,
-either from a single-user process boundary or authenticated host-owned context.
-Tool arguments, Starlark source, and MCP `_meta` are not trusted identity or
-credential sources.
-
-The worker process lets CodeMode kill Starlark when an execution deadline or
-request cancellation occurs. Authorizers and handlers remain ordinary Go code
-in the host process; CodeMode cannot forcibly stop them after dispatch. Worker
-processes also have no operating-system CPU or memory quota. See the
-[security model](docs/docs/explanation/security-model.md) and
-[SECURITY.md](SECURITY.md) for the full boundary and
-vulnerability-reporting process.
+Each `execute` request runs Starlark in a fresh worker process that CodeMode
+can kill on deadline or cancellation. Arguments are bound and canonicalized
+before authorization, authorization completes before handler dispatch, and the
+trusted subject comes only from host-owned context — never from tool
+arguments, program source, or MCP `_meta`. Execution budgets bound source
+size, steps, time, native calls, and value sizes; they are not operating-system
+CPU or memory quotas, and CodeMode cannot forcibly stop a dispatched Go
+handler. The [security model](docs/docs/explanation/security-model.md) defines
+the full boundary; see [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
 ## Contributing
 
