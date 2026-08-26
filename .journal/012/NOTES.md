@@ -53,3 +53,7 @@ Verification passed: focused diagnostic boundary suite; `go test -race ./interna
 ## 2026-08-25 18:09 — Pull request opened
 
 Pushed `fix/issue-24-diagnostics` and opened [PR #43](https://github.com/meigma/codemode/pull/43), `feat(diagnostics): echo safe model-derived error detail`, closing issue #24. The PR is open, non-draft, mergeable, targets `master`, and links issue #24. GitHub Pages, CI, and Kusari Inspector passed; the deployment job was skipped as expected.
+
+## 2026-08-25 18:12 — Pull request merged
+
+Squash-merged [PR #43](https://github.com/meigma/codemode/pull/43) through GitHub after pinning head commit `9f8fd3247d7328e3717f2e295ec593f2ef33bf93`. The resulting `master` commit is `4bbb36734256501a8e7d204b556addd8c65e9350`. GitHub closed issue #24 as completed.
