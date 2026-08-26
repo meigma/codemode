@@ -14,4 +14,5 @@
 | 010 | 2026-08-25 | Reduce first-touch API ceremony | complete | Added stock subject resolvers, bounded per-field defaults, consolidated registration diagnostics, derived capability identity, and a real stdio first-server path in PR #34. |
 | 011 | 2026-08-25 | Widen capability binding matrix | complete | Implemented richer scalar inputs, bounded composite outputs, aggregate native-result accounting, derived discovery, end-to-end composition proof, and documentation across PRs #35–#40. |
 | 012 | 2026-08-25 | Review model-facing diagnostics | complete | Implemented bounded parser, resolver, and binding diagnostics without weakening host-error non-disclosure, and merged PR #43 to close issue #24. |
-| 013 | 2026-08-25 | Design bounded capability search | in-progress | Produce and complexity-review a bounded architecture for relevance-ranked agent capability discovery. |
+| 013 | 2026-08-25 | Design bounded capability search | complete | Designed, implemented, documented, validated, and merged bounded relevance-ranked capability discovery in PR #44. |
+| 014 | 2026-08-25 | Review pure-compute Starlark stdlib | in-progress | Review issue #42's fixed `sum`, `json`, and `math` execution surface against the current worker architecture and model-facing contract. |

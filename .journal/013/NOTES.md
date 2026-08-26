@@ -29,3 +29,7 @@ The persistent reviewer caught and drove fixes for disabled-index placement haza
 ## 2026-08-25 19:49 — Implementation delivered for review
 Completed the bounded relevance-ranked search design on `feat/bounded-search` and opened PR #44 at `https://github.com/meigma/codemode/pull/44` from commit `24e7670`.
 Final review fixed exact-versus-prefix precedence within one field, added a discriminating regression case, and documented the registration, searchable-metadata, and single-result build ceilings. Targeted root/catalog/MCP tests passed; `moon run root:check` passed format, lint, build, MCP smoke, race, and docs build; and verbose `TestActualMCPSecureLoop` passed against the real in-memory MCP transport with populated and empty search responses.
+
+## 2026-08-25 19:53 — Close
+The developer approved PR #44, which was squash-merged to `master` as `f50f113181a0333eabf094a3ee22932e49dcd01a`. Local `master` was fast-forwarded, and the local and remote `feat/bounded-search` branches plus the implementation worktree were removed.
+Session handoff: the reviewed architecture remains in `SEARCH_ARCHITECTURE.md`; implementation, tests, and user documentation are on `master`; `SUMMARY.md` records decisions and deferred evidence-gated work. No known open defect remains.
