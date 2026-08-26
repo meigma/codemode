@@ -25,3 +25,14 @@ Tests should cover parse, resolve (`sum`), unknown/missing/mistyped binding argu
 Documentation must update both `docs/docs/reference/mcp-tools.md` and `docs/docs/explanation/security-model.md`. Replace the fixed-text claim with eleven stable categories/prefixes, acknowledge that exact-string consumers of the two annotated classes will observe a contract change, and add the requested Starlark-not-Python language-surface guidance to both the live tool description and reference recovery section.
 
 Verification: the focused current-boundary suite passed for `internal/execution`, `internal/worker`, and `mcpserver`; the standalone pinned-Starlark probe produced the exact error types and positions above and was removed afterward.
+
+## 2026-08-25 17:14 — Complexity review applied
+The `complexity-reviewer` returned a `simplify` verdict. Two corrections supersede the earlier checkpoint. First, exact `syntax.Error` provenance is insufficient by itself: pinned Starlark scanner recovery converts unexpected parser/scanner panics into `syntax.Error{Msg: "internal error: <panic>"}`. Expose only direct ordinary syntax errors whose message lacks that prefix; keep the recovery form exactly `invalid program`. Second, `MaxSourceBytes` cannot bound every diagnostic because missing-required field names come from registered `FieldShape` values, and `ValidIdentifier` has no length bound. Replace source-derived frame arithmetic with one private fixed 4 KiB diagnostic cap, worst-case JSON-escape cap arithmetic, and code-only pre-write fallback.
+
+Simplified the carrier to one private concrete wrapper in the existing `internal/execution` package: sentinel, detail, coarse `Error()`, `Unwrap()`, and narrow module-internal constructor/extractor helpers. No public API, new package, diagnostic kind hierarchy, structured position object, or configurable diagnostic limit.
+
+Removed the exhaustive builtin inventory from the proposal. The pinned Starlark `Universe` is host-mutable and CodeMode does not freeze it, so the live tool contract will pin only the high-value dialect cues: Starlark not Python; no `sum`, `import`, `while`, or f-strings; `load` disabled; `print` discarded.
+
+Reduced the new test matrix to representative boundary cases and reuse of existing binding, custom-service, Rego, panic, and protocol coverage. Retained one actual-root MCP handler canary despite the reviewer's suggestion to rely on existing layer tests because issue #24 explicitly requires that end-to-end assertion. Documentation changes are now surgical: nine fixed MCP texts plus two stable prefixes, precise security-model exceptions, unchanged public API reference, and compatibility language scoped to MCP text only.
+
+The revised proposal is stored at `local://issue24-review-proposal.md`.
