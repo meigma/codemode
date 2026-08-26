@@ -59,3 +59,6 @@ Per user feedback on PR #47: Get started now leads with the annotated main() (wo
 
 ## PR #47 merged
 Squash-merged as 502c363 (docs: rewrite README around differentiators). Local master fast-forwarded; docs/readme-intro worktree and branch removed.
+
+## Cloudflare comparison PR
+PR #48: README section "How this differs from Cloudflare's Code Mode" — same-thesis/opposite-sides framing, agent-side TS-in-isolates vs server-side typed Go + local worker, grounded in their blog post. Per user review of the draft: dropped the composability closer, rewrote the policy sentence to plain mechanism ("authorized before it dispatches", "disable capabilities it does not want to expose") removing the LLM-shaped aphorism/contrast.
