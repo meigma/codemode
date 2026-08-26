@@ -12,3 +12,8 @@ Plan: Complete the bounded architecture, send it to a complexity reviewer, apply
 ## 2026-08-25 17:45 — Proposed architecture
 The software architecture agent produced a bounded relevance-ranked lexical design grounded in the spike and current repository contracts. It preserves the immutable filtered catalog and three-tool MCP surface, proposes explicit search vocabulary plus a `{results, truncated}` cutover, and specifies bounded normalization, ranking, response size, and typo work.
 Next: The complexity reviewer is challenging the proposal's packed index, numeric ceilings, pooling, scoring detail, and rollout size before the final journal architecture is written.
+
+## 2026-08-25 17:59 — Complexity review applied
+The complexity reviewer returned `SUBSTANTIALLY SIMPLIFY` while preserving relevance-ranked lexical search, description indexing, explicit `SearchTerms`, deterministic full-catalog ranking, bounded output, and truncation signaling.
+Applied changes: replaced packed postings/token arenas/pooling/heap machinery with an immutable document slice and bounded direct scan; collapsed overlapping ceilings into a small independent bound set; made the response-byte cap internal; replaced giant score boosts with an explicit comparator; deferred phrase boosts and fuzzy matching; and made future packed indexes, heaps, interning, and pooling profile-triggered only.
+Final review document: `SEARCH_ARCHITECTURE.md`. The repository remains unchanged; only this journal session contains the architecture.
