@@ -11,7 +11,7 @@ import (
 	"github.com/meigma/codemode/internal/execution"
 )
 
-// TestWithSafeDetailPreservesCoarseCause proves the wrapper never changes Error or errors.Is.
+// TestWithSafeDetailPreservesCoarseCause proves the wrapper never changes Error or [errors.Is].
 func TestWithSafeDetailPreservesCoarseCause(t *testing.T) {
 	t.Run("empty detail returns cause", func(t *testing.T) {
 		got := execution.WithSafeDetail(execution.ErrInvalidProgram, "")

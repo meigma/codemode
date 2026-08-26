@@ -34,7 +34,7 @@ func WithSafeDetail(cause error, detail string) error {
 
 // SafeDetail reports the model-derived suffix attached to err, if any.
 //
-// Extraction follows the error chain with errors.As.
+// Extraction follows the error chain with [errors.As].
 func SafeDetail(err error) (string, bool) {
 	var wrapped *safeDetailError
 	if !errors.As(err, &wrapped) {

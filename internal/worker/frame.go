@@ -426,6 +426,8 @@ func allowsFinalErrorDetail(code finalErrorCode) bool {
 	switch code {
 	case finalErrorInvalidProgram, finalErrorInvalidArguments:
 		return true
+	case finalErrorResourceLimit, finalErrorInternal:
+		return false
 	default:
 		return false
 	}

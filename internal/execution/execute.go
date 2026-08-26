@@ -216,7 +216,7 @@ func classifyRuntimeError(state *executionState, err error) error {
 
 // unwrapEvalError returns the evaluator cause without reading EvalError.Msg.
 func unwrapEvalError(err error) error {
-	evalErr, ok := err.(*starlark.EvalError)
+	evalErr, ok := err.(*starlark.EvalError) //nolint:errorlint // Exact type excludes unrelated wrappers.
 	if !ok {
 		return err
 	}
@@ -234,13 +234,13 @@ func classifiedSafeDetail(sentinel error, err error) error {
 
 // programDetail reports a model-derived parse or resolve suffix for a direct evaluator error.
 func programDetail(err error) (string, bool) {
-	if syntaxErr, ok := err.(syntax.Error); ok {
+	if syntaxErr, ok := err.(syntax.Error); ok { //nolint:errorlint // Exact type is the provenance boundary.
 		if strings.HasPrefix(syntaxErr.Msg, "internal error:") {
 			return "", false
 		}
 		return syntaxErr.Error(), true
 	}
-	list, ok := err.(resolve.ErrorList)
+	list, ok := err.(resolve.ErrorList) //nolint:errorlint // Exact type is the provenance boundary.
 	if !ok || len(list) == 0 {
 		return "", false
 	}

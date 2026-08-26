@@ -206,9 +206,9 @@ func projectToolError(err error) error {
 	if detail, ok := execution.SafeDetail(err); ok {
 		switch {
 		case errors.Is(err, codemode.ErrInvalidProgram):
-			return fmt.Errorf("%s: %s", codemode.ErrInvalidProgram, detail)
+			return fmt.Errorf("%w: %s", codemode.ErrInvalidProgram, detail)
 		case errors.Is(err, codemode.ErrInvalidArguments):
-			return fmt.Errorf("%s: %s", codemode.ErrInvalidArguments, detail)
+			return fmt.Errorf("%w: %s", codemode.ErrInvalidArguments, detail)
 		}
 	}
 	switch {
