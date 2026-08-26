@@ -62,3 +62,6 @@ Squash-merged as 502c363 (docs: rewrite README around differentiators). Local ma
 
 ## Cloudflare comparison PR
 PR #48: README section "How this differs from Cloudflare's Code Mode" — same-thesis/opposite-sides framing, agent-side TS-in-isolates vs server-side typed Go + local worker, grounded in their blog post. Per user review of the draft: dropped the composability closer, rewrote the policy sentence to plain mechanism ("authorized before it dispatches", "disable capabilities it does not want to expose") removing the LLM-shaped aphorism/contrast.
+
+## PR #48 merged
+Squash-merged as a2c33bd (docs: compare with Cloudflare's Code Mode). Section placed between Documentation and Security boundary per user direction. Worktree and branch removed; local master fast-forwarded.
