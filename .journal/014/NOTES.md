@@ -28,3 +28,16 @@ Required issue corrections:
 - Phrase the `time` exclusion as “no built-in time module”; a host may still deliberately register a `time.*` capability namespace.
 
 Recommended proof is one real same-binary MCP program combining `sum`, JSON round-trip, and `math.sqrt`, plus reserved-root validation at catalog, execution, and worker-manifest boundaries and an empty-engine check that no built-in `time` module exists.
+
+## 2026-08-25 20:39 — Implementation kickoff
+Created `feat/pure-compute-stdlib` from current `master` in `.wt/feat-pure-compute-stdlib`.
+
+Settled the implementation contract:
+- `internal/universe` owns the canonical fixed surface and reserved-root predicate.
+- `sum(iterable)` accepts one iterable and numeric values only.
+- `json` exposes exactly `decode`, `encode`, and `indent`; `math` exposes the complete pinned module; no top-level `round` or built-in `time` module is added.
+- Catalog, execution, and worker-manifest validation share one reserved-root predicate while preserving deferred `Build` errors.
+- The live MCP description stays concise; the MCP reference carries a machine-checked exact name block.
+- One same-binary MCP program proves JSON round-trip, `sum`, and `math.sqrt` together.
+
+Dispatched three concurrent programmer slices for universe/execution, reserved-root validation, and MCP/docs/e2e work. A persistent read-only reviewer is reviewing the contract and each slice incrementally before the final integrated pass.
