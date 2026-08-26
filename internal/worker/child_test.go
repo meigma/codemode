@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -201,6 +202,65 @@ func TestServeFinalAndFinalErrorMapping(t *testing.T) {
 				assert.Equal(t, tt.code, got.Code)
 			}
 			require.NoError(t, <-done)
+		})
+	}
+}
+
+// TestFinalErrorFromExtractsApprovedSafeDetail proves only matching approved codes carry a suffix.
+func TestFinalErrorFromExtractsApprovedSafeDetail(t *testing.T) {
+	tests := []struct {
+		// name identifies the mapped execution error.
+		name string
+
+		// err is the classified Engine failure.
+		err error
+
+		// code is the expected child-owned terminal class.
+		code finalErrorCode
+
+		// detail is the suffix written for approved codes.
+		detail string
+	}{
+		{
+			name:   "invalid program keeps suffix",
+			err:    execution.WithSafeDetail(execution.ErrInvalidProgram, "<codemode>:1:1: undefined: sum"),
+			code:   finalErrorInvalidProgram,
+			detail: "<codemode>:1:1: undefined: sum",
+		},
+		{
+			name:   "invalid arguments keeps suffix",
+			err:    execution.WithSafeDetail(execution.ErrInvalidArguments, `unknown argument "keu"`),
+			code:   finalErrorInvalidArguments,
+			detail: `unknown argument "keu"`,
+		},
+		{
+			name: "code-only fallback for empty detail",
+			err:  execution.ErrInvalidProgram,
+			code: finalErrorInvalidProgram,
+		},
+		{
+			name: "code-only fallback for oversized detail",
+			err:  execution.WithSafeDetail(execution.ErrInvalidProgram, strings.Repeat("a", maxDiagnosticBytes+1)),
+			code: finalErrorInvalidProgram,
+		},
+		{
+			name: "resource limit stays bare",
+			err:  execution.WithSafeDetail(execution.ErrResourceLimit, "hidden"),
+			code: finalErrorResourceLimit,
+		},
+		{
+			name: "internal stays bare",
+			err:  execution.WithSafeDetail(execution.ErrInternal, "hidden"),
+			code: finalErrorInternal,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code, detail := finalErrorFrom(tt.err)
+
+			assert.Equal(t, tt.code, code)
+			assert.Equal(t, tt.detail, detail)
 		})
 	}
 }

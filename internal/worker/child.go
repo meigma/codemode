@@ -95,7 +95,7 @@ func serveExec(r io.Reader, w io.Writer, frame execFrame) error {
 		hasLimits:     true,
 	}
 	if len(frame.Source) > frame.Limits.MaxSourceBytes {
-		return conn.writeFinalError(finalErrorResourceLimit)
+		return conn.writeFinalError(finalErrorResourceLimit, "")
 	}
 	engine, err := execution.New(manifestBindings(frame.Manifest))
 	if err != nil {
@@ -168,14 +168,15 @@ func writeExecutionError(conn *childConn, err error) error {
 	if errors.Is(err, errChildService) {
 		return err
 	}
-	return conn.writeFinalError(finalErrorFrom(err))
+	code, detail := finalErrorFrom(err)
+	return conn.writeFinalError(code, detail)
 }
 
 // writeFinalResult writes a successful value or classifies a legal value-byte overflow.
 func writeFinalResult(conn *childConn, result any) error {
 	if err := conn.writeFinal(result); err != nil {
 		if code, ok := finalWriteCode(err); ok {
-			return conn.writeFinalError(code)
+			return conn.writeFinalError(code, "")
 		}
 		return err
 	}
@@ -195,15 +196,27 @@ func finalWriteCode(err error) (finalErrorCode, bool) {
 }
 
 // finalErrorFrom maps a classified Engine error onto a child-owned terminal code.
-func finalErrorFrom(err error) finalErrorCode {
+func finalErrorFrom(err error) (finalErrorCode, string) {
 	switch {
 	case errors.Is(err, execution.ErrInvalidProgram):
-		return finalErrorInvalidProgram
+		return finalErrorInvalidProgram, approvedSafeDetail(finalErrorInvalidProgram, err)
 	case errors.Is(err, execution.ErrInvalidArguments):
-		return finalErrorInvalidArguments
+		return finalErrorInvalidArguments, approvedSafeDetail(finalErrorInvalidArguments, err)
 	case errors.Is(err, execution.ErrResourceLimit):
-		return finalErrorResourceLimit
+		return finalErrorResourceLimit, ""
 	default:
-		return finalErrorInternal
+		return finalErrorInternal, ""
 	}
+}
+
+// approvedSafeDetail extracts contracted detail only for the matching approved code.
+func approvedSafeDetail(code finalErrorCode, err error) string {
+	if !allowsFinalErrorDetail(code) {
+		return ""
+	}
+	detail, ok := execution.SafeDetail(err)
+	if !ok {
+		return ""
+	}
+	return sanitizedFinalErrorDetail(code, detail)
 }

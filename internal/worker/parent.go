@@ -710,7 +710,7 @@ func (r *Runner) runExecExchange(
 			if err := readExecEOF(stdout); err != nil {
 				return execOutcome{err: execution.ErrInternal, kill: true}
 			}
-			return execOutcome{err: mapFinalError(typed.Code)}
+			return execOutcome{err: mapFinalError(typed)}
 		default:
 			return execOutcome{err: execution.ErrInternal, kill: true}
 		}
@@ -778,8 +778,17 @@ func readExecEOF(r io.Reader) error {
 	return errIllegalState
 }
 
-// mapFinalError projects a child-owned terminal code onto an execution sentinel.
-func mapFinalError(code finalErrorCode) error {
+// mapFinalError projects a child-owned terminal frame onto an execution sentinel.
+func mapFinalError(frame finalErrorFrame) error {
+	cause := mapFinalErrorCode(frame.Code)
+	if !allowsFinalErrorDetail(frame.Code) {
+		return cause
+	}
+	return execution.WithSafeDetail(cause, sanitizedFinalErrorDetail(frame.Code, frame.Detail))
+}
+
+// mapFinalErrorCode projects a child-owned terminal code onto an execution sentinel.
+func mapFinalErrorCode(code finalErrorCode) error {
 	switch code {
 	case finalErrorInvalidProgram:
 		return execution.ErrInvalidProgram

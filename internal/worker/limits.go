@@ -68,7 +68,26 @@ func childPayloadCap(maxValueBytes int, manifest []manifestEntry) (uint32, error
 	if err != nil {
 		return 0, err
 	}
-	return maxUint32(nativeCall, final, uint32(len(finalErrorLongest))), nil
+	finalError, err := finalErrorPayloadCap()
+	if err != nil {
+		return 0, err
+	}
+	return maxUint32(nativeCall, final, finalError), nil
+}
+
+// finalErrorPayloadCap is the largest legal detailed final_error payload.
+func finalErrorPayloadCap() (uint32, error) {
+	escaped, err := mulConfigUint32(jsonStringEscapeMax, maxDiagnosticBytes)
+	if err != nil {
+		return 0, err
+	}
+	return addConfigUint32(
+		uint32(len(finalErrorPrefix)),
+		uint32(len(finalErrorDetail)),
+		uint32(len(emptyJSONString)),
+		escaped,
+		uint32(len(finalErrorSuffix)),
+	)
 }
 
 // parentPayloadCap is the largest legal parent-originated execution payload.
