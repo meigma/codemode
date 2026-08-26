@@ -348,6 +348,66 @@ func TestBuildRejectsWholeCatalogFailures(t *testing.T) {
 	})
 }
 
+// TestBuildRejectsReservedUniverseRoots proves colliding namespace roots fail at Register and Build.
+func TestBuildRejectsReservedUniverseRoots(t *testing.T) {
+	tests := []struct {
+		// name identifies the reserved-root collision.
+		name string
+
+		// id is the stable capability identity.
+		id codemode.CapabilityID
+
+		// capName is the colliding dotted capability name.
+		capName codemode.CapabilityName
+
+		// disabled lists static filters that must not bypass validation.
+		disabled []codemode.CapabilityID
+
+		// root is the reserved first dotted segment named in the diagnostic.
+		root string
+	}{
+		{name: "sum root", id: "cap.sum", capName: "sum.x", root: "sum"},
+		{name: "json root", id: "cap.json", capName: "json.fetch", root: "json"},
+		{name: "math root", id: "cap.math", capName: "math.add", root: "math"},
+		{name: "len root", id: "cap.len", capName: "len.items", root: "len"},
+		{name: "set root", id: "cap.set", capName: "set.members", root: "set"},
+		{
+			name:     "disabled json root still rejected",
+			id:       "cap.json",
+			capName:  "json.fetch",
+			disabled: []codemode.CapabilityID{"cap.json"},
+			root:     "json",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			builder := codemode.New(codemode.Options{
+				Authorizer:           authz.AllowAll(),
+				DisabledCapabilities: tt.disabled,
+			})
+			codemode.Register(builder, validBuilderCapability(tt.id, tt.capName))
+
+			server, err := builder.Build()
+
+			require.ErrorIs(t, err, codemode.ErrInvalidRegistration)
+			assert.Nil(t, server)
+			require.ErrorContains(t, err, `capability "`+string(tt.capName)+`"`)
+			require.ErrorContains(t, err, `reserved root "`+tt.root+`"`)
+		})
+	}
+
+	t.Run("nested leaf remains legal", func(t *testing.T) {
+		builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll()})
+		codemode.Register(builder, validBuilderCapability("cap.stats", "stats.sum"))
+
+		server, err := builder.Build()
+
+		require.NoError(t, err)
+		assert.NotNil(t, server)
+	})
+}
+
 // TestBuilderBuildsWorkerProbe proves Build completes the real same-binary handshake.
 func TestBuilderBuildsWorkerProbe(t *testing.T) {
 	builder := codemode.New(codemode.Options{

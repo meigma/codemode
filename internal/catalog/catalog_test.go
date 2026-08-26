@@ -175,6 +175,78 @@ func TestBuildRejectsInvalidMetadataDuplicatesAndNamespaceCollisions(t *testing.
 	}
 }
 
+// TestBuildRejectsReservedUniverseRoots proves colliding namespace roots fail closed.
+func TestBuildRejectsReservedUniverseRoots(t *testing.T) {
+	valid := validRegistration("cap.one", "records.one", "First record")
+	tests := []struct {
+		// name identifies the reserved-root collision.
+		name string
+
+		// registrations contains the candidate capabilities.
+		registrations []Registration
+
+		// options configures filtering and search.
+		options Options
+
+		// root is the reserved first dotted segment named in the diagnostic.
+		root string
+	}{
+		{
+			name:          "sum root",
+			registrations: []Registration{withName(valid, "sum.x")},
+			options:       testOptions(),
+			root:          "sum",
+		},
+		{
+			name:          "json root",
+			registrations: []Registration{withName(valid, "json.fetch")},
+			options:       testOptions(),
+			root:          "json",
+		},
+		{
+			name:          "math root",
+			registrations: []Registration{withName(valid, "math.add")},
+			options:       testOptions(),
+			root:          "math",
+		},
+		{
+			name:          "len root",
+			registrations: []Registration{withName(valid, "len.items")},
+			options:       testOptions(),
+			root:          "len",
+		},
+		{
+			name:          "set root",
+			registrations: []Registration{withName(valid, "set.members")},
+			options:       testOptions(),
+			root:          "set",
+		},
+		{
+			name:          "disabled json root still rejected",
+			registrations: []Registration{withID(withName(valid, "json.fetch"), "cap.json")},
+			options:       testOptions("cap.json"),
+			root:          "json",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Build(tt.registrations, tt.options)
+
+			require.Error(t, err)
+			require.ErrorIs(t, err, ErrInvalidRegistration)
+			require.ErrorContains(t, err, `name "`+tt.registrations[0].Name+`" uses reserved root "`+tt.root+`"`)
+		})
+	}
+
+	catalog, err := Build([]Registration{
+		validRegistration("cap.stats", "stats.sum", "Nested sum"),
+	}, testOptions())
+	require.NoError(t, err)
+	_, found := catalog.Lookup("stats.sum")
+	assert.True(t, found)
+}
+
 // TestBuildFiltersOnceAndDerivesEverySurface proves disabled capabilities have no live representation.
 func TestBuildFiltersOnceAndDerivesEverySurface(t *testing.T) {
 	catalog, err := Build([]Registration{

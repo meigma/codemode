@@ -127,7 +127,7 @@ func New(service Service, resolver InvocationResolver) (*mcp.Server, error) {
 	}, bound.describe)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:         "execute",
-		Description:  "Execute one Starlark program that defines def main(): with zero arguments, calls only names confirmed through search_api and describe_api inside main, and returns main's final result. Starlark is not Python: sum, import, while, and f-strings are unavailable; load is disabled; print is discarded.",
+		Description:  "Execute one Starlark program that defines def main(): with zero arguments, calls only names confirmed through search_api and describe_api inside main, and returns main's final result. Standard Starlark builtins plus sum(iterable), json.decode/encode/indent, and math.* are directly available without import. import, while, f-strings, filter, and map are unavailable; load is disabled; print is discarded.",
 		OutputSchema: executeOutputSchema,
 	}, bound.execute)
 	return server, nil

@@ -70,6 +70,9 @@ func New(options Options) *Builder {
 // binding contract first.
 //
 // Capability-specific failures are accumulated and returned together by Build.
+// A name whose first dotted segment collides with a reserved Starlark universe
+// root, including standard builtins, sum, json, and math, is recorded as an
+// invalid registration; nested leaves such as stats.sum remain legal.
 // Register panics when builder is nil or already closed because no future Build
 // call can report those lifecycle violations.
 func Register[Input, Output any](builder *Builder, capability Capability[Input, Output]) {

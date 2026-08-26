@@ -121,8 +121,9 @@ Every `Server.Execute` call starts a fresh worker process by re-executing the
 host binary. The worker process is a child of the host process. The worker
 receives only the immutable enabled-capability manifest, positive execution
 limits, and one submitted program through CodeMode's private protocol. It
-constructs a fresh Starlark interpreter. Module loading is disabled, and the
-only predeclared application functions are the enabled capability namespace.
+constructs a fresh Starlark interpreter. Module loading is disabled. The
+predeclared environment is the fixed language surface (`sum`, `json`, `math`,
+and the standard Starlark builtins) plus the enabled capability namespace.
 Native calls are rejected during top-level source loading and are accepted
 only while the required zero-argument `main()` function runs.
 

@@ -23,6 +23,7 @@ type Capability[Input, Output any] struct {
 	ID CapabilityID
 
 	// Name is the dotted Starlark name exposed to programs and discovery.
+	// The first segment must not collide with a reserved Starlark universe root.
 	Name CapabilityName
 
 	// Summary is a compact description used by capability search.

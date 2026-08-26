@@ -17,6 +17,7 @@ type Registration struct {
 	ID string
 
 	// Name is the dotted Starlark and model-facing capability name.
+	// The first segment must not collide with a reserved Starlark universe root.
 	Name string
 
 	// Summary is the compact description used by capability search.

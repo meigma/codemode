@@ -62,9 +62,9 @@ func TestExecuteAttachesApprovedProgramDiagnostics(t *testing.T) {
 			contains: "<codemode>:",
 		},
 		{
-			name:     "undefined sum",
-			source:   "def main():\n    return sum([1, 2])\n",
-			contains: "undefined: sum",
+			name:     "undefined filter",
+			source:   "def main():\n    return filter([1, 2])\n",
+			contains: "undefined: filter",
 		},
 	}
 

@@ -49,7 +49,7 @@ to perform that setup; `IsWorker` does not serve worker mode.
 
 ### Capability registration
 
-`CapabilityID` is the stable deployment and policy identity of a capability. `CapabilityName` is the dotted name visible in discovery and Starlark. A name has at least two valid Starlark identifier segments, such as `records.lookup`.
+`CapabilityID` is the stable deployment and policy identity of a capability. `CapabilityName` is the dotted name visible in discovery and Starlark. A name has at least two valid Starlark identifier segments, such as `records.lookup`. The first dotted segment must not be a reserved root: any standard Starlark universe name, plus `sum`, `json`, and `math`. Nested segments and leaf functions are unaffected, so `stats.sum` remains legal. Roots that were previously legal capability namespaces, including `list`, `str`, `type`, `print`, `range`, `min`, and `max`, are now rejected. A colliding registration is recorded by `Register` and returned by `Build` as `ErrInvalidRegistration` with a host-side diagnostic. There is no built-in `time` module; a host-defined `time.*` capability remains legal.
 
 `Capability[Input, Output]` contains:
 
@@ -444,7 +444,7 @@ Execute(ctx context.Context, subject authz.Subject, program Program) (any, error
 
 `Program` is Starlark source. The context must be non-nil and the subject ID must be non-empty. A nil context is a caller-contract violation and is currently classified as `ErrInternal`.
 
-Every call creates a fresh interpreter and fresh budgets. Module loading is disabled. The enabled capability names form the predeclared namespace. Top-level source loading must define a function named `main` that accepts no positional parameters, keyword-only parameters, variadic positional parameters, or variadic keyword parameters. Native calls are accepted only while `main` is running.
+Every call creates a fresh interpreter and fresh budgets. Module loading is disabled. The predeclared environment is the fixed language surface (`sum`, `json`, `math`, and the standard Starlark builtins) plus the enabled capability namespace. Top-level source loading must define a function named `main` that accepts no positional parameters, keyword-only parameters, variadic positional parameters, or variadic keyword parameters. Native calls are accepted only while `main` is running. There is no built-in `time` module; a host-defined `time.*` capability remains legal.
 
 For each native call, CodeMode performs these operations in order:
 
