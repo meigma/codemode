@@ -30,6 +30,26 @@ Compared to a conventional MCP server with one tool per function:
 - Each program runs in a fresh worker process under execution budgets, and
   only the program's final value is returned to the caller.
 
+## How this differs from Cloudflare's Code Mode
+
+Cloudflare's [Code Mode](https://blog.cloudflare.com/code-mode/) and CodeMode
+share a thesis: models are better at writing code than at emitting tool
+calls. They apply it on opposite sides of the protocol.
+
+Cloudflare's Code Mode is agent-side. Their Agents SDK converts the tool
+schemas of the MCP servers an agent already uses into a TypeScript API; the
+model writes TypeScript that runs in a V8 isolate on the Workers platform,
+and each call proxies back to the original servers.
+
+CodeMode is server-side. You author the server itself: capabilities are
+native typed Go functions, not wrapped remote tools, and the server runs the
+agent's program in a local worker process. Because code execution is part of
+the server's own contract, any MCP client gets one-round-trip composition
+without a special agent framework or hosting platform. The server also
+enforces its own policy: every capability call is authorized before it
+dispatches, and a deployment can disable capabilities it does not want to
+expose.
+
 ## Install
 
 ```sh
