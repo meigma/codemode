@@ -53,3 +53,6 @@ All three of this session's filed issues (#23 via earlier merge, #24, #42) plus 
 
 ## README rewrite PR
 Rewrote README per user direction: plain-language intro (agents write code instead of chaining tool calls), differentiator list (one-round-trip composition, type-derived schemas, per-deployment disabling, fail-closed authz + Rego, fresh worker processes), install pinned to v0.1.0 ahead of first release, security boundary compressed to the contract with links, dropped SearchTerms/TestMain digressions. Work done in worktree docs/readme-intro; master checkout restored clean. PR #47 open, all checks green. Merge note: @v0.1.0 resolves only after the tag exists.
+
+## README Get started made code-first
+Per user feedback on PR #47: Get started now leads with the annotated main() (worker entry, no-default-authorizer, schema-from-types, StaticSubject vs ContextSubject notes moved into Go comments), tutorial linked below the code, prose paragraphs removed. Pushed 2ca6da0 to docs/readme-intro.
