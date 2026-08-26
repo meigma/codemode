@@ -41,3 +41,22 @@ Settled the implementation contract:
 - One same-binary MCP program proves JSON round-trip, `sum`, and `math.sqrt` together.
 
 Dispatched three concurrent programmer slices for universe/execution, reserved-root validation, and MCP/docs/e2e work. A persistent read-only reviewer is reviewing the contract and each slice incrementally before the final integrated pass.
+
+## 2026-08-25 21:18 — Implementation delivered
+Implemented the accepted issue #42 contract on `feat/pure-compute-stdlib` and opened PR #46.
+
+Delivered:
+- Added canonical `internal/universe` with numeric-only `sum(iterable)`, the selected three-member JSON module, the complete pinned math module, exact sorted surface queries, and one reserved-root predicate.
+- Merged the fixed surface into every execution engine and rejected colliding roots at catalog, execution, namespace assembly, and child-manifest boundaries.
+- Updated live MCP wording, the exact MCP reference surface, capability-name reference, security explanation, and smoke gate.
+- Added unit, defense-in-depth, docs/runtime drift, and real same-binary MCP coverage.
+- Replaced #24's stale undefined-`sum` diagnostic fixtures with undefined `filter`.
+
+Verification:
+- Focused tests passed for `internal/universe`, `internal/execution`, `internal/catalog`, `internal/worker`, and `mcpserver`.
+- `mise exec -- moon run root:check --force` passed all eight tasks, including format, lint, build, docs build, MCP smoke, and the full race suite.
+- The persistent reviewer approved the final integrated diff with no remaining findings.
+
+The review identified recursive depth amplification in upstream JSON encode/decode. The worker process contains a runtime abort to one execution, but a correct remediation must cover both directions and define an internal-compute depth contract. Filed follow-up issue #45 instead of adding a decode-only guard to #42.
+
+Commit `9384308` is pushed. PR: https://github.com/meigma/codemode/pull/46. Follow-up: https://github.com/meigma/codemode/issues/45.
