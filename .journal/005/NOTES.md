@@ -73,3 +73,6 @@ Also observed: PR #15 release-please proposes 1.0.0 while user plans v0.1.0 — 
 
 ## Dependabot triage complete
 User refreshed token with near-admin scopes (workflow, admin:org, etc.). Merged #3 (mise-action 4.2.5) and #5 (actions/cache 6.1.0). All four Dependabot PRs now merged; local master fast-forwarded. Only open PR remaining is #15 (release-please 1.0.0 — version mismatch vs planned v0.1.0 already flagged to user).
+
+## Release-please retargeted to 0.1.0
+PR #15 proposed 1.0.0 because a repo with no prior release defaults to 1.0.0 (bump-minor-pre-major only affects later bumps; manifest 0.0.0 is treated as no release). Fixed with "initial-version": "0.1.0" in release-please-config.json (schema-verified knob; self-expiring after first release, unlike release-as). PR #49 merged as 6d0529a; release-please regenerated PR #15 as "chore(master): release 0.1.0". Worktree removed.
