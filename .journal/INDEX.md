@@ -14,3 +14,4 @@
 | 010 | 2026-08-25 | Reduce first-touch API ceremony | complete | Added stock subject resolvers, bounded per-field defaults, consolidated registration diagnostics, derived capability identity, and a real stdio first-server path in PR #34. |
 | 011 | 2026-08-25 | Widen capability binding matrix | complete | Implemented richer scalar inputs, bounded composite outputs, aggregate native-result accounting, derived discovery, end-to-end composition proof, and documentation across PRs #35–#40. |
 | 012 | 2026-08-25 | Review model-facing diagnostics | in-progress | Review issue #24's selective model-derived diagnostic echoing against the current error projection and non-disclosure boundary. |
+| 013 | 2026-08-25 | Design bounded capability search | in-progress | Produce and complexity-review a bounded architecture for relevance-ranked agent capability discovery. |
