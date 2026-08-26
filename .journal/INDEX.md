@@ -15,4 +15,4 @@
 | 011 | 2026-08-25 | Widen capability binding matrix | complete | Implemented richer scalar inputs, bounded composite outputs, aggregate native-result accounting, derived discovery, end-to-end composition proof, and documentation across PRs #35–#40. |
 | 012 | 2026-08-25 | Review model-facing diagnostics | complete | Implemented bounded parser, resolver, and binding diagnostics without weakening host-error non-disclosure, and merged PR #43 to close issue #24. |
 | 013 | 2026-08-25 | Design bounded capability search | complete | Designed, implemented, documented, validated, and merged bounded relevance-ranked capability discovery in PR #44. |
-| 014 | 2026-08-25 | Review pure-compute Starlark stdlib | in-progress | Review issue #42's fixed `sum`, `json`, and `math` execution surface against the current worker architecture and model-facing contract. |
+| 014 | 2026-08-25 | Review pure-compute Starlark stdlib | complete | Reviewed, implemented, documented, validated, and merged the fixed pure-compute Starlark surface in PR #46. |
