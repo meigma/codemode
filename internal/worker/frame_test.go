@@ -289,6 +289,10 @@ func TestDecodeFinalErrorRejectsInvalidDetail(t *testing.T) {
 			payload: `{"type":"final_error","code":"invalid_program","detail":""}`,
 		},
 		{
+			name:    "null detail",
+			payload: `{"type":"final_error","code":"invalid_program","detail":null}`,
+		},
+		{
 			name: "oversized detail",
 			payload: `{"type":"final_error","code":"invalid_program","detail":"` + strings.Repeat(
 				"a",
@@ -302,6 +306,10 @@ func TestDecodeFinalErrorRejectsInvalidDetail(t *testing.T) {
 		{
 			name:    "illegal internal detail",
 			payload: `{"type":"final_error","code":"internal","detail":"hidden"}`,
+		},
+		{
+			name:    "null detail on illegal code",
+			payload: `{"type":"final_error","code":"internal","detail":null}`,
 		},
 	}
 

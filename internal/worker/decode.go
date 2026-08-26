@@ -73,7 +73,7 @@ type rawFinalErrorFrame struct {
 	Code *finalErrorCode `json:"code"`
 
 	// Detail is the optional model-derived suffix token.
-	Detail *string `json:"detail"`
+	Detail json.RawMessage `json:"detail"`
 }
 
 // decodeType reads only the type discriminator without rejecting unknown fields.
@@ -208,14 +208,16 @@ func decodeFinalError(payload []byte) (finalErrorFrame, error) {
 }
 
 // decodeFinalErrorDetail accepts only a legal non-empty in-budget suffix.
-func decodeFinalErrorDetail(code finalErrorCode, raw *string) (string, error) {
+func decodeFinalErrorDetail(code finalErrorCode, raw json.RawMessage) (string, error) {
 	if raw == nil {
 		return "", nil
 	}
-	if *raw == "" || len(*raw) > maxDiagnosticBytes || !allowsFinalErrorDetail(code) {
+	var detail string
+	if err := json.Unmarshal(raw, &detail); err != nil ||
+		detail == "" || len(detail) > maxDiagnosticBytes || !allowsFinalErrorDetail(code) {
 		return "", errInvalidValue
 	}
-	return *raw, nil
+	return detail, nil
 }
 
 // requireProtocolVersion rejects a missing or mismatched protocol version.
