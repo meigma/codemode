@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -44,6 +45,9 @@ const (
 
 	// allowedLookupLimit is the optional integer argument used by the successful program.
 	allowedLookupLimit int64 = 2
+
+	// handlerPasswordCanary is host handler text that must not cross MCP.
+	handlerPasswordCanary = "db password rejected"
 )
 
 // invocationContextKey is the typed trusted-context key for e2e identity.
@@ -626,6 +630,80 @@ def main():
 	}, authorizations[0].Arguments)
 	_, hasLabel := authorizations[0].Arguments["label"]
 	assert.False(t, hasLabel, "omitted optional string must not appear in the canonical map")
+}
+
+// TestActualMCPModelDerivedDiagnostics proves MCP execute surfaces only approved
+// parser, resolver, and binding detail and keeps handler text hidden.
+func TestActualMCPModelDerivedDiagnostics(t *testing.T) {
+	builder := codemode.New(codemode.Options{
+		Authorizer: authz.AllowAll(),
+		Limits:     codemode.DefaultLimits(),
+	})
+	codemode.Register(builder, codemode.Capability[lookupInput, lookupResult]{
+		ID:          "records.entry.lookup",
+		Name:        "records.lookup",
+		Summary:     "Look up one record by key.",
+		Description: "Returns one deterministic record for the supplied key.",
+		Handler: func(context.Context, authz.Subject, lookupInput) (lookupResult, error) {
+			return lookupResult{}, errors.New(handlerPasswordCanary)
+		},
+	})
+	root, err := builder.Build()
+	require.NoError(t, err)
+
+	mcpServer, err := mcpserver.New(root, contextResolver{})
+	require.NoError(t, err)
+
+	trustedCtx := withInvocationIdentity(t.Context(), invocationIdentity{
+		Subject: authz.Subject{ID: trustedSubjectID},
+		Canary:  credentialCanary,
+	})
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	serverSession, err := mcpServer.Connect(trustedCtx, serverTransport, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = serverSession.Close() })
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "codemode-e2e", Version: "test"}, nil)
+	session, err := client.Connect(t.Context(), clientTransport, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = session.Close() })
+
+	syntax, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "execute",
+		Arguments: map[string]any{
+			"source": "def main():\n    return =\n",
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, syntax)
+	require.True(t, syntax.IsError)
+	require.Len(t, syntax.Content, 1)
+	syntaxText, ok := syntax.Content[0].(*mcp.TextContent)
+	require.True(t, ok)
+	assert.True(t, strings.HasPrefix(syntaxText.Text, "invalid program: <codemode>:"), syntaxText.Text)
+	assert.NotEqual(t, codemode.ErrInvalidProgram.Error(), syntaxText.Text)
+	assertNoCanary(t, syntax)
+
+	binding, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "execute",
+		Arguments: map[string]any{
+			"source": "def main():\n    return records.lookup(keu=\"alpha\")\n",
+		},
+	})
+	require.NoError(t, err)
+	assertToolError(t, binding, `invalid capability arguments: unknown argument "keu"`)
+	assertNoCanary(t, binding)
+
+	failed, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "execute",
+		Arguments: map[string]any{
+			"source": "def main():\n    return records.lookup(key=\"secret\")\n",
+		},
+	})
+	require.NoError(t, err)
+	assertToolError(t, failed, codemode.ErrCapabilityFailure.Error())
+	assertNoCanary(t, failed)
+	assertNotContainsText(t, failed, handlerPasswordCanary)
 }
 
 // withInvocationIdentity stores trusted identity on the server-owned context.

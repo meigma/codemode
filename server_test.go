@@ -171,6 +171,51 @@ def main():
 	assert.Zero(t, handlerCalls.Load())
 }
 
+// TestServerExecuteProjectsSyntaxAndBindingWithoutDetail proves parser and
+// binding failures stay coarse at the root API while remaining classified.
+func TestServerExecuteProjectsSyntaxAndBindingWithoutDetail(t *testing.T) {
+	tests := []struct {
+		// name identifies the model-derived failure.
+		name string
+
+		// source is the submitted Starlark program.
+		source string
+
+		// target is the expected public classification.
+		target error
+	}{
+		{
+			name:   "syntax error",
+			source: "def main():\n    return =\n",
+			target: codemode.ErrInvalidProgram,
+		},
+		{
+			name:   "unknown argument",
+			source: "def main():\n    return records.lookup(keu=\"alpha\")\n",
+			target: codemode.ErrInvalidArguments,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			authorizer := authzmocks.NewMockAuthorizer(t)
+			var handlerCalls atomic.Int64
+			capability := validBuilderCapability("cap.lookup", "records.lookup")
+			capability.Handler = func(context.Context, authz.Subject, builderInput) (builderOutput, error) {
+				handlerCalls.Add(1)
+				return builderOutput{}, nil
+			}
+			server := buildTestServer(t, authorizer, codemode.DefaultLimits(), capability)
+
+			_, err := server.Execute(t.Context(), authz.Subject{ID: "subject-1"}, codemode.Program(tt.source))
+
+			require.ErrorIs(t, err, tt.target)
+			assert.Equal(t, tt.target.Error(), err.Error())
+			assert.Zero(t, handlerCalls.Load())
+		})
+	}
+}
+
 // TestServerExecuteFailsClosedBeforeHandlerDispatch proves denial and policy failures have no handler side effects.
 func TestServerExecuteFailsClosedBeforeHandlerDispatch(t *testing.T) {
 	tests := []struct {

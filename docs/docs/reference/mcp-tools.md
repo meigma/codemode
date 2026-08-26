@@ -237,7 +237,7 @@ There is no compatibility suffix, alias, or alternate signature field.
 
 ## `execute`
 
-Execute one Starlark program that defines `def main():` with zero arguments, calls only names confirmed through `search_api` and `describe_api` inside `main`, and returns `main`'s final result.
+Execute one Starlark program that defines `def main():` with zero arguments, calls only names confirmed through `search_api` and `describe_api` inside `main`, and returns `main`'s final result. Starlark is not Python: `sum`, `import`, `while`, and f-strings are unavailable; `load` is disabled; `print` is discarded.
 
 ### Input
 
@@ -254,7 +254,7 @@ Execute one Starlark program that defines `def main():` with zero arguments, cal
 }
 ```
 
-The source must define `def main():` as a function with zero arguments. Top-level source loading cannot make native calls; calls are accepted only while `main` runs, and only for names confirmed through `search_api` and `describe_api`. Module loading is disabled.
+The source must define `def main():` as a function with zero arguments. Starlark is not Python: `sum`, `import`, `while`, and f-strings are unavailable. Top-level source loading cannot make native calls; calls are accepted only while `main` runs, and only for names confirmed through `search_api` and `describe_api`. Module loading is disabled. `print` output is discarded.
 
 Capabilities are available by dotted name. The sample native call is `records.lookup(key="alpha", limit=2)`. Native calls accept keyword arguments only. Duplicate keyword syntax is rejected by the Starlark parser as `invalid program` before authorization or handler dispatch. Positional, unknown, missing, incorrectly typed, and out-of-range arguments reach binding and map to `invalid capability arguments`. For the sample, `key` is required and `limit` can be omitted, `None`, or an integer in the signed 64-bit range.
 
@@ -324,12 +324,13 @@ Only the final converted value from the worker process is exposed in the success
 
 ## Authoring and recovery
 
-The listed descriptions above are the model-facing contract. Recovery uses the same fixed coarse errors on this page. When recording or reporting a failed call, keep the coarse text and the recovery action; do not echo the failed source, arguments, credentials, or unknown requested name.
+The listed descriptions above are the model-facing contract. Recovery uses the nine fixed texts and two stable prefixes on this page. When recording or reporting a failed call, keep the error text and the recovery action; do not echo credentials, unknown requested names, or host-derived handler or policy text.
 
 - Search with a short literal substring over enabled names and summaries. If the result is empty, retry with a shorter term.
 - After `capability not found`, search again and pass `describe_api` an exact returned `name`, without whitespace or case changes.
-- After `invalid capability arguments`, compare the call with the published `signature` and `input` field shapes.
-- After `invalid program`, check the program against these requirements:
+- After `invalid capability arguments`, use any suffix after the stable prefix to identify the rejected argument, then compare the call with the published `signature` and `input` field shapes.
+- After `invalid program`, use any suffix after the stable prefix. A parse or resolve suffix includes a `<codemode>:line:col:` position in the submitted source. Check the program against these requirements:
+  - Write Starlark, not Python: `sum`, `import`, `while`, and f-strings are unavailable.
   - Define `main` with zero arguments.
   - Call only names confirmed through `search_api` and `describe_api`, and call them only inside `main`.
   - Return the final value from `main`.
@@ -342,14 +343,14 @@ The listed descriptions above are the model-facing contract. Recovery uses the s
 
 ## Errors
 
-After a well-formed call reaches the adapter, a resolver or service failure becomes a successful MCP protocol response with `isError` set and one of the eleven fixed text values below. The adapter removes resolver and custom-service details and recovered panic values. It does not expose budget values, filtered capability identities, unknown requested names, argument names or values, source locations or text, Rego decision paths or rule names, handler messages, credentials, panic values, or stack details.
+After a well-formed call reaches the adapter, a resolver or service failure becomes a successful MCP protocol response with `isError` set. Nine texts are fixed. Two classes keep a stable prefix and may append model-derived detail: `invalid program: ...` and `invalid capability arguments: ...`. The adapter removes resolver and custom-service details and recovered panic values. It does not expose budget values, filtered capability identities, unknown requested names, host-derived argument values, Rego decision paths or rule names, handler messages, credentials, panic values, or stack details. Parse and resolve suffixes may include a source position in the submitted program. Binding suffixes may include an argument name from the submitted call.
 
 | Text | Meaning |
 | --- | --- |
 | `unauthenticated` | The resolver failed or returned an empty subject ID. |
 | `capability not found` | `describe_api` did not find an enabled exact name. |
-| `invalid program` | Source, including duplicate keyword syntax, entry point, runtime behavior, or final-value conversion was invalid. |
-| `invalid capability arguments` | A native call failed binding: positional, unknown, missing, incorrectly typed, or out-of-range arguments. |
+| `invalid program` | Fixed prefix. Source, including duplicate keyword syntax, entry point, runtime behavior, or final-value conversion was invalid. A parse or resolve failure may append `<codemode>:line:col: message`. |
+| `invalid capability arguments` | Fixed prefix. A native call failed binding: positional, unknown, missing, incorrectly typed, or out-of-range arguments. A binding failure may append the model-derived argument diagnostic. |
 | `permission denied` | Policy returned a recognized denial. |
 | `authorization policy failure` | Policy evaluation failed. |
 | `resource limit exceeded` | A discovery, execution, depth, per-value, or aggregate intermediate-value budget was exceeded. |
