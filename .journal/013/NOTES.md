@@ -17,3 +17,11 @@ Next: The complexity reviewer is challenging the proposal's packed index, numeri
 The complexity reviewer returned `SUBSTANTIALLY SIMPLIFY` while preserving relevance-ranked lexical search, description indexing, explicit `SearchTerms`, deterministic full-catalog ranking, bounded output, and truncation signaling.
 Applied changes: replaced packed postings/token arenas/pooling/heap machinery with an immutable document slice and bounded direct scan; collapsed overlapping ceilings into a small independent bound set; made the response-byte cap internal; replaced giant score boosts with an explicit comparator; deferred phrase boosts and fuzzy matching; and made future packed indexes, heaps, interning, and pooling profile-triggered only.
 Final review document: `SEARCH_ARCHITECTURE.md`. The repository remains unchanged; only this journal session contains the architecture.
+
+## 2026-08-25 18:09 — Implementation started
+Created isolated Worktrunk branch/worktree `feat/bounded-search` at `.wt/feat-bounded-search` from fetched `origin/master`. A persistent bounded reviewer is assigned for the core, MCP, and final documentation/full-diff increments.
+Programmer-agent sequence: core/public catalog search first, MCP contract cutover second, then documentation. Agents skip validation; the parent will run targeted tests, the project validation suite, and an actual MCP search scenario before opening the PR.
+
+## 2026-08-25 19:24 — Core and MCP increments reviewed
+Programmer agents implemented the direct immutable catalog scorer, public `SearchTerms` and `SearchResponse` cutover, bounded metadata/query/response behavior, and the MCP object schema/version-2 cutover.
+The persistent reviewer caught and drove fixes for disabled-index placement hazards, caller-slice ownership, query error classification, `MySQL`/`sql` acronym tokenization, request-local map allocation, connector vocabulary, missing build helper, and MCP version coverage. Core and MCP scopes are now reviewer-clean. Documentation is in progress; validation remains intentionally deferred to the parent.
