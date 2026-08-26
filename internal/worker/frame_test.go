@@ -289,8 +289,11 @@ func TestDecodeFinalErrorRejectsInvalidDetail(t *testing.T) {
 			payload: `{"type":"final_error","code":"invalid_program","detail":""}`,
 		},
 		{
-			name:    "oversized detail",
-			payload: `{"type":"final_error","code":"invalid_program","detail":"` + strings.Repeat("a", maxDiagnosticBytes+1) + `"}`,
+			name: "oversized detail",
+			payload: `{"type":"final_error","code":"invalid_program","detail":"` + strings.Repeat(
+				"a",
+				maxDiagnosticBytes+1,
+			) + `"}`,
 		},
 		{
 			name:    "illegal resource_limit detail",

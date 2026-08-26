@@ -540,8 +540,11 @@ func TestMapFinalErrorReconstructsApprovedDetail(t *testing.T) {
 		detail string
 	}{
 		{
-			name:   "invalid program reconstructs suffix",
-			frame:  finalErrorFrame{Code: finalErrorInvalidProgram, Detail: "<codemode>:3:7: got '=', want primary expression"},
+			name: "invalid program reconstructs suffix",
+			frame: finalErrorFrame{
+				Code:   finalErrorInvalidProgram,
+				Detail: "<codemode>:3:7: got '=', want primary expression",
+			},
 			want:   execution.ErrInvalidProgram,
 			detail: "<codemode>:3:7: got '=', want primary expression",
 		},
