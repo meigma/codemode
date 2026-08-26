@@ -49,3 +49,7 @@ Updated the live `execute` tool description, MCP reference, and security-model e
 The persistent reviewer found two advisory issues: explicit JSON null was accepted for worker detail, and security wording was too broad. Both were fixed and the same reviewer passed the follow-up. The repository gate then exposed strict-lint findings plus a broken native-abort test assumption: Engine intentionally coarsens the private unwind error, so the child now treats its terminal connection state as authoritative after execution.
 
 Verification passed: focused diagnostic boundary suite; `go test -race ./internal/worker -run '^TestServeEngineAbortSuppressesFinalError$' -count=20`; full `mise exec -- moon run root:check`; and verbose `TestActualMCPModelDerivedDiagnostics`.
+
+## 2026-08-25 18:09 — Pull request opened
+
+Pushed `fix/issue-24-diagnostics` and opened [PR #43](https://github.com/meigma/codemode/pull/43), `feat(diagnostics): echo safe model-derived error detail`, closing issue #24. The PR is open, non-draft, mergeable, targets `master`, and links issue #24. GitHub Pages, CI, and Kusari Inspector passed; the deployment job was skipped as expected.
