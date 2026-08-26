@@ -223,9 +223,9 @@ func TestFinalErrorFromExtractsApprovedSafeDetail(t *testing.T) {
 	}{
 		{
 			name:   "invalid program keeps suffix",
-			err:    execution.WithSafeDetail(execution.ErrInvalidProgram, "<codemode>:1:1: undefined: sum"),
+			err:    execution.WithSafeDetail(execution.ErrInvalidProgram, "<codemode>:1:1: undefined: filter"),
 			code:   finalErrorInvalidProgram,
-			detail: "<codemode>:1:1: undefined: sum",
+			detail: "<codemode>:1:1: undefined: filter",
 		},
 		{
 			name:   "invalid arguments keeps suffix",

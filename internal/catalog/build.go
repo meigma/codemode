@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/meigma/codemode/internal/binding"
+	"github.com/meigma/codemode/internal/universe"
 )
 
 const minimumDottedSegments = 2
@@ -160,12 +161,18 @@ func indexCatalog(catalog *Catalog) {
 }
 
 // ValidateRegistration reports whether one copied registration has valid metadata, a compiled plan, and a handler.
+//
+// The first dotted name segment must not collide with a reserved Starlark universe root.
 func ValidateRegistration(registration Registration) error {
 	if registration.ID == "" || registration.ID != strings.TrimSpace(registration.ID) {
 		return errors.New("ID must be non-empty without surrounding whitespace")
 	}
 	if !isDottedName(registration.Name) {
 		return fmt.Errorf("name %q must contain valid dotted Starlark identifiers", registration.Name)
+	}
+	root, _, _ := strings.Cut(registration.Name, ".")
+	if universe.IsReservedRoot(root) {
+		return fmt.Errorf("name %q uses reserved root %q", registration.Name, root)
 	}
 	if registration.Summary == "" || registration.Summary != strings.TrimSpace(registration.Summary) {
 		return errors.New("summary must be non-empty without surrounding whitespace")

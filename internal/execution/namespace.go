@@ -6,6 +6,8 @@ import (
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
+
+	"github.com/meigma/codemode/internal/universe"
 )
 
 // namespaceNode is one temporary registration-time path used to assemble frozen modules.
@@ -17,7 +19,7 @@ type namespaceNode struct {
 	functions starlark.StringDict
 }
 
-// buildPredeclared creates the frozen capability namespace for one immutable Engine.
+// buildPredeclared merges the fixed language surface with frozen capability namespaces.
 func buildPredeclared(bindings []CapabilityBinding) (starlark.StringDict, error) {
 	root := newNamespaceNode()
 	for _, capability := range bindings {
@@ -47,8 +49,11 @@ func buildPredeclared(bindings []CapabilityBinding) (starlark.StringDict, error)
 		})
 	}
 
-	predeclared := make(starlark.StringDict, len(root.children))
+	predeclared := universe.Predeclared()
 	for name, node := range root.children {
+		if _, exists := predeclared[name]; exists {
+			return nil, fmt.Errorf("%w: capability root %q collides with the fixed language surface", ErrInternal, name)
+		}
 		predeclared[name] = freezeModule(name, node)
 	}
 	predeclared.Freeze()

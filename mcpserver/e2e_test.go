@@ -137,6 +137,21 @@ type compositeExecuteEnvelope struct {
 	Result compositeDigest `json:"result"`
 }
 
+// pureComputeResult is the only value the pure-compute program may return.
+type pureComputeResult struct {
+	// Total is sum([1, 2, 3]) after a JSON round-trip.
+	Total int64 `json:"total"`
+
+	// Root is math.sqrt(4.0).
+	Root float64 `json:"root"`
+}
+
+// pureComputeExecuteEnvelope is the exact structured execute payload for pure compute.
+type pureComputeExecuteEnvelope struct {
+	// Result is main's final converted pure-compute object.
+	Result pureComputeResult `json:"result"`
+}
+
 // executeEnvelope is the exact structured execute payload.
 type executeEnvelope struct {
 	// Result is main's final converted value.
@@ -641,6 +656,55 @@ def main():
 	}, authorizations[0].Arguments)
 	_, hasLabel := authorizations[0].Arguments["label"]
 	assert.False(t, hasLabel, "omitted optional string must not appear in the canonical map")
+}
+
+// TestActualMCPPureComputeProgram proves one same-binary MCP execute call can
+// combine json encode/decode, sum, and math.sqrt without host configuration.
+func TestActualMCPPureComputeProgram(t *testing.T) {
+	builder := codemode.New(codemode.Options{
+		Authorizer: authz.AllowAll(),
+		Limits:     codemode.DefaultLimits(),
+	})
+	root, err := builder.Build()
+	require.NoError(t, err)
+
+	mcpServer, err := mcpserver.New(root, contextResolver{})
+	require.NoError(t, err)
+
+	trustedCtx := withInvocationIdentity(t.Context(), invocationIdentity{
+		Subject: authz.Subject{ID: trustedSubjectID},
+		Canary:  credentialCanary,
+	})
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	serverSession, err := mcpServer.Connect(trustedCtx, serverTransport, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = serverSession.Close() })
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "codemode-e2e", Version: "test"}, nil)
+	session, err := client.Connect(t.Context(), clientTransport, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = session.Close() })
+
+	executed, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "execute",
+		Arguments: map[string]any{
+			"source": `
+def main():
+    encoded = json.encode({"values": [1, 2, 3]})
+    decoded = json.decode(encoded)
+    return {"total": sum(decoded["values"]), "root": math.sqrt(4.0)}
+`,
+		},
+	})
+	require.NoError(t, err)
+	assertSuccessfulTool(t, executed)
+	want := pureComputeExecuteEnvelope{Result: pureComputeResult{
+		Total: 6,
+		Root:  2.0,
+	}}
+	assert.Equal(t, want, decodeStructured[pureComputeExecuteEnvelope](t, executed))
+	assertExactExecuteEnvelope(t, executed.StructuredContent)
+	requireJSONTextMirror(t, executed, want)
 }
 
 // TestActualMCPModelDerivedDiagnostics proves MCP execute surfaces only approved

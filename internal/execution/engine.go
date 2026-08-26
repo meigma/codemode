@@ -7,6 +7,7 @@ import (
 	"go.starlark.net/starlark"
 
 	"github.com/meigma/codemode/internal/binding"
+	"github.com/meigma/codemode/internal/universe"
 )
 
 const minimumDottedSegments = 2
@@ -28,13 +29,13 @@ type CapabilityBinding struct {
 // It returns one normalized process-neutral value or a classified error.
 type NativeCall func(id string, arguments map[string]any) (any, error)
 
-// Engine owns the frozen capability namespace shared by fresh execution threads.
+// Engine owns the frozen language surface and capability namespace shared by fresh execution threads.
 type Engine struct {
-	// predeclared contains immutable namespaced capability builtins.
+	// predeclared contains the frozen fixed language surface merged with capability namespaces.
 	predeclared starlark.StringDict
 }
 
-// New compiles one immutable execution engine from process-neutral capability bindings.
+// New compiles one immutable execution engine from the fixed language surface and capability bindings.
 func New(bindings []CapabilityBinding) (*Engine, error) {
 	copied := copyBindings(bindings)
 	if err := validateBindings(copied); err != nil {
@@ -62,7 +63,7 @@ func copyBindings(bindings []CapabilityBinding) []CapabilityBinding {
 	return copied
 }
 
-// validateBindings rejects empty or colliding identities and invalid input shapes.
+// validateBindings rejects empty or colliding identities, reserved roots, and invalid input shapes.
 func validateBindings(bindings []CapabilityBinding) error {
 	ids := make(map[string]struct{}, len(bindings))
 	names := make(map[string]struct{}, len(bindings))
@@ -75,6 +76,10 @@ func validateBindings(bindings []CapabilityBinding) error {
 		}
 		if !isDottedName(capability.Name) {
 			return fmt.Errorf("%w: capability name %q is not dotted", ErrInternal, capability.Name)
+		}
+		root, _, _ := strings.Cut(capability.Name, ".")
+		if universe.IsReservedRoot(root) {
+			return fmt.Errorf("%w: capability root %q is reserved", ErrInternal, root)
 		}
 		if _, duplicate := names[capability.Name]; duplicate {
 			return fmt.Errorf("%w: duplicate namespace function", ErrInternal)

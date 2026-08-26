@@ -325,7 +325,19 @@ There is no compatibility suffix, alias, or alternate signature field.
 
 ## `execute`
 
-Execute one Starlark program that defines `def main():` with zero arguments, calls only names confirmed through `search_api` and `describe_api` inside `main`, and returns `main`'s final result. Starlark is not Python: `sum`, `import`, `while`, and f-strings are unavailable; `load` is disabled; `print` is discarded.
+Execute one Starlark program that defines `def main():` with zero arguments, calls only names confirmed through `search_api` and `describe_api` inside `main`, and returns `main`'s final result. Standard Starlark builtins plus `sum(iterable)`, `json.decode/encode/indent`, and `math.*` are directly available without import. `import`, `while`, f-strings, `filter`, and `map` are unavailable; `load` is disabled; `print` is discarded.
+
+### Language surface
+
+The following block is the exact fixed language surface. These names are
+directly available without `import` or `load`. `set` is reserved as a
+capability root but is not available. There is no built-in `time` module.
+
+```language-surface
+top-level: False, None, True, abs, all, any, bool, bytes, chr, dict, dir, enumerate, fail, float, getattr, hasattr, hash, int, json, len, list, math, max, min, ord, print, range, repr, reversed, sorted, str, sum, tuple, type, zip
+json: decode, encode, indent
+math: acos, acosh, asin, asinh, atan, atan2, atanh, ceil, copysign, cos, cosh, degrees, e, exp, fabs, floor, gamma, hypot, log, mod, pi, pow, radians, remainder, round, sin, sinh, sqrt, tan, tanh
+```
 
 ### Input
 
@@ -342,9 +354,9 @@ Execute one Starlark program that defines `def main():` with zero arguments, cal
 }
 ```
 
-The source must define `def main():` as a function with zero arguments. Starlark is not Python: `sum`, `import`, `while`, and f-strings are unavailable. Top-level source loading cannot make native calls; calls are accepted only while `main` runs, and only for names confirmed through `search_api` and `describe_api`. Module loading is disabled. `print` output is discarded.
+The source must define `def main():` as a function with zero arguments. Standard Starlark builtins plus `sum(iterable)`, `json.decode/encode/indent`, and `math.*` are directly available without import. `import`, `while`, f-strings, `filter`, and `map` are unavailable; use comprehensions instead of `filter` and `map`. Top-level source loading cannot make native calls; calls are accepted only while `main` runs, and only for names confirmed through `search_api` and `describe_api`. Module loading is disabled. `print` output is discarded.
 
-Capabilities are available by dotted name. The sample native call is `records.lookup(key="alpha", limit=2)`. Native calls accept keyword arguments only. Duplicate keyword syntax is rejected by the Starlark parser as `invalid program` before authorization or handler dispatch. Positional, unknown, missing, incorrectly typed, and out-of-range arguments reach binding and map to `invalid capability arguments`. For the sample, `key` is required and `limit` can be omitted, `None`, or an integer in the signed 64-bit range.
+Capabilities are available by dotted name. The sample native call is `records.lookup(key="alpha", limit=2)`. Native calls accept keyword arguments only. Duplicate keyword syntax is rejected by the Starlark parser as `invalid program` before authorization or handler dispatch. Positional, unknown, missing, incorrectly typed, and out-of-range arguments reach binding and map to `invalid capability arguments`. For the sample, `key` is required and `limit` can be omitted, `None`, or an integer in the signed 64-bit range. The first dotted segment of a capability name must not be a reserved root (any standard Starlark universe name, plus `sum`, `json`, and `math`); nested leaves such as `stats.sum` remain legal. There is no built-in `time` module; a host-defined `time.*` capability remains legal.
 
 For example, a capability described with the signature
 `records.search(*, count: int, active: bool, score: float, label: str | None)`
@@ -366,9 +378,11 @@ def main():
     return {"count": count, "score": total, "ids": ids}
 ```
 
-Each `execute` call gets a fresh interpreter and fresh source, step,
+Each `execute` call gets a fresh interpreter and fresh source, bytecode-step,
 elapsed-time, native-call, conversion-depth, per-value size, and aggregate
-intermediate-value budgets. There is no interpreter or aggregate accounting
+intermediate-value budgets. `MaxExecutionSteps` counts Starlark bytecode steps
+and does not claim that Go builtin internals consume steps. `MaxExecutionTime`
+bounds elapsed worker execution. There is no interpreter or aggregate accounting
 shared between calls.
 
 ### Successful structured output
@@ -418,7 +432,7 @@ The listed descriptions above are the model-facing contract. Recovery uses the n
 - After `capability not found`, search again and pass `describe_api` an exact returned `name`, without whitespace or case changes.
 - After `invalid capability arguments`, use any suffix after the stable prefix to identify the rejected argument, then compare the call with the published `signature` and `input` field shapes.
 - After `invalid program`, use any suffix after the stable prefix. A parse or resolve suffix includes a `<codemode>:line:col:` position in the submitted source. Check the program against these requirements:
-  - Write Starlark, not Python: `sum`, `import`, `while`, and f-strings are unavailable.
+  - Write Starlark, not Python: `import`, `while`, f-strings, `filter`, and `map` are unavailable; `sum(iterable)`, `json.decode/encode/indent`, and `math.*` are directly available without import.
   - Define `main` with zero arguments.
   - Call only names confirmed through `search_api` and `describe_api`, and call them only inside `main`.
   - Return the final value from `main`.

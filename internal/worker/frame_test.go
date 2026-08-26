@@ -743,6 +743,26 @@ func TestFrameLimitsValidateManifest(t *testing.T) {
 			name:     "reserved name segment",
 			manifest: []manifestEntry{{ID: "cap.lookup", Name: "records.import", Input: valid[0].Input}},
 		},
+		{
+			name:     "reserved root sum",
+			manifest: []manifestEntry{{ID: "cap.sum", Name: "sum.x", Input: valid[0].Input}},
+		},
+		{
+			name:     "reserved root json",
+			manifest: []manifestEntry{{ID: "cap.json", Name: "json.fetch", Input: valid[0].Input}},
+		},
+		{
+			name:     "reserved root math",
+			manifest: []manifestEntry{{ID: "cap.math", Name: "math.add", Input: valid[0].Input}},
+		},
+		{
+			name:     "reserved root len",
+			manifest: []manifestEntry{{ID: "cap.len", Name: "len.items", Input: valid[0].Input}},
+		},
+		{
+			name:     "reserved root set",
+			manifest: []manifestEntry{{ID: "cap.set", Name: "set.members", Input: valid[0].Input}},
+		},
 		{name: "duplicate name", manifest: []manifestEntry{
 			{ID: "cap.one", Name: "records.lookup", Input: valid[0].Input},
 			{ID: "cap.two", Name: "records.lookup", Input: valid[0].Input},
@@ -764,6 +784,11 @@ func TestFrameLimitsValidateManifest(t *testing.T) {
 
 	require.NoError(t, validateManifest(nil))
 	require.NoError(t, validateManifest(valid))
+	require.NoError(t, validateManifest([]manifestEntry{{
+		ID:    "cap.stats",
+		Name:  "stats.sum",
+		Input: valid[0].Input,
+	}}))
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validateManifest(tt.manifest)

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/meigma/codemode/internal/binding"
+	"github.com/meigma/codemode/internal/universe"
 )
 
 const (
@@ -38,6 +39,7 @@ type manifestEntry struct {
 	ID string `json:"id"`
 
 	// Name is the dotted Starlark path.
+	// The first segment must not collide with a reserved Starlark universe root.
 	Name string `json:"name"`
 
 	// Input is the exact compiled input shape.
@@ -146,6 +148,8 @@ func validateChildLimits(limits childLimits) error {
 }
 
 // validateManifest reports whether capability identities and shapes are legal.
+//
+// The first dotted name segment must not collide with a reserved Starlark universe root.
 func validateManifest(entries []manifestEntry) error {
 	ids := make(map[string]struct{}, len(entries))
 	names := make(map[string]struct{}, len(entries))
@@ -157,6 +161,10 @@ func validateManifest(entries []manifestEntry) error {
 			return errInvalidManifest
 		}
 		if !isDottedName(entry.Name) {
+			return errInvalidManifest
+		}
+		root, _, _ := strings.Cut(entry.Name, ".")
+		if universe.IsReservedRoot(root) {
 			return errInvalidManifest
 		}
 		if _, duplicate := names[entry.Name]; duplicate {
