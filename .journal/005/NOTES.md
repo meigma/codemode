@@ -56,3 +56,6 @@ Rewrote README per user direction: plain-language intro (agents write code inste
 
 ## README Get started made code-first
 Per user feedback on PR #47: Get started now leads with the annotated main() (worker entry, no-default-authorizer, schema-from-types, StaticSubject vs ContextSubject notes moved into Go comments), tutorial linked below the code, prose paragraphs removed. Pushed 2ca6da0 to docs/readme-intro.
+
+## PR #47 merged
+Squash-merged as 502c363 (docs: rewrite README around differentiators). Local master fast-forwarded; docs/readme-intro worktree and branch removed.
