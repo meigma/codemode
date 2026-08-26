@@ -39,3 +39,13 @@ The revised proposal is stored at `local://issue24-review-proposal.md`.
 
 ## 2026-08-25 17:20 — Implementation started
 Created integration branch `fix/issue-24-diagnostics` from fetched `origin/master` and three isolated programmer branches for execution provenance, worker framing, and root/MCP/docs projection. The three programmer agents are running concurrently under an explicit shared API contract. They will commit without per-branch validation; the integration branch will assemble the commits, run one bounded persistent review loop, and execute the focused, repository, and functional gates before opening the PR.
+
+## 2026-08-25 18:05 — Implementation verified
+
+Implemented issue #24 on integration branch `fix/issue-24-diagnostics`. `internal/execution` now carries private model-derived detail while preserving coarse `Error()` text; only direct ordinary `syntax.Error`, direct `resolve.ErrorList`, and child-side `binding.ErrInvalidArguments` diagnostics qualify. The worker protocol carries a separately capped 4 KiB optional detail only for `invalid_program` and `invalid_arguments`; absent, null, empty, oversized, and illegal-code details are rejected or reduced to code-only frames as appropriate. Root projection preserves the private wrapper, while MCP alone formats `<sentinel>: <detail>`.
+
+Updated the live `execute` tool description, MCP reference, and security-model exception language. Added focused execution, worker, root, MCP, and actual in-memory MCP coverage. The actual MCP test proves syntax, resolver, and unknown-keyword detail appears and a handler error containing `db password rejected` remains exactly `capability failed` with no leaked host text.
+
+The persistent reviewer found two advisory issues: explicit JSON null was accepted for worker detail, and security wording was too broad. Both were fixed and the same reviewer passed the follow-up. The repository gate then exposed strict-lint findings plus a broken native-abort test assumption: Engine intentionally coarsens the private unwind error, so the child now treats its terminal connection state as authoritative after execution.
+
+Verification passed: focused diagnostic boundary suite; `go test -race ./internal/worker -run '^TestServeEngineAbortSuppressesFinalError$' -count=20`; full `mise exec -- moon run root:check`; and verbose `TestActualMCPModelDerivedDiagnostics`.
