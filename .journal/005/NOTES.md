@@ -40,3 +40,13 @@ Remaining open UX threads: #24, composite inputs (deferred phase 2 of #23), ten-
 
 ## Filed stdlib issue
 Filed #42: fixed pure-compute stdlib in the worker universe (sum + lib/json + lib/math), always-on with no knob. Rationale recorded: one language not dialects, nothing to opt out of (pure compute under existing budgets), zero new go.mod entries (lib/json + lib/math ship in the pinned go.starlark.net revision; spec-standard modules). Exclusions: lib/time (nondeterminism), regex, filter/map, host preludes. Flagged coordination with in-flight #24 agent: single documented language surface + drift test asserting docs match actual universe; also flagged namespace-collision registration check (json/math/sum as capability namespace roots).
+
+## Reviewed diagnostics + stdlib + search merges at 344b79b
+PRs #43 (closes #24), #44 (relevance-ranked search, new), #46 (closes #42) merged; new follow-up issue #45 (json stdlib Go-recursion not step-budgeted; worker contains but error goes coarse-internal).
+Re-ran the smoke suite live against a rebuilt server:
+- Original sum() composite program now succeeds verbatim ({"kept":1,...,"total":10}).
+- Diagnostics: syntax error -> "invalid program: <codemode>:1:11: got ':', want ')'"; unknown keyword -> "invalid capability arguments: unknown argument \"keu\""; undefined name -> "invalid program: <codemode>:2:9: undefined: time".
+- Stdlib: json round-trip and math.sqrt work; time correctly undefined.
+- Non-disclosure held: handler error with secret string projects to bare "capability failed".
+- search_api output shape changed (breaking): {"results": [...], "truncated": false} wrapper with relevance ranking.
+All three of this session's filed issues (#23 via earlier merge, #24, #42) plus #25 are now implemented and verified end-to-end.
