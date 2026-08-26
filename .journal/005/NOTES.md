@@ -79,3 +79,6 @@ PR #15 proposed 1.0.0 because a repo with no prior release defaults to 1.0.0 (bu
 
 ## 2026-08-26 00:20 — Close
 Session complete. Merged this session: PRs #47, #48, #49 (README rework, Cloudflare comparison, initial-version 0.1.0) and Dependabot #1/#3/#4/#5. User merged release PR #15: tag v0.1.0 exists, GitHub release is a draft pending manual publish. Issues filed here (#23, #24, #25, #42) all implemented by concurrent sessions and verified live. Open handoff: publish the draft release; issue #45 (JSON recursion hardening); composite inputs deferred. SUMMARY.md written; INDEX row set complete; TECH_NOTES gained release-state and gh-token bullets. Remote session branches pruned; local master at a999285.
+
+## 2026-08-26 08:34 — Correction
+The Close entry above is mis-timestamped "00:20"; it was written at 08:33 local.
