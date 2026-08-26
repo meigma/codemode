@@ -36,3 +36,6 @@ Removed the exhaustive builtin inventory from the proposal. The pinned Starlark 
 Reduced the new test matrix to representative boundary cases and reuse of existing binding, custom-service, Rego, panic, and protocol coverage. Retained one actual-root MCP handler canary despite the reviewer's suggestion to rely on existing layer tests because issue #24 explicitly requires that end-to-end assertion. Documentation changes are now surgical: nine fixed MCP texts plus two stable prefixes, precise security-model exceptions, unchanged public API reference, and compatibility language scoped to MCP text only.
 
 The revised proposal is stored at `local://issue24-review-proposal.md`.
+
+## 2026-08-25 17:20 — Implementation started
+Created integration branch `fix/issue-24-diagnostics` from fetched `origin/master` and three isolated programmer branches for execution provenance, worker framing, and root/MCP/docs projection. The three programmer agents are running concurrently under an explicit shared API contract. They will commit without per-branch validation; the integration branch will assemble the commits, run one bounded persistent review loop, and execute the focused, repository, and functional gates before opening the PR.
