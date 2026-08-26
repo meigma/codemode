@@ -25,3 +25,7 @@ Programmer-agent sequence: core/public catalog search first, MCP contract cutove
 ## 2026-08-25 19:24 — Core and MCP increments reviewed
 Programmer agents implemented the direct immutable catalog scorer, public `SearchTerms` and `SearchResponse` cutover, bounded metadata/query/response behavior, and the MCP object schema/version-2 cutover.
 The persistent reviewer caught and drove fixes for disabled-index placement hazards, caller-slice ownership, query error classification, `MySQL`/`sql` acronym tokenization, request-local map allocation, connector vocabulary, missing build helper, and MCP version coverage. Core and MCP scopes are now reviewer-clean. Documentation is in progress; validation remains intentionally deferred to the parent.
+
+## 2026-08-25 19:49 — Implementation delivered for review
+Completed the bounded relevance-ranked search design on `feat/bounded-search` and opened PR #44 at `https://github.com/meigma/codemode/pull/44` from commit `24e7670`.
+Final review fixed exact-versus-prefix precedence within one field, added a discriminating regression case, and documented the registration, searchable-metadata, and single-result build ceilings. Targeted root/catalog/MCP tests passed; `moon run root:check` passed format, lint, build, MCP smoke, race, and docs build; and verbose `TestActualMCPSecureLoop` passed against the real in-memory MCP transport with populated and empty search responses.
