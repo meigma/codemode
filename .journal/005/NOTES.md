@@ -70,3 +70,6 @@ Squash-merged as a2c33bd (docs: compare with Cloudflare's Code Mode). Section pl
 Four open Dependabot PRs triaged (#1 mkdocs-material 9.7.7, #3 mise-action 4.2.5, #4 checkout 7.0.1, #5 cache 6.1.0). All CI green; verified each new action SHA matches its upstream tag via gh api before merging.
 Merged: #4 (checkout), #1 (mkdocs-material). Blocked: #3 and #5 — gh OAuth token lacks `workflow` scope, so squash merges touching .github/workflows are refused (403); #4 inexplicably slipped through the same check. `@dependabot squash and merge` comments were not acknowledged (comment commands inactive). Interactive `gh auth refresh -s workflow` unworkable from agent PTY (gh prompter ignores piped input). Handed the refresh command to the user; #3/#5 merge pending that or web-UI merge.
 Also observed: PR #15 release-please proposes 1.0.0 while user plans v0.1.0 — flagged.
+
+## Dependabot triage complete
+User refreshed token with near-admin scopes (workflow, admin:org, etc.). Merged #3 (mise-action 4.2.5) and #5 (actions/cache 6.1.0). All four Dependabot PRs now merged; local master fast-forwarded. Only open PR remaining is #15 (release-please 1.0.0 — version mismatch vs planned v0.1.0 already flagged to user).
