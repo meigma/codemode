@@ -109,9 +109,37 @@ func TestBuilderCopiesStaticFilteringOptions(t *testing.T) {
 	server, err := builder.Build()
 
 	require.NoError(t, err)
-	results, err := server.Search("disabled")
+	response, err := server.Search("disabled")
 	require.NoError(t, err)
-	assert.Empty(t, results)
+	require.NotNil(t, response.Results)
+	assert.Empty(t, response.Results)
+	assert.False(t, response.Truncated)
+}
+
+// TestBuilderCopiesSearchTerms proves caller search-term mutation cannot alter discovery.
+func TestBuilderCopiesSearchTerms(t *testing.T) {
+	terms := []string{"open ticket"}
+	capability := validBuilderCapability("cap.alpha", "records.alpha")
+	capability.SearchTerms = terms
+	builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll()})
+	codemode.Register(builder, capability)
+	terms[0] = "mutated after register"
+
+	server, err := builder.Build()
+	require.NoError(t, err)
+
+	response, err := server.Search("ticket")
+	require.NoError(t, err)
+	require.NotNil(t, response.Results)
+	require.Len(t, response.Results, 1)
+	assert.Equal(t, "records.alpha", response.Results[0].Name)
+	assert.False(t, response.Truncated)
+
+	mutated, err := server.Search("mutated")
+	require.NoError(t, err)
+	require.NotNil(t, mutated.Results)
+	assert.Empty(t, mutated.Results)
+	assert.False(t, mutated.Truncated)
 }
 
 // TestBuilderRejectsNilAuthorizersAndNegativeLimits proves required construction policy fails closed.

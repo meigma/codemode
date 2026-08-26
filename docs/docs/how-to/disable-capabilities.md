@@ -14,10 +14,11 @@ explicit ID before creating a deployment filter:
 
 ```go
 codemode.Register(builder, codemode.Capability[lookupInput, lookupOutput]{
-	ID:      "records.entry.lookup",
-	Name:    "records.lookup",
-	Summary: "Look up one record by key.",
-	Handler: lookup,
+	ID:          "records.entry.lookup",
+	Name:        "records.lookup",
+	Summary:     "Look up one record by key.",
+	SearchTerms: []string{"fetch entry"},
+	Handler:     lookup,
 })
 ```
 
@@ -66,7 +67,8 @@ go build -o codemode-first-server .
 
 ## Verify the filter
 
-1. Call `search_api` with `{"query":"records.lookup"}`. The result is `[]` and no longer lists `records.lookup`.
+1. Call `search_api` with `{"query":"records.lookup"}`. The result is
+   `{"results":[],"truncated":false}` and no longer lists `records.lookup`.
 
 2. Call `describe_api` with `{"name":"records.lookup"}`. The call returns the tool error `capability not found`.
 

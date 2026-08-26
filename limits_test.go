@@ -48,9 +48,11 @@ func TestBuildDefaultsZeroLimitFields(t *testing.T) {
 	partialServer, err := partialBuilder.Build()
 
 	require.NoError(t, err)
-	results, err := partialServer.Search("records")
+	response, err := partialServer.Search("records")
 	require.NoError(t, err)
-	assert.Len(t, results, 1)
+	require.NotNil(t, response.Results)
+	assert.Len(t, response.Results, 1)
+	assert.True(t, response.Truncated)
 }
 
 // TestLimitsRejectNonPositiveValues proves zero never selects an unlimited budget.

@@ -209,15 +209,17 @@ func TestBuildFiltersOnceAndDerivesEverySurface(t *testing.T) {
 	assert.False(t, foundByName)
 	assert.False(t, foundByID)
 	assert.False(t, foundDisabledDescription)
-	assert.Empty(t, disabledSearch)
+	assert.Empty(t, disabledSearch.Results)
+	assert.False(t, disabledSearch.Truncated)
 
 	recordSearch, err := catalog.Search("record")
 	require.NoError(t, err)
-	require.Len(t, recordSearch, 2)
+	require.Len(t, recordSearch.Results, 2)
 	assert.Equal(t, []string{"records.alpha", "records.composite"}, []string{
-		recordSearch[0].Name,
-		recordSearch[1].Name,
+		recordSearch.Results[0].Name,
+		recordSearch.Results[1].Name,
 	})
+	assert.False(t, recordSearch.Truncated)
 
 	bindings := catalog.NamespaceBindings()
 	require.Len(t, bindings, 3)
@@ -283,24 +285,27 @@ func TestSearchIsSortedNormalizedAndBounded(t *testing.T) {
 	}, options)
 	require.NoError(t, err)
 
-	results, err := catalog.Search("  ALPHA  ")
+	response, err := catalog.Search("  ALPHA  ")
 
 	require.NoError(t, err)
-	require.Len(t, results, 2)
-	assert.Equal(t, []string{"records.alpha", "records.beta"}, []string{results[0].Name, results[1].Name})
-	assert.Equal(t, "records.alpha(*, org: str, limit: int | None)", results[0].Signature)
+	require.Len(t, response.Results, 2)
+	assert.Equal(t, []string{"records.alpha", "records.beta"}, []string{
+		response.Results[0].Name,
+		response.Results[1].Name,
+	})
+	assert.True(t, response.Truncated)
+	assert.Equal(t, "records.alpha(*, org: str, limit: int | None)", response.Results[0].Signature)
 
-	nonContiguous, err := catalog.Search("alpha record")
+	compound, err := catalog.Search("alpha record")
 	require.NoError(t, err)
-	assert.Empty(t, nonContiguous)
-
-	crossBoundary, err := catalog.Search("alpha alpha")
-	require.NoError(t, err)
-	assert.Empty(t, crossBoundary)
+	require.NotEmpty(t, compound.Results)
+	assert.Equal(t, "records.alpha", compound.Results[0].Name)
 
 	empty, err := catalog.Search("   ")
 	require.NoError(t, err)
-	assert.Empty(t, empty)
+	require.NotNil(t, empty.Results)
+	assert.Empty(t, empty.Results)
+	assert.False(t, empty.Truncated)
 
 	_, err = catalog.Search("query exceeding the configured byte budget")
 	require.Error(t, err)
@@ -330,9 +335,9 @@ func TestSearchAndDescribeOmitHostOutputTypeNames(t *testing.T) {
 
 	results, err := catalog.Search("alpha")
 	require.NoError(t, err)
-	require.Len(t, results, 1)
-	assert.Equal(t, "records.alpha(*, org: str, limit: int | None)", results[0].Signature)
-	assertSearchOmitsOutputTypeNames(t, results[0], unexportedName, exportedName)
+	require.Len(t, results.Results, 1)
+	assert.Equal(t, "records.alpha(*, org: str, limit: int | None)", results.Results[0].Signature)
+	assertSearchOmitsOutputTypeNames(t, results.Results[0], unexportedName, exportedName)
 
 	description, found := catalog.Describe("records.alpha")
 	require.True(t, found)
@@ -344,9 +349,9 @@ func TestSearchAndDescribeOmitHostOutputTypeNames(t *testing.T) {
 
 	statusResults, err := catalog.Search("health")
 	require.NoError(t, err)
-	require.Len(t, statusResults, 1)
-	assert.Equal(t, "health.status()", statusResults[0].Signature)
-	assertSearchOmitsOutputTypeNames(t, statusResults[0], unexportedName, exportedName)
+	require.Len(t, statusResults.Results, 1)
+	assert.Equal(t, "health.status()", statusResults.Results[0].Signature)
+	assertSearchOmitsOutputTypeNames(t, statusResults.Results[0], unexportedName, exportedName)
 
 	statusDescription, found := catalog.Describe("health.status")
 	require.True(t, found)

@@ -84,6 +84,23 @@ See [Use Rego for authorization](../how-to/use-rego-authorization.md) for config
 
 Static filtering is useful for deployment-wide availability, but it is not dynamic authorization. It cannot express subject-specific or argument-specific decisions. Conversely, authorization alone does not hide a capability's metadata from discovery. Use static filtering to remove a capability from the deployment surface and authorization to decide whether an enabled native call may dispatch.
 
+## Discovery metadata is observable
+
+Search indexes each enabled capability's name, `SearchTerms`, summary, and
+description. A search response returns only the exact name, signature, and
+summary, but omission is not secrecy. A caller can submit different queries
+and infer whether particular vocabulary changes the ranked results.
+
+Treat `SearchTerms` as model-visible discovery metadata even though the terms
+are not returned directly. Do not put secrets, credentials, policy facts,
+tenant identifiers, or sensitive examples in them. Search terms do not create
+callable aliases and are not accepted by exact `Describe` or by execution.
+
+Static filtering removes a disabled capability before the search index is
+built, so its metadata does not contribute tokens or ranking. Authorization is
+different: search does not run the per-capability authorizer and does not hide
+enabled discovery metadata based on the resolved subject.
+
 ## Client errors are intentionally coarse
 
 Detailed causes exist only on the trusted side of the public boundary. Internal packages and host authorizers, resolvers, and handlers can hold or log those causes. A direct call to `authz/rego.Authorize` can return an ordinary error that identifies an undefined or non-Boolean decision, or carries an OPA evaluation or builtin failure.

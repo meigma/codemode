@@ -17,6 +17,9 @@ type Program string
 // SearchResult is one compact enabled-capability discovery record.
 type SearchResult = catalog.SearchResult
 
+// SearchResponse is one bounded ranked discovery result set.
+type SearchResponse = catalog.SearchResponse
+
 // Description is one exact enabled-capability description and supported binding shape.
 type Description = catalog.Description
 
@@ -84,19 +87,19 @@ func capabilityBindings(capabilityCatalog *catalog.Catalog) []execution.Capabili
 	return bindings
 }
 
-// Search returns a bounded name-sorted scan of enabled capability names and summaries.
-func (server *Server) Search(query string) ([]SearchResult, error) {
+// Search returns a bounded relevance-ranked scan of enabled capabilities.
+func (server *Server) Search(query string) (SearchResponse, error) {
 	if server == nil || server.catalog == nil {
-		return nil, ErrInternal
+		return SearchResponse{}, ErrInternal
 	}
-	results, err := server.catalog.Search(query)
+	response, err := server.catalog.Search(query)
 	if err != nil {
 		if errors.Is(err, catalog.ErrSearchQueryLimit) {
-			return nil, ErrResourceLimit
+			return SearchResponse{}, ErrResourceLimit
 		}
-		return nil, ErrInternal
+		return SearchResponse{}, ErrInternal
 	}
-	return results, nil
+	return response, nil
 }
 
 // Describe returns one exact enabled capability description or ErrNotFound.

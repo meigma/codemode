@@ -17,7 +17,10 @@ On success, `CallToolResult.StructuredContent` contains the value described by t
 
 ## `search_api`
 
-Search enabled names and summaries with a short literal substring. Retry an empty result with a shorter term.
+Search enabled capabilities using task, resource, or exact-name vocabulary.
+Results are relevance-ranked. Pass the exact returned name to `describe_api`.
+If `truncated` is `true` and no result fits, submit a more specific
+task/resource query.
 
 ### Input
 
@@ -34,37 +37,122 @@ Search enabled names and summaries with a short literal substring. Retry an empt
 }
 ```
 
-The raw query is limited by `MaxSearchQueryBytes` before trimming or case normalization. Whitespace padding counts. CodeMode then trims surrounding whitespace and normalizes case. Matching is a short literal substring over capability names and summaries. A blank normalized query or any other empty result is `[]`, not `null`. Retry an empty result with a shorter term. Search does not add fuzzy matching, aliases, or extra query rewriting.
+The raw query is limited by `MaxSearchQueryBytes` before trimming or
+tokenization. Whitespace padding counts. CodeMode trims surrounding Unicode
+whitespace, treats every rune that is not a Unicode letter or digit as a
+separator, splits camel-case, acronym-to-word, and letter/number transitions,
+and lowercases each token. Dots, underscores, and hyphens are therefore
+separators.
 
-Results are sorted by exact dotted name and limited by `MaxSearchResults`. Static filtering happens before search, so disabled capabilities never appear.
+For example, `GitHub.Pulls.createReview` becomes `github`, `pulls`, `create`,
+`review`; `pull_request` becomes `pull`, `request`; and `sql` and `mysql`
+remain different tokens.
+
+Search removes the connector tokens `a`, `an`, `and`, `by`, `for`, `from`,
+`in`, `of`, `on`, `or`, `the`, `to`, and `with`, then deduplicates the
+remaining query tokens. A query with more than 16 distinct normalized tokens
+returns `resource limit exceeded`.
+
+Search compares the distinct query tokens with tokens from each enabled
+capability's name, registered `SearchTerms`, summary, and description. Exact
+token matches are supported. A query token of at least three Unicode characters
+can also match the prefix of a capability token. Arbitrary infix matching,
+fuzzy matching, stemming, and built-in synonym expansion are not supported.
+
+For one query token within one field, an exact match ranks above a prefix
+match. Search retains only the strongest contribution for that query token.
+The field precedence used for weighting is the capability name, then
+`SearchTerms`, then the summary, then the description. Terms found in fewer
+enabled capabilities contribute more than catalog-wide terms. Numeric scoring
+weights are internal.
+
+Eligibility depends on the number `q` of distinct normalized query tokens:
+
+| Query tokens | Required matched tokens |
+| ---: | ---: |
+| 1 | 1 |
+| 2 | 2 |
+| 3 or more | `ceil(2q / 3)` |
+
+Search ranks every eligible capability before applying output bounds. A
+case-insensitive exact dotted-name query, after trimming surrounding
+whitespace, ranks first. Remaining ordering is relevance score descending,
+then exact dotted name ascending. Static filtering happens before indexing, so
+disabled capabilities cannot match or affect ranking.
 
 ### Successful structured output
 
 ```json
 {
-  "type": "array",
-  "items": {
-    "type": "object",
-    "required": ["name", "signature", "summary"],
-    "additionalProperties": false,
-    "properties": {
-      "name": { "type": "string" },
-      "signature": { "type": "string" },
-      "summary": { "type": "string" }
+  "type": "object",
+  "required": ["results", "truncated"],
+  "additionalProperties": false,
+  "properties": {
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "signature", "summary"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "signature": { "type": "string" },
+          "summary": { "type": "string" }
+        }
+      }
+    },
+    "truncated": {
+      "type": "boolean"
     }
   }
 }
 ```
 
-The structured content itself is the array described above, not an object that wraps the array. When there are no matches, it is `[]`, not `null`.
+A populated successful value is:
+
+```json
+{
+  "results": [
+    {
+      "name": "records.lookup",
+      "signature": "records.lookup(*, key: str, limit: int | None)",
+      "summary": "Look up one record by key."
+    }
+  ],
+  "truncated": false
+}
+```
+
+A blank query, a separator- or connector-only query, and a query with no
+eligible matches all succeed with this exact object:
+
+```json
+{
+  "results": [],
+  "truncated": false
+}
+```
+
+`results` is always a non-null array on success. CodeMode packs the
+highest-ranked prefix under `MaxSearchResults` and an internal structured
+response-byte bound. `truncated` is `true` when either bound omits at least one
+eligible capability. It does not expose a total count or provide pagination.
+The byte bound covers the compact JSON representation of the structured
+`{results, truncated}` response. The surrounding JSON-RPC envelope and the MCP
+SDK's JSON `TextContent` mirror are outside that cap.
 
 | Field | Meaning |
 | --- | --- |
-| `name` | Exact enabled dotted capability name, such as `records.lookup`. |
-| `signature` | Invocation-only keyword signature. It ends after the parameter list and never contains a Go output type. |
-| `summary` | Registered compact summary. |
+| `results[].name` | Exact enabled dotted capability name, such as `records.lookup`. |
+| `results[].signature` | Invocation-only keyword signature. It ends after the parameter list and never contains a Go output type. |
+| `results[].summary` | Registered compact summary. |
+| `truncated` | Whether at least one eligible result was omitted by the result-count or structured-response byte bound. |
 
-`signature` contains the dotted name, a `*` keyword-only marker when there are parameters, and the ordered input fields with their type notations. It ends at `)`. The exact forms are `records.lookup(*, key: str, limit: int | None)` and `records.status()`. The result contract is `describe_api.output`, not `signature`.
+`signature` contains the dotted name, a `*` keyword-only marker when there are
+parameters, and the ordered input fields with their type notations. It ends at
+`)`. The exact forms are
+`records.lookup(*, key: str, limit: int | None)` and `records.status()`. The
+result contract is `describe_api.output`, not `signature`.
 
 ## `describe_api`
 
@@ -326,7 +414,7 @@ Only the final converted value from the worker process is exposed in the success
 
 The listed descriptions above are the model-facing contract. Recovery uses the same fixed coarse errors on this page. When recording or reporting a failed call, keep the coarse text and the recovery action; do not echo the failed source, arguments, credentials, or unknown requested name.
 
-- Search with a short literal substring over enabled names and summaries. If the result is empty, retry with a shorter term.
+- Search with task, resource, or exact-name vocabulary. If `truncated` is `true`, use a more specific task/resource query. Pass an exact returned `name` to `describe_api`.
 - After `capability not found`, search again and pass `describe_api` an exact returned `name`, without whitespace or case changes.
 - After `invalid capability arguments`, compare the call with the published `signature` and `input` field shapes.
 - After `invalid program`, check the program against these requirements:
@@ -335,9 +423,9 @@ The listed descriptions above are the model-facing contract. Recovery uses the s
   - Return the final value from `main`.
 - Use `describe_api.output` as the result contract. Do not parse a type name from `signature`.
 - After `resource limit exceeded`, reduce the applicable bounded quantity:
-  query or source bytes, execution steps or time, native calls, crossing-value
-  depth or per-value encoded size, or the cumulative encoded size of successful
-  native results. Then retry the call.
+  query or source bytes, distinct normalized query tokens, execution steps or
+  time, native calls, crossing-value depth or per-value encoded size, or the
+  cumulative encoded size of successful native results. Then retry the call.
 - After `permission denied` or `authorization policy failure`, contact the host if the access was expected. One allowed or denied input cannot establish whether the policy is default-open, default-deny, complete, or incomplete.
 
 ## Errors

@@ -174,24 +174,22 @@ func (_c *MockService_Execute_Call) RunAndReturn(run func(ctx context.Context, s
 }
 
 // Search provides a mock function for the type MockService
-func (_mock *MockService) Search(query string) ([]codemode.SearchResult, error) {
+func (_mock *MockService) Search(query string) (codemode.SearchResponse, error) {
 	ret := _mock.Called(query)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Search")
 	}
 
-	var r0 []codemode.SearchResult
+	var r0 codemode.SearchResponse
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(string) ([]codemode.SearchResult, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(string) (codemode.SearchResponse, error)); ok {
 		return returnFunc(query)
 	}
-	if returnFunc, ok := ret.Get(0).(func(string) []codemode.SearchResult); ok {
+	if returnFunc, ok := ret.Get(0).(func(string) codemode.SearchResponse); ok {
 		r0 = returnFunc(query)
 	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]codemode.SearchResult)
-		}
+		r0 = ret.Get(0).(codemode.SearchResponse)
 	}
 	if returnFunc, ok := ret.Get(1).(func(string) error); ok {
 		r1 = returnFunc(query)
@@ -225,12 +223,12 @@ func (_c *MockService_Search_Call) Run(run func(query string)) *MockService_Sear
 	return _c
 }
 
-func (_c *MockService_Search_Call) Return(vs []codemode.SearchResult, err error) *MockService_Search_Call {
-	_c.Call.Return(vs, err)
+func (_c *MockService_Search_Call) Return(v codemode.SearchResponse, err error) *MockService_Search_Call {
+	_c.Call.Return(v, err)
 	return _c
 }
 
-func (_c *MockService_Search_Call) RunAndReturn(run func(query string) ([]codemode.SearchResult, error)) *MockService_Search_Call {
+func (_c *MockService_Search_Call) RunAndReturn(run func(query string) (codemode.SearchResponse, error)) *MockService_Search_Call {
 	_c.Call.Return(run)
 	return _c
 }

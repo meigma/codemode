@@ -31,10 +31,12 @@ func TestServerSearchAndDescribeExposeOnlyEnabledCapabilities(t *testing.T) {
 	server, err := builder.Build()
 	require.NoError(t, err)
 
-	results, err := server.Search("record")
+	response, err := server.Search("record")
 	require.NoError(t, err)
-	require.Len(t, results, 1)
-	assert.Equal(t, "records.alpha", results[0].Name)
+	require.NotNil(t, response.Results)
+	require.Len(t, response.Results, 1)
+	assert.Equal(t, "records.alpha", response.Results[0].Name)
+	assert.False(t, response.Truncated)
 	description, err := server.Describe("records.alpha")
 	require.NoError(t, err)
 	assert.Equal(t, "records.alpha", description.Name)
@@ -55,9 +57,11 @@ func TestCapabilityIDDefaultsToName(t *testing.T) {
 		server, err := builder.Build()
 
 		require.NoError(t, err)
-		results, err := server.Search("")
+		response, err := server.Search("")
 		require.NoError(t, err)
-		assert.Empty(t, results)
+		require.NotNil(t, response.Results)
+		assert.Empty(t, response.Results)
+		assert.False(t, response.Truncated)
 	})
 
 	t.Run("authorization", func(t *testing.T) {
@@ -89,16 +93,29 @@ def main():
 
 // TestServerSearchProjectsQueryLimits proves internal discovery details do not escape the public taxonomy.
 func TestServerSearchProjectsQueryLimits(t *testing.T) {
-	limits := codemode.DefaultLimits()
-	limits.MaxSearchQueryBytes = 4
-	builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll(), Limits: limits})
-	server, err := builder.Build()
-	require.NoError(t, err)
+	t.Run("raw query bytes", func(t *testing.T) {
+		limits := codemode.DefaultLimits()
+		limits.MaxSearchQueryBytes = 4
+		builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll(), Limits: limits})
+		server, err := builder.Build()
+		require.NoError(t, err)
 
-	_, err = server.Search("oversized")
+		_, err = server.Search("oversized")
 
-	require.ErrorIs(t, err, codemode.ErrResourceLimit)
-	assert.Equal(t, codemode.ErrResourceLimit.Error(), err.Error())
+		require.ErrorIs(t, err, codemode.ErrResourceLimit)
+		assert.Equal(t, codemode.ErrResourceLimit.Error(), err.Error())
+	})
+
+	t.Run("distinct query tokens", func(t *testing.T) {
+		builder := codemode.New(codemode.Options{Authorizer: authz.AllowAll()})
+		server, err := builder.Build()
+		require.NoError(t, err)
+
+		_, err = server.Search("t0 t1 t2 t3 t4 t5 t6 t7 t8 t9 t10 t11 t12 t13 t14 t15 t16")
+
+		require.ErrorIs(t, err, codemode.ErrResourceLimit)
+		assert.Equal(t, codemode.ErrResourceLimit.Error(), err.Error())
+	})
 }
 
 // TestServerExecuteAuthorizesCanonicalArgumentsBeforeDispatch proves the complete native-call ordering.

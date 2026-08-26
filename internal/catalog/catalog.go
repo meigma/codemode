@@ -19,11 +19,14 @@ type Registration struct {
 	// Name is the dotted Starlark and model-facing capability name.
 	Name string
 
-	// Summary is the compact text searched with the capability name.
+	// Summary is the compact description used by capability search.
 	Summary string
 
 	// Description is the full exact-description text.
 	Description string
+
+	// SearchTerms contains alternative task vocabulary used only for discovery.
+	SearchTerms []string
 
 	// Plan is the caller-compiled input, output, canonical-argument, and signature plan.
 	Plan *binding.Plan
@@ -67,12 +70,6 @@ type Entry struct {
 	// signature is generated once from the immutable binding plan.
 	signature string
 
-	// searchName is the registration-time normalized capability name.
-	searchName string
-
-	// searchSummary is the registration-time normalized capability summary.
-	searchSummary string
-
 	// inputShape is the registration-time compiled model-facing input shape.
 	inputShape []binding.FieldShape
 
@@ -105,6 +102,9 @@ type Catalog struct {
 
 	// namespaces is derived only from enabled and remains name-sorted.
 	namespaces []NamespaceBinding
+
+	// search is the immutable enabled-document search index.
+	search searchIndex
 
 	// maxSearchQueryBytes is the positive search input budget.
 	maxSearchQueryBytes int

@@ -12,8 +12,8 @@ import (
 // The root *codemode.Server implements this port. The adapter does not re-enforce
 // catalog bounds, hidden-capability filtering, or execution restrictions.
 type Service interface {
-	// Search returns a bounded name-sorted scan of enabled capability names and summaries.
-	Search(query string) ([]codemode.SearchResult, error)
+	// Search returns a bounded relevance-ranked scan of enabled capabilities.
+	Search(query string) (codemode.SearchResponse, error)
 
 	// Describe returns one exact enabled capability description or a not-found error.
 	Describe(name codemode.CapabilityName) (codemode.Description, error)
