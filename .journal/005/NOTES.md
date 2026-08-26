@@ -50,3 +50,6 @@ Re-ran the smoke suite live against a rebuilt server:
 - Non-disclosure held: handler error with secret string projects to bare "capability failed".
 - search_api output shape changed (breaking): {"results": [...], "truncated": false} wrapper with relevance ranking.
 All three of this session's filed issues (#23 via earlier merge, #24, #42) plus #25 are now implemented and verified end-to-end.
+
+## README rewrite PR
+Rewrote README per user direction: plain-language intro (agents write code instead of chaining tool calls), differentiator list (one-round-trip composition, type-derived schemas, per-deployment disabling, fail-closed authz + Rego, fresh worker processes), install pinned to v0.1.0 ahead of first release, security boundary compressed to the contract with links, dropped SearchTerms/TestMain digressions. Work done in worktree docs/readme-intro; master checkout restored clean. PR #47 open, all checks green. Merge note: @v0.1.0 resolves only after the tag exists.
