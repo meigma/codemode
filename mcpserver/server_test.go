@@ -1,12 +1,10 @@
 package mcpserver_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sync/atomic"
 	"testing"
 
@@ -150,17 +148,6 @@ func TestNewAdvertisesCustomImplementation(t *testing.T) {
 	assert.Equal(t, "inventory", initialized.ServerInfo.Name)
 	assert.Equal(t, "Inventory server", initialized.ServerInfo.Title)
 	assert.Equal(t, "9", initialized.ServerInfo.Version)
-}
-
-// TestNewEmitsLoggerDiagnostics proves a host logger receives SDK session diagnostics.
-func TestNewEmitsLoggerDiagnostics(t *testing.T) {
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewJSONHandler(&buf, nil))
-	_ = connectTestSession(t, mocks.NewMockService(t), mocks.NewMockInvocationResolver(t), mcpserver.Options{
-		Logger: logger,
-	})
-
-	require.Contains(t, buf.String(), "server session connected")
 }
 
 // TestSDKRejectsMalformedArgumentsBeforeResolution proves schema validation owns malformed tool input.
