@@ -84,7 +84,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Fatal(srv.Run(context.Background(), &mcp.StdioTransport{}))
+	if err := srv.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+		log.Fatal(err)
+	}
 }
 ```
 
