@@ -76,6 +76,15 @@ type rawFinalErrorFrame struct {
 	Detail json.RawMessage `json:"detail"`
 }
 
+// rawNativeAbortFrame is the raw native_abort object used to distinguish absent detail.
+type rawNativeAbortFrame struct {
+	// Type is the frame discriminator.
+	Type string `json:"type"`
+
+	// Detail is the optional approved capability-failure suffix token.
+	Detail json.RawMessage `json:"detail"`
+}
+
 // decodeType reads only the type discriminator without rejecting unknown fields.
 func decodeType(payload []byte) (string, error) {
 	if len(payload) == 0 {
@@ -215,6 +224,34 @@ func decodeFinalErrorDetail(code finalErrorCode, raw json.RawMessage) (string, e
 	var detail string
 	if err := json.Unmarshal(raw, &detail); err != nil ||
 		detail == "" || len(detail) > maxDiagnosticBytes || !allowsFinalErrorDetail(code) {
+		return "", errInvalidValue
+	}
+	return detail, nil
+}
+
+// decodeNativeAbort decodes one parent-owned abort, with optional approved detail.
+func decodeNativeAbort(payload []byte) (nativeAbortFrame, error) {
+	var raw rawNativeAbortFrame
+	if err := decodeStrict(payload, &raw); err != nil {
+		return nativeAbortFrame{}, err
+	}
+	if raw.Type != frameTypeNativeAbort {
+		return nativeAbortFrame{}, errMalformedJSON
+	}
+	detail, err := decodeAbortDetail(raw.Detail)
+	if err != nil {
+		return nativeAbortFrame{}, err
+	}
+	return nativeAbortFrame{Type: frameTypeNativeAbort, Detail: detail}, nil
+}
+
+// decodeAbortDetail accepts only a legal non-empty printable in-budget suffix.
+func decodeAbortDetail(raw json.RawMessage) (string, error) {
+	if raw == nil {
+		return "", nil
+	}
+	var detail string
+	if err := json.Unmarshal(raw, &detail); err != nil || !validAbortDetail(detail) {
 		return "", errInvalidValue
 	}
 	return detail, nil

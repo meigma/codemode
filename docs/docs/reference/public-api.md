@@ -87,6 +87,38 @@ func(context.Context, authz.Subject, Input) (Output, error)
 
 The subject is the trusted subject supplied to `Server.Execute`. The input and output are the exact generic types registered for the capability.
 
+#### `AgentError`
+
+`AgentError` opts a handler failure into agent-visible detail:
+
+```go
+return output, &codemode.AgentError{
+	Message: `instance "web" not found in sandbox "demo"`,
+}
+```
+
+`Message string` is the explanation the handler author has chosen to disclose.
+Return `*AgentError` directly or wrap it with `fmt.Errorf("lookup: %w", err)`;
+CodeMode finds it with `errors.As` and attaches only `Message`, not wrapper
+text or other causes. The MCP error is
+`capability failed: instance "web" not found in sandbox "demo"`.
+
+CodeMode replaces control characters and other non-printable runes with spaces,
+including newlines and tabs. Invalid UTF-8 bytes become replacement characters.
+The sanitized suffix is at most 256 UTF-8 bytes, including a trailing `...` when
+truncated; truncation does not split a rune. An empty message or nil
+`*AgentError` leaves the failure bare. `AgentError.Error()` returns the original
+message (or an empty string for a nil receiver), not the sanitized suffix.
+
+The failure still aborts the Starlark program. `Server.Execute` retains the
+coarse `Error()` text `capability failed` and supports
+`errors.Is(err, codemode.ErrCapabilityFailure)`; the MCP adapter formats the
+suffix. Ordinary handler errors remain hidden. Panic values, policy errors,
+and invalid handler return values cannot opt in through `AgentError`.
+The host is responsible for keeping secrets and sensitive data out of `Message`.
+
+#### Capability identity example
+
 The policy and deployment-filter examples use this explicit capability identity:
 
 | Property | Value |

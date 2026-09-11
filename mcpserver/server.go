@@ -221,8 +221,8 @@ func resolveSubject(ctx context.Context, resolver InvocationResolver) (authz.Sub
 }
 
 // projectToolError removes wrapped service detail and maps failures to fixed client-visible sentinels.
-// Approved SafeDetail for invalid program and invalid capability arguments is formatted as
-// "<sentinel>: <detail>". Arbitrary custom-Service wrapper text remains hidden.
+// Approved SafeDetail for program, argument, and capability failures is formatted
+// as "<sentinel>: <detail>". Arbitrary custom-Service wrapper text remains hidden.
 func projectToolError(err error) error {
 	if detail, ok := execution.SafeDetail(err); ok {
 		switch {
@@ -230,6 +230,8 @@ func projectToolError(err error) error {
 			return fmt.Errorf("%w: %s", codemode.ErrInvalidProgram, detail)
 		case errors.Is(err, codemode.ErrInvalidArguments):
 			return fmt.Errorf("%w: %s", codemode.ErrInvalidArguments, detail)
+		case errors.Is(err, codemode.ErrCapabilityFailure):
+			return fmt.Errorf("%w: %s", codemode.ErrCapabilityFailure, detail)
 		}
 	}
 	switch {

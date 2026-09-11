@@ -426,11 +426,12 @@ Only the final converted value from the worker process is exposed in the success
 
 ## Authoring and recovery
 
-The listed descriptions above are the model-facing contract. Recovery uses the nine fixed texts and two stable prefixes on this page. When recording or reporting a failed call, keep the error text and the recovery action; do not echo credentials, unknown requested names, or host-derived handler or policy text.
+The listed descriptions above are the model-facing contract. Recovery uses the fixed texts and three stable suffix forms on this page. When recording or reporting a failed call, keep the error text and the recovery action; do not add credentials or undisclosed host diagnostics.
 
 - Search with task, resource, or exact-name vocabulary. If `truncated` is `true`, use a more specific task/resource query. Pass an exact returned `name` to `describe_api`.
 - After `capability not found`, search again and pass `describe_api` an exact returned `name`, without whitespace or case changes.
 - After `invalid capability arguments`, use any suffix after the stable prefix to identify the rejected argument, then compare the call with the published `signature` and `input` field shapes.
+- After `capability failed`, use any handler-authored suffix to choose the next action, such as correcting a resource name or waiting for it to become ready. The failed program has aborted; submit a new program to retry.
 - After `invalid program`, use any suffix after the stable prefix. A parse or resolve suffix includes a `<codemode>:line:col:` position in the submitted source. Check the program against these requirements:
   - Write Starlark, not Python: `import`, `while`, f-strings, `filter`, and `map` are unavailable; `sum(iterable)`, `json.decode/encode/indent`, and `math.*` are directly available without import.
   - Define `main` with zero arguments.
@@ -445,7 +446,7 @@ The listed descriptions above are the model-facing contract. Recovery uses the n
 
 ## Errors
 
-After a well-formed call reaches the adapter, a resolver or service failure becomes a successful MCP protocol response with `isError` set. Nine texts are fixed. Two classes keep a stable prefix and may append model-derived detail: `invalid program: ...` and `invalid capability arguments: ...`. The adapter removes resolver and custom-service details and recovered panic values. It does not expose budget values, filtered capability identities, unknown requested names, host-derived argument values, Rego decision paths or rule names, handler messages, credentials, panic values, or stack details. Parse and resolve suffixes may include a source position in the submitted program. Binding suffixes may include an argument name from the submitted call.
+After a well-formed call reaches the adapter, a resolver or service failure becomes a successful MCP protocol response with `isError` set. Error categories keep stable text. `invalid program: ...` and `invalid capability arguments: ...` may append model-derived detail. `capability failed: ...` may append a message explicitly disclosed by the handler through `codemode.AgentError`. The adapter removes resolver and arbitrary custom-service details and recovered panic values. Parse and resolve suffixes may include a source position in the submitted program. Binding suffixes may include an argument name from the submitted call.
 
 | Text | Meaning |
 | --- | --- |
@@ -457,6 +458,7 @@ After a well-formed call reaches the adapter, a resolver or service failure beco
 | `authorization policy failure` | Policy evaluation failed. |
 | `resource limit exceeded` | A discovery, execution, depth, per-value, or aggregate intermediate-value budget was exceeded. |
 | `capability failed` | A handler failed or returned an invalid value, including a non-finite float or an unsigned integer above `math.MaxInt64`. |
+| `capability failed: ...` | A handler returned or wrapped `*codemode.AgentError`. Only its `Message` is disclosed: non-printable runes become spaces, invalid UTF-8 becomes replacement characters, and the suffix is truncated on a rune boundary to at most 256 bytes including trailing `...`. An empty message leaves the failure bare. |
 | `context canceled` | The request context was canceled. |
 | `context deadline exceeded` | A service returned a bare deadline error. Root CodeMode execution deadlines are projected as `resource limit exceeded`. |
 | `internal failure` | Any unknown service error or recovered adapter failure. |

@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.starlark.net/starlark"
 
 	"github.com/meigma/codemode/internal/execution"
 )
@@ -253,6 +254,11 @@ func TestFinalErrorFromExtractsApprovedSafeDetail(t *testing.T) {
 			err:  execution.WithSafeDetail(execution.ErrInternal, "hidden"),
 			code: finalErrorInternal,
 		},
+		{
+			name: "capability failure stays child-internal",
+			err:  execution.WithSafeDetail(execution.ErrCapabilityFailure, `instance "web" not found`),
+			code: finalErrorInternal,
+		},
 	}
 
 	for _, tt := range tests {
@@ -333,7 +339,109 @@ func TestServeEngineAbortSuppressesFinalError(t *testing.T) {
 	require.NoError(t, err)
 	_, ok := frame.(nativeCallFrame)
 	require.True(t, ok)
-	require.NoError(t, parent.writeNativeAbort())
+	require.NoError(t, parent.writeNativeAbort(""))
+	require.NoError(t, <-done)
+}
+
+// TestNativeForwarderAbortClassification proves approved suffixes are Starlark-visible
+// and empty aborts stay the private sentinel.
+func TestNativeForwarderAbortClassification(t *testing.T) {
+	const detail = `instance "web" not found in sandbox "demo"`
+	tests := []struct {
+		// name identifies the abort payload.
+		name string
+
+		// detail is written on the parent abort frame.
+		detail string
+
+		// want is the classified unwind error.
+		want error
+
+		// text is the Starlark-visible error string.
+		text string
+
+		// suffix is the approved SafeDetail, if any.
+		suffix string
+	}{
+		{
+			name:   "approved suffix is Starlark-visible",
+			detail: detail,
+			want:   execution.ErrCapabilityFailure,
+			text:   execution.ErrCapabilityFailure.Error() + ": " + detail,
+			suffix: detail,
+		},
+		{
+			name: "empty abort stays private sentinel",
+			want: errNativeAbort,
+			text: errNativeAbort.Error(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exec := validExecFrame()
+			parent, child, closePipes := newExecPair(t, exec)
+			defer closePipes()
+			handshake := make(chan error, 1)
+			go func() { handshake <- parent.writeExec(exec) }()
+			_, err := child.read()
+			require.NoError(t, err)
+			require.NoError(t, <-handshake)
+
+			done := make(chan error, 1)
+			go func() {
+				builtin := starlark.NewBuiltin(
+					"lookup",
+					func(*starlark.Thread, *starlark.Builtin, starlark.Tuple, []starlark.Tuple) (starlark.Value, error) {
+						_, nativeErr := nativeForwarder(child)("cap.lookup", map[string]any{"org": "meigma"})
+						return nil, nativeErr
+					},
+				)
+				_, callErr := starlark.Call(&starlark.Thread{Name: "codemode"}, builtin, nil, nil)
+				done <- callErr
+			}()
+
+			frame, err := parent.read()
+			require.NoError(t, err)
+			_, ok := frame.(nativeCallFrame)
+			require.True(t, ok)
+			require.NoError(t, parent.writeNativeAbort(tt.detail))
+
+			err = <-done
+			require.ErrorIs(t, err, tt.want)
+			assert.Equal(t, tt.text, err.Error())
+			var evalErr *starlark.EvalError
+			require.ErrorAs(t, err, &evalErr)
+			assert.Equal(t, tt.text, evalErr.Msg)
+			got, ok := execution.SafeDetail(err)
+			if tt.suffix == "" {
+				assert.False(t, ok)
+				require.NotErrorIs(t, err, execution.ErrCapabilityFailure)
+				return
+			}
+			require.True(t, ok)
+			assert.Equal(t, tt.suffix, got)
+			require.NotErrorIs(t, err, errNativeAbort)
+			assert.NotContains(t, err.Error(), "db password")
+		})
+	}
+}
+
+// TestServeEngineAbortWithDetailSuppressesFinalError proves a detailed native_abort
+// still exits without a child-owned terminal frame.
+func TestServeEngineAbortWithDetailSuppressesFinalError(t *testing.T) {
+	exec := validExecFrame()
+	exec.Source = "def main():\n    return records.lookup(org=\"acme\")\n"
+
+	parent, done, closePipes := startServeExec(t, exec)
+	defer closePipes()
+	require.NoError(t, parent.writeExec(exec))
+
+	frame, err := parent.read()
+	require.NoError(t, err)
+	_, ok := frame.(nativeCallFrame)
+	require.True(t, ok)
+	require.NoError(t, parent.writeNativeAbort(`instance "web" not found`))
 	require.NoError(t, <-done)
 }
 

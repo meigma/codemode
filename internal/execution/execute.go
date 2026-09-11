@@ -204,7 +204,7 @@ func classifyRuntimeError(state *executionState, err error) error {
 	case errors.Is(cause, ErrResourceLimit):
 		return ErrResourceLimit
 	case errors.Is(cause, ErrCapabilityFailure):
-		return ErrCapabilityFailure
+		return classifiedSafeDetail(ErrCapabilityFailure, cause)
 	case errors.Is(cause, ErrInternal):
 		return ErrInternal
 	case errors.Is(cause, ErrInvalidProgram):
