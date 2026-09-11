@@ -325,7 +325,7 @@ func TestActualMCPSecureLoop(t *testing.T) {
 	root, err := builder.Build()
 	require.NoError(t, err)
 
-	mcpServer, err := mcpserver.New(root, contextResolver{})
+	mcpServer, err := mcpserver.New(root, contextResolver{}, mcpserver.Options{})
 	require.NoError(t, err)
 
 	trustedCtx := withInvocationIdentity(t.Context(), invocationIdentity{
@@ -344,6 +344,7 @@ func TestActualMCPSecureLoop(t *testing.T) {
 	initialized := session.InitializeResult()
 	require.NotNil(t, initialized)
 	require.NotNil(t, initialized.ServerInfo)
+	assert.Equal(t, "codemode", initialized.ServerInfo.Name)
 	assert.Equal(t, "2", initialized.ServerInfo.Version)
 
 	listed, err := session.ListTools(t.Context(), &mcp.ListToolsParams{})
@@ -538,7 +539,7 @@ func TestActualMCPCompositeProgram(t *testing.T) {
 	root, err := builder.Build()
 	require.NoError(t, err)
 
-	mcpServer, err := mcpserver.New(root, contextResolver{})
+	mcpServer, err := mcpserver.New(root, contextResolver{}, mcpserver.Options{})
 	require.NoError(t, err)
 
 	trustedCtx := withInvocationIdentity(t.Context(), invocationIdentity{
@@ -557,6 +558,7 @@ func TestActualMCPCompositeProgram(t *testing.T) {
 	initialized := session.InitializeResult()
 	require.NotNil(t, initialized)
 	require.NotNil(t, initialized.ServerInfo)
+	assert.Equal(t, "codemode", initialized.ServerInfo.Name)
 	assert.Equal(t, "2", initialized.ServerInfo.Version)
 
 	const (
@@ -668,7 +670,7 @@ func TestActualMCPPureComputeProgram(t *testing.T) {
 	root, err := builder.Build()
 	require.NoError(t, err)
 
-	mcpServer, err := mcpserver.New(root, contextResolver{})
+	mcpServer, err := mcpserver.New(root, contextResolver{}, mcpserver.Options{})
 	require.NoError(t, err)
 
 	trustedCtx := withInvocationIdentity(t.Context(), invocationIdentity{
@@ -726,7 +728,7 @@ func TestActualMCPModelDerivedDiagnostics(t *testing.T) {
 	root, err := builder.Build()
 	require.NoError(t, err)
 
-	mcpServer, err := mcpserver.New(root, contextResolver{})
+	mcpServer, err := mcpserver.New(root, contextResolver{}, mcpserver.Options{})
 	require.NoError(t, err)
 
 	trustedCtx := withInvocationIdentity(t.Context(), invocationIdentity{

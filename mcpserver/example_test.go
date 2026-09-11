@@ -55,7 +55,7 @@ func Example_officialTransport() {
 		panic(err)
 	}
 
-	mcpServer, err := mcpserver.New(root, mcpserver.StaticSubject(authz.Subject{ID: "example-user"}))
+	mcpServer, err := mcpserver.New(root, mcpserver.StaticSubject(authz.Subject{ID: "example-user"}), mcpserver.Options{})
 	if err != nil {
 		panic(err)
 	}

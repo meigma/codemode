@@ -1,10 +1,12 @@
 package mcpserver_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync/atomic"
 	"testing"
 
@@ -57,7 +59,7 @@ func TestNewRejectsMissingDependencies(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server, err := mcpserver.New(tt.service, tt.resolver)
+			server, err := mcpserver.New(tt.service, tt.resolver, mcpserver.Options{})
 
 			require.ErrorIs(t, err, codemode.ErrInvalidRegistration)
 			assert.Nil(t, server)
@@ -130,6 +132,35 @@ func TestNewRegistersExactlyThreeTools(t *testing.T) {
 			tt.assertOutput(t, listedOutputSchema(t, listed.Tools, tt.name))
 		})
 	}
+}
+
+// TestNewAdvertisesCustomImplementation proves initialize reports host-supplied application identity.
+func TestNewAdvertisesCustomImplementation(t *testing.T) {
+	session := connectTestSession(t, mocks.NewMockService(t), mocks.NewMockInvocationResolver(t), mcpserver.Options{
+		Implementation: &mcp.Implementation{
+			Name:    "inventory",
+			Title:   "Inventory server",
+			Version: "9",
+		},
+	})
+
+	initialized := session.client.InitializeResult()
+	require.NotNil(t, initialized)
+	require.NotNil(t, initialized.ServerInfo)
+	assert.Equal(t, "inventory", initialized.ServerInfo.Name)
+	assert.Equal(t, "Inventory server", initialized.ServerInfo.Title)
+	assert.Equal(t, "9", initialized.ServerInfo.Version)
+}
+
+// TestNewEmitsLoggerDiagnostics proves a host logger receives SDK session diagnostics.
+func TestNewEmitsLoggerDiagnostics(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	_ = connectTestSession(t, mocks.NewMockService(t), mocks.NewMockInvocationResolver(t), mcpserver.Options{
+		Logger: logger,
+	})
+
+	require.Contains(t, buf.String(), "server session connected")
 }
 
 // TestSDKRejectsMalformedArgumentsBeforeResolution proves schema validation owns malformed tool input.
@@ -720,7 +751,19 @@ type testSession struct {
 func newTestSession(t *testing.T, service mcpserver.Service, resolver mcpserver.InvocationResolver) *testSession {
 	t.Helper()
 
-	server, err := mcpserver.New(service, resolver)
+	return connectTestSession(t, service, resolver, mcpserver.Options{})
+}
+
+// connectTestSession connects an official client to New with the supplied adapter options.
+func connectTestSession(
+	t *testing.T,
+	service mcpserver.Service,
+	resolver mcpserver.InvocationResolver,
+	options mcpserver.Options,
+) *testSession {
+	t.Helper()
+
+	server, err := mcpserver.New(service, resolver, options)
 	require.NoError(t, err)
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 	serverSession, err := server.Connect(t.Context(), serverTransport, nil)
@@ -737,7 +780,10 @@ func newTestSession(t *testing.T, service mcpserver.Service, resolver mcpserver.
 	initialized := clientSession.InitializeResult()
 	require.NotNil(t, initialized)
 	require.NotNil(t, initialized.ServerInfo)
-	assert.Equal(t, "2", initialized.ServerInfo.Version)
+	if options.Implementation == nil {
+		assert.Equal(t, "codemode", initialized.ServerInfo.Name)
+		assert.Equal(t, "2", initialized.ServerInfo.Version)
+	}
 	return &testSession{client: clientSession}
 }
 

@@ -64,7 +64,7 @@ func main() {
 
 	// StaticSubject suits a single-user stdio server; multi-user hosts
 	// resolve each authenticated request with ContextSubject.
-	srv, err := mcpserver.New(server, mcpserver.StaticSubject(authz.Subject{ID: "local"}))
+	srv, err := mcpserver.New(server, mcpserver.StaticSubject(authz.Subject{ID: "local"}), mcpserver.Options{})
 	if err != nil {
 		log.Fatal(err)
 	}
