@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/meigma/codemode/compare/v0.2.0...v0.2.1) (2026-09-11)
+
+
+### Features
+
+* **diagnostics:** expose opt-in handler failure messages ([#59](https://github.com/meigma/codemode/issues/59)) ([4b498a2](https://github.com/meigma/codemode/commit/4b498a201656ef5126ff443558b3538bc276f37a))
+
 ## [0.2.0](https://github.com/meigma/codemode/compare/v0.1.0...v0.2.0) (2026-09-11)
 
 
