@@ -633,12 +633,21 @@ boundary, such as a local stdio server. Multi-user hosts must not use it.
 authentication middleware remains responsible for validating credentials and
 installing a subject for each request.
 
+### `Options`
+
+`Options` configures adapter construction:
+
+| Field | Contract |
+| --- | --- |
+| `Implementation *mcp.Implementation` | MCP application identity advertised to clients. Nil retains Name `codemode` and Version `2`. A non-nil value is borrowed and passed to the SDK without copying or validating fields. |
+| `Logger *slog.Logger` | Optional slog logger for SDK server diagnostics. Nil selects the SDK default logger, which discards records. |
+
 ### `New`
 
 ```text
-New(service Service, resolver InvocationResolver) (*mcp.Server, error)
+New(service Service, resolver InvocationResolver, options Options) (*mcp.Server, error)
 ```
 
-`New` rejects nil and typed-nil dependencies with `ErrInvalidRegistration`. The returned official SDK server exposes exactly `search_api`, `describe_api`, and `execute`. It does not own authentication, transport creation, listeners, cancellation, or shutdown. The host connects the returned server to an official MCP transport and owns that lifecycle.
+`New` rejects nil and typed-nil Service and InvocationResolver with `ErrInvalidRegistration`. Pass `Options{}` to keep the library identity. The returned official SDK server exposes exactly `search_api`, `describe_api`, and `execute`. It does not own authentication, transport creation, listeners, cancellation, or shutdown. The host connects the returned server to an official MCP transport and owns that lifecycle.
 
 See [MCP tool reference](mcp-tools.md) for the wire contracts and [Understanding CodeMode's security model](../explanation/security-model.md) for the trust boundary.

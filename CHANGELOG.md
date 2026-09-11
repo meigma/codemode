@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+
+### ⚠ BREAKING CHANGES
+
+* **mcp:** `mcpserver.New` requires an `Options` argument.
+
+### Features
+
+* **mcp:** let hosts set MCP implementation identity and a slog logger
+
 ## 0.1.0 (2026-08-26)
 
 

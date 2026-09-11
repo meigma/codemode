@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -47,6 +48,17 @@ type operationResult[Value any] struct {
 	err error
 }
 
+// Options configures official MCP server construction.
+type Options struct {
+	// Implementation is the MCP application identity advertised to clients.
+	// Nil retains Name "codemode" and Version "2". A non-nil value is borrowed
+	// and passed to the SDK without copying or validating fields.
+	Implementation *mcp.Implementation
+
+	// Logger receives SDK server diagnostics. Nil selects the SDK default logger.
+	Logger *slog.Logger
+}
+
 // adapter binds a Service and InvocationResolver to the three official MCP tools.
 type adapter struct {
 	// service is the required CodeMode application port.
@@ -58,9 +70,11 @@ type adapter struct {
 
 // New constructs an official MCP server that exposes exactly search_api, describe_api, and execute.
 //
-// New rejects a nil or typed-nil Service or InvocationResolver. The returned server has no
-// generic downstream MCP forwarding path. Client request metadata is untrusted and ignored.
-func New(service Service, resolver InvocationResolver) (*mcp.Server, error) {
+// New rejects a nil or typed-nil Service or InvocationResolver. A nil Implementation
+// retains the library identity Name "codemode" and Version "2". Logger is optional.
+// The returned server has no generic downstream MCP forwarding path. Client request
+// metadata is untrusted and ignored.
+func New(service Service, resolver InvocationResolver, options Options) (*mcp.Server, error) {
 	if isNil(service) {
 		return nil, fmt.Errorf("%w: service is required", codemode.ErrInvalidRegistration)
 	}
@@ -114,7 +128,11 @@ func New(service Service, resolver InvocationResolver) (*mcp.Server, error) {
 	}
 
 	bound := &adapter{service: service, resolver: resolver}
-	server := mcp.NewServer(&mcp.Implementation{Name: "codemode", Version: "2"}, nil)
+	implementation := options.Implementation
+	if implementation == nil {
+		implementation = &mcp.Implementation{Name: "codemode", Version: "2"}
+	}
+	server := mcp.NewServer(implementation, &mcp.ServerOptions{Logger: options.Logger})
 	mcp.AddTool(server, &mcp.Tool{
 		Name:         "search_api",
 		Description:  "Search enabled capabilities using task, resource, or exact-name vocabulary. Results are relevance-ranked. Pass the exact returned name to describe_api. If truncated is true and no result fits, submit a more specific task/resource query.",
