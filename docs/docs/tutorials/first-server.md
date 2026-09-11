@@ -18,15 +18,13 @@ subject.
 
 ## Create a module
 
-CodeMode has not published a release. Create a module, add CodeMode from
-`master`, and add the official MCP Go SDK. The SDK command resolves to its
-latest release:
+Create a module and add CodeMode v0.2.0 with the compatible official MCP Go SDK:
 
 ```sh
 mkdir codemode-first-server
 cd codemode-first-server
 go mod init example.com/codemode-first-server
-go get github.com/meigma/codemode@master github.com/modelcontextprotocol/go-sdk/mcp
+go get github.com/meigma/codemode@v0.2.0 github.com/modelcontextprotocol/go-sdk@v1.7.0
 ```
 
 ## Add the server

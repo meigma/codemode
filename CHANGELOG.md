@@ -11,17 +11,6 @@
 
 * **mcp:** accept host implementation and logger options ([#54](https://github.com/meigma/codemode/issues/54)) ([9d29a03](https://github.com/meigma/codemode/commit/9d29a034922798d332e28c822da29a1e6c558cbf))
 
-## [Unreleased]
-
-
-### ⚠ BREAKING CHANGES
-
-* **mcp:** `mcpserver.New` requires an `Options` argument.
-
-### Features
-
-* **mcp:** let hosts set MCP implementation identity and a slog logger
-
 ## 0.1.0 (2026-08-26)
 
 
