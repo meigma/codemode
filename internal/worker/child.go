@@ -15,6 +15,25 @@ import (
 // remains authoritative because Engine intentionally coarsens unknown errors.
 var errNativeAbort = errors.New("native abort")
 
+// capabilityAbortError is the Starlark-visible unwind for an approved parent abort suffix.
+type capabilityAbortError struct {
+	// detail is the approved capability-failure suffix.
+	detail string
+
+	// cause retains classification and detail without allocating during unwrapping.
+	cause error
+}
+
+// Error returns the Starlark-visible capability-failure text.
+func (err *capabilityAbortError) Error() string {
+	return execution.ErrCapabilityFailure.Error() + ": " + err.detail
+}
+
+// Unwrap preserves [execution.ErrCapabilityFailure] and the approved SafeDetail.
+func (err *capabilityAbortError) Unwrap() error {
+	return err.cause
+}
+
 // errChildService classifies a child protocol or internal service failure that
 // must not become a final_error frame.
 var errChildService = errors.New("worker service failure")
@@ -154,10 +173,21 @@ func nativeForwarder(conn *childConn) execution.NativeCall {
 		case nativeResultFrame:
 			return typed.Result, nil
 		case nativeAbortFrame:
-			return nil, errNativeAbort
+			return nil, nativeAbortError(typed.Detail)
 		default:
 			return nil, errChildService
 		}
+	}
+}
+
+// nativeAbortError maps a decoded abort frame onto the interpreter unwind error.
+func nativeAbortError(detail string) error {
+	if detail == "" {
+		return errNativeAbort
+	}
+	return &capabilityAbortError{
+		detail: detail,
+		cause:  execution.WithSafeDetail(execution.ErrCapabilityFailure, detail),
 	}
 }
 

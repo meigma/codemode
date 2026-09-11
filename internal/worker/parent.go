@@ -757,9 +757,21 @@ func (r *Runner) handleNative(
 
 // writeAbort writes native_abort, requires protocol EOF, and retains parentErr.
 func writeAbort(conn *parentConn, parentErr error) execOutcome {
-	_ = conn.writeNativeAbort()
+	_ = conn.writeNativeAbort(approvedAbortDetail(parentErr))
 	_ = readExecEOF(conn.r)
 	return execOutcome{retained: parentErr}
+}
+
+// approvedAbortDetail returns SafeDetail only for a classified capability failure.
+func approvedAbortDetail(err error) string {
+	if !errors.Is(err, execution.ErrCapabilityFailure) {
+		return ""
+	}
+	detail, ok := execution.SafeDetail(err)
+	if !ok {
+		return ""
+	}
+	return sanitizedAbortDetail(detail)
 }
 
 // readExecEOF requires a terminal execution stream to close without trailing bytes.

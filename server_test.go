@@ -372,6 +372,13 @@ func TestServerExecuteProjectsHandlerFailuresWithoutTrustedDetail(t *testing.T) 
 			target: codemode.ErrCapabilityFailure,
 		},
 		{
+			name: "agent message keeps root error coarse",
+			handler: func(context.Context, authz.Subject, builderInput) (builderOutput, error) {
+				return builderOutput{}, &codemode.AgentError{Message: "instance not found"}
+			},
+			target: codemode.ErrCapabilityFailure,
+		},
+		{
 			name: "handler panic",
 			handler: func(context.Context, authz.Subject, builderInput) (builderOutput, error) {
 				panic("trusted handler panic")

@@ -116,3 +116,23 @@ func TestExecuteKeepsGenericRuntimeErrorsCoarse(t *testing.T) {
 	assert.NotContains(t, err.Error(), "db password rejected")
 	assert.NotContains(t, err.Error(), "fail")
 }
+
+// TestExecutePreservesApprovedCapabilitySafeDetail proves handler-authored suffixes
+// survive classification without changing the coarse Error text.
+func TestExecutePreservesApprovedCapabilitySafeDetail(t *testing.T) {
+	const detail = `instance "web" not found in sandbox "demo"`
+	_, err := buildEngine(t).Execute(
+		`def main(): return records.lookup(value="alpha")`,
+		func(string, map[string]any) (any, error) {
+			return nil, execution.WithSafeDetail(execution.ErrCapabilityFailure, detail)
+		},
+		defaultExecutionLimits(),
+	)
+
+	require.ErrorIs(t, err, execution.ErrCapabilityFailure)
+	assert.Equal(t, execution.ErrCapabilityFailure.Error(), err.Error())
+	got, ok := execution.SafeDetail(err)
+	require.True(t, ok)
+	assert.Equal(t, detail, got)
+	assert.NotContains(t, err.Error(), detail)
+}

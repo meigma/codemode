@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/meigma/codemode/internal/binding"
+	"github.com/meigma/codemode/internal/execution"
 	"github.com/meigma/codemode/internal/universe"
 )
 
@@ -102,7 +103,26 @@ func parentPayloadCap(maxValueBytes int) (uint32, error) {
 	if err != nil {
 		return 0, err
 	}
-	return maxUint32(nativeResult, uint32(len(nativeAbortPayload))), nil
+	abort, err := nativeAbortPayloadCap()
+	if err != nil {
+		return 0, err
+	}
+	return maxUint32(nativeResult, abort), nil
+}
+
+// nativeAbortPayloadCap is the largest legal detailed native_abort payload.
+func nativeAbortPayloadCap() (uint32, error) {
+	escaped, err := mulConfigUint32(jsonStringEscapeMax, uint32(execution.MaxAgentErrorBytes))
+	if err != nil {
+		return 0, err
+	}
+	return addConfigUint32(
+		uint32(len(nativeAbortPrefix)),
+		uint32(len(nativeAbortDetail)),
+		uint32(len(emptyJSONString)),
+		escaped,
+		uint32(len(nativeAbortSuffix)),
+	)
 }
 
 // execPayloadCap is the largest legal initial exec payload.

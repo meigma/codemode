@@ -179,6 +179,10 @@ func invoke(ctx context.Context, subject authz.Subject, entry catalog.Entry, inp
 	if errors.Is(outcome.err, catalog.ErrInputTypeMismatch) {
 		return nil, fmt.Errorf("%w: %w", execution.ErrInternal, outcome.err)
 	}
+	var agentErr *AgentError
+	if errors.As(outcome.err, &agentErr) && agentErr != nil {
+		return nil, execution.WithSafeDetail(execution.ErrCapabilityFailure, sanitizeAgentMessage(agentErr.Message))
+	}
 	return nil, fmt.Errorf("%w: %w", execution.ErrCapabilityFailure, outcome.err)
 }
 

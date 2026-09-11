@@ -2,6 +2,10 @@ package execution
 
 import "errors"
 
+// MaxAgentErrorBytes is the maximum UTF-8 size of an approved agent-visible
+// capability-failure suffix, including a trailing ASCII ellipsis when truncated.
+const MaxAgentErrorBytes = 256
+
 // safeDetailError attaches one model-derived diagnostic suffix without changing the coarse error text.
 type safeDetailError struct {
 	// cause is the coarse classified sentinel.
@@ -24,7 +28,8 @@ func (err *safeDetailError) Unwrap() error {
 // WithSafeDetail attaches detail to cause without changing cause.Error.
 //
 // Empty detail returns cause unchanged. Callers must pass only model-derived
-// suffixes; host-derived text must not be attached.
+// suffixes or sanitized explicitly handler-authored detail; host-derived text
+// must not be attached.
 func WithSafeDetail(cause error, detail string) error {
 	if detail == "" {
 		return cause
@@ -32,7 +37,7 @@ func WithSafeDetail(cause error, detail string) error {
 	return &safeDetailError{cause: cause, detail: detail}
 }
 
-// SafeDetail reports the model-derived suffix attached to err, if any.
+// SafeDetail reports the approved suffix attached to err, if any.
 //
 // Extraction follows the error chain with [errors.As].
 func SafeDetail(err error) (string, bool) {

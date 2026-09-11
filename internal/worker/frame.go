@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"unicode"
 	"unicode/utf8"
+
+	"github.com/meigma/codemode/internal/execution"
 )
 
 const protocolVersion = 1
@@ -79,6 +82,9 @@ const (
 	finalErrorSuffix   = `}`
 	nativeResultPrefix = `{"type":"native_result","result":`
 	nativeResultSuffix = `}`
+	nativeAbortPrefix  = `{"type":"native_abort"`
+	nativeAbortDetail  = `,"detail":`
+	nativeAbortSuffix  = `}`
 	nativeAbortPayload = `{"type":"native_abort"}`
 	emptyJSONString    = `""`
 )
@@ -144,6 +150,9 @@ type nativeResultFrame struct {
 type nativeAbortFrame struct {
 	// Type is the frame discriminator.
 	Type string `json:"type"`
+
+	// Detail is an optional approved capability-failure suffix.
+	Detail string `json:"detail,omitempty"`
 }
 
 // finalFrame is the child's successful terminal result.
@@ -375,9 +384,18 @@ func encodeNativeResultBytes(encoded []byte) []byte {
 	return buf.Bytes()
 }
 
-// encodeNativeAbort encodes the payload-free parent abort frame.
-func encodeNativeAbort() ([]byte, error) {
-	return []byte(nativeAbortPayload), nil
+// encodeNativeAbort encodes the parent abort frame.
+//
+// Empty or illegal detail yields the payload-free form.
+func encodeNativeAbort(detail string) ([]byte, error) {
+	detail = sanitizedAbortDetail(detail)
+	if detail == "" {
+		return []byte(nativeAbortPayload), nil
+	}
+	return marshalFrame(nativeAbortFrame{
+		Type:   frameTypeNativeAbort,
+		Detail: detail,
+	})
 }
 
 // encodeFinal encodes one successful terminal child result.
@@ -419,6 +437,27 @@ func sanitizedFinalErrorDetail(code finalErrorCode, detail string) string {
 		return ""
 	}
 	return detail
+}
+
+// sanitizedAbortDetail keeps only a legal non-empty in-budget printable suffix.
+func sanitizedAbortDetail(detail string) string {
+	if !validAbortDetail(detail) {
+		return ""
+	}
+	return detail
+}
+
+// validAbortDetail reports whether detail is a non-empty printable UTF-8 suffix within budget.
+func validAbortDetail(detail string) bool {
+	if detail == "" || len(detail) > execution.MaxAgentErrorBytes || !utf8.ValidString(detail) {
+		return false
+	}
+	for _, char := range detail {
+		if !unicode.IsPrint(char) {
+			return false
+		}
+	}
+	return true
 }
 
 // allowsFinalErrorDetail reports whether code may carry a model-derived suffix.
@@ -466,10 +505,7 @@ func decodePayload(payload []byte) (any, error) {
 		}
 		return nativeResultFrame{Type: frameTypeNativeResult, Result: result}, nil
 	case frameTypeNativeAbort:
-		if err := decodeStrict(payload, &nativeAbortFrame{}); err != nil {
-			return nil, err
-		}
-		return nativeAbortFrame{Type: frameTypeNativeAbort}, nil
+		return decodeNativeAbort(payload)
 	case frameTypeFinal:
 		result, err := decodeResult(payload, frameTypeFinal)
 		if err != nil {
@@ -597,11 +633,11 @@ func (c *parentConn) writeNativeResult(result any) error {
 }
 
 // writeNativeAbort writes the terminal parent-owned native failure.
-func (c *parentConn) writeNativeAbort() error {
+func (c *parentConn) writeNativeAbort(detail string) error {
 	if c == nil || c.kind != connKindExec || c.state != stateAwaitNative {
 		return errIllegalState
 	}
-	payload, err := encodeNativeAbort()
+	payload, err := encodeNativeAbort(detail)
 	if err != nil {
 		return err
 	}
