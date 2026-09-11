@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.0](https://github.com/meigma/codemode/compare/v0.1.0...v0.2.0) (2026-09-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **mcp:** accept host implementation and logger options ([#54](https://github.com/meigma/codemode/issues/54))
+
+### Features
+
+* **mcp:** accept host implementation and logger options ([#54](https://github.com/meigma/codemode/issues/54)) ([9d29a03](https://github.com/meigma/codemode/commit/9d29a034922798d332e28c822da29a1e6c558cbf))
+
 ## [Unreleased]
 
 
