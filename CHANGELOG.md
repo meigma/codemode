@@ -1,15 +1,15 @@
 # Changelog
 
-## [Unreleased]
+## [0.2.0](https://github.com/meigma/codemode/compare/v0.1.0...v0.2.0) (2026-09-11)
 
 
 ### ⚠ BREAKING CHANGES
 
-* **mcp:** `mcpserver.New` requires an `Options` argument.
+* **mcp:** accept host implementation and logger options ([#54](https://github.com/meigma/codemode/issues/54))
 
 ### Features
 
-* **mcp:** let hosts set MCP implementation identity and a slog logger
+* **mcp:** accept host implementation and logger options ([#54](https://github.com/meigma/codemode/issues/54)) ([9d29a03](https://github.com/meigma/codemode/commit/9d29a034922798d332e28c822da29a1e6c558cbf))
 
 ## 0.1.0 (2026-08-26)
 

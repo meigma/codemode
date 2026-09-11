@@ -33,7 +33,7 @@ Compared to a conventional MCP server with one tool per function:
 ## Install
 
 ```sh
-go get github.com/meigma/codemode@v0.1.0
+go get github.com/meigma/codemode@v0.2.0
 ```
 
 The module requires Go 1.26.6.
