@@ -169,10 +169,12 @@ pointer element type and remains `nil` in canonical arguments.
 Inputs accept keyword arguments only. Integers passed to float fields convert
 to floats and appear as `float64` in canonical arguments. Floats are rejected
 for integer fields, and Booleans are not integers. All floats must be finite;
-`float32` values must fit the `float32` range. Duplicate keyword syntax is
-rejected by the Starlark parser as `ErrInvalidProgram` before authorization or
-handler dispatch. Positional, unknown, missing required, incorrectly typed, and
-out-of-range arguments map to `ErrInvalidArguments`.
+`float32` values must fit the `float32` range and are rounded to the nearest
+`float32` before authorization, so canonical arguments hold the same number the
+handler receives. Duplicate keyword syntax is rejected by the Starlark parser
+as `ErrInvalidProgram` before authorization or handler dispatch. Positional,
+unknown, missing required, incorrectly typed, and out-of-range arguments map to
+`ErrInvalidArguments`.
 
 Registration rejects input arrays, interfaces including `any`, channels,
 functions, complex numbers, pointer-to-pointer types, non-string map keys,
@@ -195,7 +197,10 @@ use brackets, as in `window['created-at']`. After the model-visible prefix
 - `argument "x" overflows float32`
 
 `MaxValueDepth` and `MaxValueBytes` apply to the entire native-call argument map,
-including nested containers.
+including nested containers. The worker charges each argument value against
+these budgets before copying it, so an argument map that exceeds them,
+including one built from repeated references to the same list, fails with
+`ErrResourceLimit` before authorization or handler dispatch.
 
 An output can recursively contain these Go types:
 

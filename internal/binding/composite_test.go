@@ -11,6 +11,14 @@ import (
 	"go.starlark.net/starlark"
 )
 
+const (
+	// testValueDepth is a generous worker binding depth for behavior tests.
+	testValueDepth = 16
+
+	// testValueNodes is a generous worker binding node budget for behavior tests.
+	testValueNodes = 1 << 20
+)
+
 // compositeInput exercises every composite input form in one capability.
 type compositeInput struct {
 	// Tags is a required list of strings.
@@ -209,7 +217,7 @@ func TestCompositeInputsBindAndRebind(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			child, err := plan.InputSchema().Bind(nil, tt.kwargs)
+			child, err := plan.InputSchema().Bind(nil, tt.kwargs, testValueDepth, testValueNodes)
 			require.NoError(t, err)
 			assert.Equal(t, tt.canonical, child)
 
@@ -298,7 +306,7 @@ func TestCompositeInputDiagnostics(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := plan.InputSchema().Bind(nil, compositeKeywords(tt.overrides))
+			_, err := plan.InputSchema().Bind(nil, compositeKeywords(tt.overrides), testValueDepth, testValueNodes)
 
 			require.ErrorIs(t, err, ErrInvalidArguments)
 			assert.EqualError(t, err, "invalid capability arguments: "+tt.want)
@@ -383,7 +391,7 @@ func TestInputSchemaSurvivesTheWorkerManifestEncoding(t *testing.T) {
 	require.NoError(t, decoded.Validate())
 	_, err = decoded.Bind(nil, compositeKeywords(map[string]starlark.Value{
 		"payload": starlark.NewList([]starlark.Value{starlark.MakeInt(256)}),
-	}))
+	}), testValueDepth, testValueNodes)
 	require.EqualError(t, err, `invalid capability arguments: argument "payload[0]" must be between 0 and 255`)
 }
 

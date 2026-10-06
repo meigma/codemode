@@ -136,29 +136,101 @@ func notationName(name string) string {
 	return strconv.Quote(name)
 }
 
-// keySegment renders a dict key or non-plain member name as a diagnostic path segment.
+// segmentKind identifies one diagnostic path segment form.
+type segmentKind uint8
+
+const (
+	// segmentMember is a struct member or root keyword name.
+	segmentMember segmentKind = iota + 1
+
+	// segmentIndex is a list position.
+	segmentIndex
+
+	// segmentKey is a dict key.
+	segmentKey
+)
+
+// pathSegment is one step in a diagnostic argument path.
+type pathSegment struct {
+	// kind selects how the segment renders.
+	kind segmentKind
+
+	// name is the member name or dict key; it references caller-owned data.
+	name string
+
+	// index is the list position for segmentIndex.
+	index int
+}
+
+// pathStackHint is the initial segment capacity for typical argument nesting.
+const pathStackHint = 8
+
+// argumentPath is a reusable stack of diagnostic path segments.
 //
-// Single quotes keep the segment readable after the caller %q-quotes the path.
-func keySegment(key string) string {
+// Binding pushes and pops segments without building strings; String renders
+// the path only when an error needs it, so success costs no copying in
+// proportion to model-controlled key lengths.
+type argumentPath struct {
+	// segments are the active steps from the root keyword to the current value.
+	segments []pathSegment
+}
+
+// newArgumentPath returns an empty path with preallocated segment capacity.
+func newArgumentPath() argumentPath {
+	return argumentPath{segments: make([]pathSegment, 0, pathStackHint)}
+}
+
+// push appends one segment.
+func (path *argumentPath) push(segment pathSegment) {
+	path.segments = append(path.segments, segment)
+}
+
+// pop removes the most recent segment.
+func (path *argumentPath) pop() {
+	path.segments = path.segments[:len(path.segments)-1]
+}
+
+// String renders the path as root.member[index]['key'].
+//
+// Plain member names use dots; other member names and every dict key use a
+// single-quoted bracket so the segment stays readable after %q quoting.
+func (path *argumentPath) String() string {
+	var rendered strings.Builder
+	for position, segment := range path.segments {
+		switch segment.kind {
+		case segmentMember:
+			switch {
+			case position == 0:
+				rendered.WriteString(segment.name)
+			case isPlainName(segment.name):
+				rendered.WriteByte('.')
+				rendered.WriteString(segment.name)
+			default:
+				writeKeySegment(&rendered, segment.name)
+			}
+		case segmentIndex:
+			rendered.WriteByte('[')
+			rendered.WriteString(strconv.Itoa(segment.index))
+			rendered.WriteByte(']')
+		case segmentKey:
+			writeKeySegment(&rendered, segment.name)
+		}
+	}
+	return rendered.String()
+}
+
+// writeKeySegment renders a dict key or non-plain member name as ['key'].
+//
+// Keys containing quotes, backslashes, or non-printable characters fall back
+// to a Go-quoted ["key"] form.
+func writeKeySegment(rendered *strings.Builder, key string) {
 	if strings.ContainsAny(key, `'\`) || !strconv.CanBackquote(key) {
-		return "[" + strconv.Quote(key) + "]"
+		rendered.WriteByte('[')
+		rendered.WriteString(strconv.Quote(key))
+		rendered.WriteByte(']')
+		return
 	}
-	return "['" + key + "']"
-}
-
-// memberPath appends a struct member to a diagnostic path.
-func memberPath(parent string, name string) string {
-	switch {
-	case parent == "":
-		return name
-	case isPlainName(name):
-		return parent + "." + name
-	default:
-		return parent + keySegment(name)
-	}
-}
-
-// indexPath appends a list index to a diagnostic path.
-func indexPath(parent string, index int) string {
-	return parent + "[" + strconv.Itoa(index) + "]"
+	rendered.WriteString("['")
+	rendered.WriteString(key)
+	rendered.WriteString("']")
 }

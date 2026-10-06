@@ -204,6 +204,45 @@ func TestExecuteAttachesCompositeArgumentPaths(t *testing.T) {
 	}
 }
 
+// TestExecuteBoundsCompositeArgumentsBeforeNativeCall proves oversized or aliased
+// arguments fail as resource limits before materialization or dispatch.
+func TestExecuteBoundsCompositeArgumentsBeforeNativeCall(t *testing.T) {
+	tests := []struct {
+		// name identifies the exhausted budget.
+		name string
+
+		// source is the over-budget program.
+		source string
+
+		// limits adjusts the default execution limits.
+		limits func(*execution.Limits)
+	}{
+		{
+			name:   "list exceeds node budget",
+			source: `def main(): return records.search(tags=["x"] * 100000, filter={"owner": "m"}, counts={})`,
+			limits: func(*execution.Limits) {},
+		},
+		{
+			name:   "nesting exceeds depth",
+			source: `def main(): return records.search(tags=[], filter={"owner": "m"}, counts={"open": 1})`,
+			limits: func(limits *execution.Limits) { limits.MaxValueDepth = 2 },
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			limits := defaultExecutionLimits()
+			tt.limits(&limits)
+			var nativeCalls atomic.Int64
+
+			_, err := buildSearchEngine(t).Execute(tt.source, countingNativeCall(&nativeCalls), limits)
+
+			require.ErrorIs(t, err, execution.ErrResourceLimit)
+			assert.Zero(t, nativeCalls.Load())
+		})
+	}
+}
+
 // buildSearchEngine creates one engine exposing the composite records.search capability.
 func buildSearchEngine(t *testing.T) *execution.Engine {
 	t.Helper()

@@ -59,7 +59,7 @@ func TestBindShapeAndBindValueAgreeOnSupportedCalls(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			child, err := plan.InputSchema().Bind(nil, tt.kwargs)
+			child, err := plan.InputSchema().Bind(nil, tt.kwargs, testValueDepth, testValueNodes)
 			require.NoError(t, err)
 			assert.Equal(t, tt.canonical, child)
 
@@ -170,7 +170,7 @@ func TestBindShapeAndBindValueAgreeOnWidenedScalars(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			child, err := plan.InputSchema().Bind(nil, tt.kwargs)
+			child, err := plan.InputSchema().Bind(nil, tt.kwargs, testValueDepth, testValueNodes)
 			require.NoError(t, err)
 			assert.Equal(t, tt.canonical, child)
 
@@ -224,7 +224,7 @@ func TestBindShapeAndBindValueAgreeOnNamedAliases(t *testing.T) {
 		keyword("limit", starlark.MakeInt64(25)),
 		keyword("enabled", starlark.True),
 		keyword("weight", starlark.Float(2.5)),
-	})
+	}, testValueDepth, testValueNodes)
 	require.NoError(t, err)
 
 	bound, canonical, err := plan.BindValue(child)
@@ -258,7 +258,7 @@ func TestBindShapeHandlesAnEmptyInputShape(t *testing.T) {
 	plan, err := CompileFor[struct{}, representativeOutput]()
 	require.NoError(t, err)
 
-	child, err := plan.InputSchema().Bind(nil, nil)
+	child, err := plan.InputSchema().Bind(nil, nil, testValueDepth, testValueNodes)
 	require.NoError(t, err)
 	assert.Empty(t, child)
 
@@ -341,7 +341,7 @@ func TestBindShapeRejectsMalformedArguments(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := plan.InputSchema().Bind(tt.args, tt.kwargs)
+			_, err := plan.InputSchema().Bind(tt.args, tt.kwargs, testValueDepth, testValueNodes)
 
 			require.Error(t, err)
 			require.ErrorIs(t, err, ErrInvalidArguments)
@@ -481,7 +481,7 @@ func TestBindShapeRejectsWidenedScalarMismatches(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := plan.InputSchema().Bind(nil, tt.kwargs)
+			_, err := plan.InputSchema().Bind(nil, tt.kwargs, testValueDepth, testValueNodes)
 
 			require.Error(t, err)
 			require.ErrorIs(t, err, ErrInvalidArguments)

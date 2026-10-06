@@ -257,7 +257,9 @@ Signed integers must fit their Go type's range. Unsigned integers must be
 nonnegative and no greater than the smaller of the Go type's maximum and
 `math.MaxInt64`. Float fields accept floats or integers converted to floats.
 All floats must be finite, and `float32` values must fit the `float32` range.
-Float values are not accepted for integer fields.
+A `float32` value is rounded to the nearest `float32` before authorization, so
+policy sees the same number the handler receives. Float values are not
+accepted for integer fields.
 
 Root input names must be Starlark identifiers that are not keywords. Nested
 input names and all output names may be any non-empty tag name accepted by
