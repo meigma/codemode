@@ -47,3 +47,7 @@ A reviewer agent found three defects, each confirmed with a throwaway test. All 
 - The binder moved to `bind.go`, the parent re-binder uses an `argumentRebinder`, and `lookupInputField` was replaced by `fieldPosition`.
 - Regression tests in `internal/binding/bind_bounds_test.go` fail on `029e45f` (missing ErrValueLimit, 65 MB vs <1 MiB, float mismatch) and pass now. A new execution test proves the budget maps to `ErrResourceLimit` with no native call. Docs state float32 rounding and that argument maps over budget fail before dispatch.
 - Verification: `go test -race ./...` passed (before the final lint-only refactor of `bindValue`), `go test ./...` and race on `binding`/`execution` passed after it, `golangci-lint` reports 0 issues, and `docs:build` passes.
+
+## 2026-10-06 11:01 — PR #67 merged
+CI was green (ci, CodeQL, Kusari, Pages). PR #67 was squash-merged to `master` as `c777839` (`feat(binding): support composite capability inputs (#67)`). The `feat/composite-inputs` worktree and local branch were removed. The root checkout's local `master` was not fast-forwarded.
+Remaining for close: update TECH_NOTES (the input matrix, canonical-argument shape, and field-name rule bullets are stale).
