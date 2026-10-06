@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/meigma/codemode/compare/v0.2.1...v0.2.2) (2026-10-06)
+
+
+### Features
+
+* **binding:** support composite capability inputs ([#67](https://github.com/meigma/codemode/issues/67)) ([c777839](https://github.com/meigma/codemode/commit/c777839860d31eda9bed44ed8dd1af879c884d51))
+
 ## [0.2.1](https://github.com/meigma/codemode/compare/v0.2.0...v0.2.1) (2026-09-11)
 
 
