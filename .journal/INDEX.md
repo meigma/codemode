@@ -16,3 +16,4 @@
 | 012 | 2026-08-25 | Review model-facing diagnostics | complete | Implemented bounded parser, resolver, and binding diagnostics without weakening host-error non-disclosure, and merged PR #43 to close issue #24. |
 | 013 | 2026-08-25 | Design bounded capability search | complete | Designed, implemented, documented, validated, and merged bounded relevance-ranked capability discovery in PR #44. |
 | 014 | 2026-08-25 | Review pure-compute Starlark stdlib | complete | Reviewed, implemented, documented, validated, and merged the fixed pure-compute Starlark surface in PR #46. |
+| 015 | 2026-10-06 | New session (goal pending) | in-progress | Session opened; the user has not yet stated a goal. |
