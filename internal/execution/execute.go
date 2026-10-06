@@ -161,7 +161,7 @@ func requireMain(globals starlark.StringDict) (*starlark.Function, error) {
 func callCapability(
 	thread *starlark.Thread,
 	id string,
-	input []binding.FieldShape,
+	input binding.InputSchema,
 	args starlark.Tuple,
 	kwargs []starlark.Tuple,
 ) (starlark.Value, error) {
@@ -175,7 +175,7 @@ func callCapability(
 	if counterErr := state.nativeCalls.increment(); counterErr != nil {
 		return nil, counterErr
 	}
-	canonical, bindingErr := binding.BindShape(input, args, kwargs)
+	canonical, bindingErr := input.Bind(args, kwargs)
 	if bindingErr != nil {
 		if errors.Is(bindingErr, binding.ErrInvalidArguments) {
 			return nil, invalidArgumentDetail(bindingErr)

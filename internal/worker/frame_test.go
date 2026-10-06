@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/meigma/codemode/internal/binding"
 	"github.com/meigma/codemode/internal/execution"
 )
 
@@ -594,7 +593,7 @@ func TestFrameLimitsValidateChildLimits(t *testing.T) {
 	}
 }
 
-// TestFrameLimitsValidateManifest proves the child cannot invent IDs, names, or field shapes.
+// TestFrameLimitsValidateManifest proves the child cannot invent IDs, names, or input schemas.
 func TestFrameLimitsValidateManifest(t *testing.T) {
 	valid := validManifest()
 
@@ -651,15 +650,6 @@ func TestFrameLimitsValidateManifest(t *testing.T) {
 			{ID: "cap.lookup", Name: "records.lookup", Input: valid[0].Input},
 			{ID: "cap.detail", Name: "records.lookup.detail", Input: valid[0].Input},
 		}},
-		{name: "unsupported input shape", manifest: []manifestEntry{{
-			ID:   "cap.lookup",
-			Name: "records.lookup",
-			Input: []binding.FieldShape{{
-				Name:     "org",
-				Type:     "str",
-				Required: false,
-			}},
-		}}},
 	}
 
 	require.NoError(t, validateManifest(nil))
@@ -672,6 +662,15 @@ func TestFrameLimitsValidateManifest(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validateManifest(tt.manifest)
+			require.Error(t, err)
+			require.ErrorIs(t, err, errInvalidManifest)
+		})
+	}
+	for _, malformed := range malformedInputSchemas() {
+		t.Run(malformed.name, func(t *testing.T) {
+			err := validateManifest(
+				[]manifestEntry{{ID: "cap.lookup", Name: "records.lookup", Input: malformed.schema}},
+			)
 			require.Error(t, err)
 			require.ErrorIs(t, err, errInvalidManifest)
 		})
@@ -860,12 +859,9 @@ func validExecFrame() execFrame {
 
 func validManifest() []manifestEntry {
 	return []manifestEntry{{
-		ID:   "cap.lookup",
-		Name: "records.lookup",
-		Input: []binding.FieldShape{
-			{Name: "org", Type: "str", Required: true},
-			{Name: "limit", Type: "int | None", Required: false},
-		},
+		ID:    "cap.lookup",
+		Name:  "records.lookup",
+		Input: mustInputSchema[lookupInput](),
 	}}
 }
 

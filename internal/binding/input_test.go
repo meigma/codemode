@@ -59,7 +59,7 @@ func TestBindShapeAndBindValueAgreeOnSupportedCalls(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			child, err := BindShape(plan.InputShape(), nil, tt.kwargs)
+			child, err := plan.InputSchema().Bind(nil, tt.kwargs)
 			require.NoError(t, err)
 			assert.Equal(t, tt.canonical, child)
 
@@ -170,7 +170,7 @@ func TestBindShapeAndBindValueAgreeOnWidenedScalars(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			child, err := BindShape(plan.InputShape(), nil, tt.kwargs)
+			child, err := plan.InputSchema().Bind(nil, tt.kwargs)
 			require.NoError(t, err)
 			assert.Equal(t, tt.canonical, child)
 
@@ -215,7 +215,7 @@ func TestBindShapeAndBindValueAgreeOnNamedAliases(t *testing.T) {
 	enabled := flag(true)
 	weight := score(2.5)
 
-	child, err := BindShape(plan.InputShape(), nil, []starlark.Tuple{
+	child, err := plan.InputSchema().Bind(nil, []starlark.Tuple{
 		keyword("org", starlark.String("meigma")),
 		keyword("count", starlark.MakeInt64(3)),
 		keyword("active", starlark.True),
@@ -258,7 +258,7 @@ func TestBindShapeHandlesAnEmptyInputShape(t *testing.T) {
 	plan, err := CompileFor[struct{}, representativeOutput]()
 	require.NoError(t, err)
 
-	child, err := BindShape(plan.InputShape(), nil, nil)
+	child, err := plan.InputSchema().Bind(nil, nil)
 	require.NoError(t, err)
 	assert.Empty(t, child)
 
@@ -341,7 +341,7 @@ func TestBindShapeRejectsMalformedArguments(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := BindShape(plan.InputShape(), tt.args, tt.kwargs)
+			_, err := plan.InputSchema().Bind(tt.args, tt.kwargs)
 
 			require.Error(t, err)
 			require.ErrorIs(t, err, ErrInvalidArguments)
@@ -428,9 +428,9 @@ func TestBindShapeRejectsWidenedScalarMismatches(t *testing.T) {
 			keyword("active", starlark.True),
 			keyword("score", starlark.Float(1.5)),
 		}, contains: "missing required"},
-		{name: "integer supplied as float", kwargs: append(append([]starlark.Tuple{}, required[:2]...),
+		{name: "string supplied as float", kwargs: append(append([]starlark.Tuple{}, required[:2]...),
 			keyword("active", starlark.True),
-			keyword("score", starlark.MakeInt64(1)),
+			keyword("score", starlark.String("1.5")),
 		), contains: "must be a float"},
 		{name: "float supplied as integer", kwargs: []starlark.Tuple{
 			keyword("org", starlark.String("meigma")),
@@ -481,7 +481,7 @@ func TestBindShapeRejectsWidenedScalarMismatches(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := BindShape(plan.InputShape(), nil, tt.kwargs)
+			_, err := plan.InputSchema().Bind(nil, tt.kwargs)
 
 			require.Error(t, err)
 			require.ErrorIs(t, err, ErrInvalidArguments)

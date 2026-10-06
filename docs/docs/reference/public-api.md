@@ -131,37 +131,71 @@ The policy and deployment-filter examples use this explicit capability identity:
 
 #### Supported input and output types
 
-Both generic type arguments must be non-pointer structs. Input fields must be
-direct exported fields. Output structs can be nested, but every struct in the
-output graph must contain only direct exported fields. Embedded fields are not
-supported.
+Both generic type arguments must be non-pointer structs. Every struct in the
+input or output graph must contain only direct exported fields. Embedded fields
+are not supported.
 
-A field name defaults to its Go name. One `json` tag can replace it with a
-valid Starlark identifier. Other struct tags, ignored fields, duplicate names,
-and unsupported JSON tag options are rejected.
+A field name defaults to its Go name. One `json` tag can replace it. Root input
+names must be Starlark identifiers that are not keywords because they become
+keyword arguments. Nested input names and all output names can be any non-empty
+tag name accepted by `encoding/json`, including keywords such as `from`.
+Compact type notation quotes names that are not plain identifiers, as in
+`{"created-at": str}`. Other struct tags, ignored fields (`json:"-"`), duplicate
+names, and unsupported JSON tag options are rejected.
 
-Inputs support these scalar fields and named types with the same underlying
-kind:
+Inputs recursively support these types, including named types with the same
+underlying kinds:
 
-| Go field type | Starlark input | Required | `omitempty` |
-| --- | --- | --- | --- |
-| `string` | `str` | Yes | Rejected |
-| `int64` | `int` | Yes | Rejected |
-| `bool` | `bool` | Yes | Rejected |
-| `float64` | `float` | Yes | Rejected |
-| `*string` | `str` or `None` | No | Accepted but not required |
-| `*int64` | `int` or `None` | No | Accepted but not required |
-| `*bool` | `bool` or `None` | No | Accepted but not required |
-| `*float64` | `float` or `None` | No | Accepted but not required |
+| Go field type | Starlark input | Type notation |
+| --- | --- | --- |
+| `string` | `str` | `str` |
+| `bool` | `bool` | `bool` |
+| `int`, `int8`, `int16`, `int32`, `int64` | `int` within the Go type's range | `int` |
+| `uint`, `uint8`, `uint16`, `uint32`, `uint64` | `int` from 0 through the smaller of the Go type's maximum and `math.MaxInt64` | `int` |
+| `float32`, `float64` | Finite `float` or `int`; the converted value must fit the Go type's range | `float` |
+| `*T` | A supported `T` value or `None`; a struct field may also be omitted | <code>T &#124; None</code> |
+| `[]T` | `list` or `tuple` of supported `T` values | `list[T]` |
+| `map[K]T` with string-kind `K` | `dict` with `str` keys and supported `T` values | `dict[str, T]` |
+| Nested struct | `dict` with declared keys only; all non-pointer fields must be present | <code>{a: T, b: U &#124; None}</code> |
 
-Inputs accept keyword arguments only. Integers must fit the signed 64-bit
-range, and floats must be finite. CodeMode does not coerce an integer to a
-float or a Boolean to an integer. An omitted optional input and an explicit
-`None` both produce a nil pointer and omit that key from the fresh canonical
-authorization map. Duplicate keyword syntax is rejected by the Starlark parser
-as `ErrInvalidProgram` before authorization or handler dispatch. Positional,
-unknown, missing required, incorrectly typed, and out-of-range arguments reach
-binding and map to `ErrInvalidArguments`.
+`[]byte` is a list of integers from 0 through 255, not base64 data.
+Non-pointer fields are required at every nesting level, including lists, maps,
+and structs. Pointer fields are optional; `omitempty` is accepted but not
+required for them and is rejected on non-pointer fields. Omission and explicit
+`None` both produce a nil pointer and omit that struct field from canonical
+authorization arguments. `None` in a list or dict value is accepted only for a
+pointer element type and remains `nil` in canonical arguments.
+
+Inputs accept keyword arguments only. Integers passed to float fields convert
+to floats and appear as `float64` in canonical arguments. Floats are rejected
+for integer fields, and Booleans are not integers. All floats must be finite;
+`float32` values must fit the `float32` range. Duplicate keyword syntax is
+rejected by the Starlark parser as `ErrInvalidProgram` before authorization or
+handler dispatch. Positional, unknown, missing required, incorrectly typed, and
+out-of-range arguments map to `ErrInvalidArguments`.
+
+Registration rejects input arrays, interfaces including `any`, channels,
+functions, complex numbers, pointer-to-pointer types, non-string map keys,
+recursive types, and types implementing `json.Unmarshaler` or
+`encoding.TextUnmarshaler` (for example, `time.Time`), in addition to the field
+and tag restrictions above.
+
+Argument diagnostics use dotted struct paths, list indexes, and quoted dict
+keys: `filter.owner`, `tags[1]`, and `labels['env']`. Non-identifier struct keys
+use brackets, as in `window['created-at']`. After the model-visible prefix
+`invalid capability arguments: `, diagnostics include:
+
+- `argument "filter.owner" must be a string` (or `must be a string or None` for an optional value)
+- `unknown argument "filter.bogus"`
+- `missing required argument "window.end"`
+- `argument "labels" keys must be strings`
+- `argument "count" must be between 0 and 255`
+- `argument "n" overflows int64`
+- `argument "x" is not finite`
+- `argument "x" overflows float32`
+
+`MaxValueDepth` and `MaxValueBytes` apply to the entire native-call argument map,
+including nested containers.
 
 An output can recursively contain these Go types:
 
@@ -204,6 +238,66 @@ Returned values are checked at call time. An unsigned result above
 `math.MaxInt64` or a non-finite float maps to `ErrCapabilityFailure`.
 Output-depth, per-value byte, and aggregate intermediate-byte exhaustion map to
 `ErrResourceLimit`.
+
+#### Composite input example
+
+For a capability registered as `records.search`, this input combines a list,
+a nested struct with an optional field, and a dict:
+
+```go
+// searchFilter selects records by date and optional owner.
+type searchFilter struct {
+	// CreatedAt is the date to match.
+	CreatedAt string `json:"created-at"`
+	// Owner limits results to one owner when supplied.
+	Owner *string `json:"owner,omitempty"`
+}
+
+// searchInput contains the keyword arguments for records.search.
+type searchInput struct {
+	// Tags are the tags to match.
+	Tags []string `json:"tags"`
+	// Filter selects record fields.
+	Filter searchFilter `json:"filter"`
+	// Labels maps label names to optional values.
+	Labels map[string]*string `json:"labels"`
+}
+```
+
+The generated signature preserves declaration order:
+
+```text
+records.search(*, tags: list[str], filter: {"created-at": str, owner: str | None}, labels: dict[str, str | None])
+```
+
+A Starlark program can make this native call:
+
+```python
+def main():
+    return records.search(
+        tags=["release", "review"],
+        filter={"created-at": "2026-10-06", "owner": None},
+        labels={"env": "prod", "team": None},
+    )
+```
+
+The authorizer receives this `AuthorizationInput.Arguments` value:
+
+```go
+map[string]any{
+	"tags": []any{"release", "review"},
+	"filter": map[string]any{
+		"created-at": "2026-10-06",
+	},
+	"labels": map[string]any{
+		"env":  "prod",
+		"team": nil,
+	},
+}
+```
+
+Omitting `filter.owner` produces the same map. The optional struct field is
+absent, while the optional dict value remains present as `nil`.
 
 ### Options and builder lifecycle
 
@@ -444,9 +538,12 @@ Describe(name CapabilityName) (Description, error)
 | `input` | array of field shapes | Ordered input fields. |
 | `output` | array of field shapes | Stable result contract. Models and clients must use these ordered field shapes. |
 
-Each field shape remains the flat object `{name, type, required}`. Input
-`type` values are `str`, `int`, `bool`, and `float`; optional pointer inputs
-append ` | None` and set `required` to `false`.
+Each field shape remains the flat object `{name, type, required}`. Input `type`
+strings use the recursive [input type notation](#supported-input-and-output-types):
+`str`, `int`, `bool`, `float`, `list[T]`, `dict[str, T]`, and `{field: T}`.
+Pointer inputs append ` | None` and set `required` to `false`; other root
+fields set it to `true`. Inside an input struct, optional fields use
+`field: T | None`, not the output-only `field?: T` notation.
 
 Output `type` strings use deterministic compact notation:
 
@@ -546,10 +643,17 @@ calling `WithSubject`; these functions do not authenticate a caller.
 | `CapabilityName string` | Dotted model-facing name. |
 | `Arguments map[string]any` | Fresh canonical projection of validated keyword arguments. |
 
-Canonical arguments contain JSON-shaped scalar values from the supported input
-matrix: strings, `int64` integers, Booleans, and finite `float64` values. An
-omitted optional value or explicit `None` is absent from the map. The canonical
-map is separate from the typed input passed to the handler.
+Canonical arguments contain nested JSON-shaped values: `string`, `int64`,
+`bool`, finite `float64`, `[]any`, and `map[string]any`. Integers supplied for
+float fields appear as `float64`. Optional struct fields that are omitted or
+explicitly `None` are absent at every nesting level; `None` inside a list or
+dict value remains `nil`. Every container is a fresh copy, separate from the
+typed input passed to the handler.
+
+Custom authorizers must handle objects and arrays when the registered input
+contains composite types, rather than assuming all argument values are scalars.
+Rego policies receive those containers as objects and arrays; optional list
+elements and dict values can be `null`.
 
 ### Authorizers
 
@@ -613,7 +717,7 @@ The Rego input contains exactly these fields:
 }
 ```
 
-`subject.id` is the trusted subject ID. `capability.id` is the stable policy identity; `capability.name` is the dotted discovery and Starlark name. `arguments` is the canonical map from `AuthorizationInput`, borrowed read-only for the synchronous evaluation. An omitted optional argument is absent from the map.
+`subject.id` is the trusted subject ID. `capability.id` is the stable policy identity; `capability.name` is the dotted discovery and Starlark name. `arguments` is the canonical map from `AuthorizationInput`, borrowed read-only for the synchronous evaluation. It can contain nested objects and arrays. Optional struct fields that are omitted or `None` are absent at every level; `None` inside arrays or dict values is `null`.
 
 A ground decision is either undefined or yields one value. That value must be Boolean.
 

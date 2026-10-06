@@ -48,40 +48,40 @@ func (plan *Plan) convertNode(
 ) (any, error) {
 	node := plan.outputNodes[index]
 	switch node.kind {
-	case outputNodePointer:
+	case nodePointer:
 		return plan.convertPointer(node, value, path, depth, converter)
-	case outputNodeString:
+	case nodeString:
 		if err := converter.consumeNode(depth); err != nil {
 			return nil, err
 		}
 		return value.String(), nil
-	case outputNodeInt:
+	case nodeInt:
 		if err := converter.consumeNode(depth); err != nil {
 			return nil, err
 		}
 		return value.Int(), nil
-	case outputNodeUint:
+	case nodeUint:
 		if err := converter.consumeNode(depth); err != nil {
 			return nil, err
 		}
 		return convertOutputUint(value, path)
-	case outputNodeBool:
+	case nodeBool:
 		if err := converter.consumeNode(depth); err != nil {
 			return nil, err
 		}
 		return value.Bool(), nil
-	case outputNodeFloat:
+	case nodeFloat:
 		if err := converter.consumeNode(depth); err != nil {
 			return nil, err
 		}
 		return convertOutputFloat(value, path)
-	case outputNodeBytes:
+	case nodeBytes:
 		return convertOutputBytes(value, path, depth, converter)
-	case outputNodeList:
+	case nodeList:
 		return plan.convertList(node, value, path, depth, converter)
-	case outputNodeMap:
+	case nodeMap:
 		return plan.convertMap(node, value, path, depth, converter)
-	case outputNodeStruct:
+	case nodeStruct:
 		return plan.convertStruct(node, value, path, depth, converter)
 	default:
 		return nil, fmt.Errorf("%w: %s has an unknown compiled kind", ErrInvalidPlan, path)
@@ -90,7 +90,7 @@ func (plan *Plan) convertNode(
 
 // convertPointer follows a pointer without adding depth and maps nil to None.
 func (plan *Plan) convertPointer(
-	node outputNode,
+	node typeNode,
 	value reflect.Value,
 	path string,
 	depth int,
@@ -107,7 +107,7 @@ func (plan *Plan) convertPointer(
 
 // convertStruct materializes included fields after preflighting their count.
 func (plan *Plan) convertStruct(
-	node outputNode,
+	node typeNode,
 	value reflect.Value,
 	path string,
 	depth int,
@@ -149,7 +149,7 @@ func (plan *Plan) convertStruct(
 
 // convertList materializes array and non-nil slice elements after preflight.
 func (plan *Plan) convertList(
-	node outputNode,
+	node typeNode,
 	value reflect.Value,
 	path string,
 	depth int,
@@ -187,7 +187,7 @@ func (plan *Plan) convertList(
 
 // convertMap materializes a string-keyed map in sorted key order after preflight.
 func (plan *Plan) convertMap(
-	node outputNode,
+	node typeNode,
 	value reflect.Value,
 	path string,
 	depth int,
@@ -274,7 +274,7 @@ func convertOutputFloat(value reflect.Value, path string) (float64, error) {
 }
 
 // omitOutputField reports whether a nil pointer+omitempty field is excluded.
-func omitOutputField(field outputStructField, value reflect.Value) bool {
+func omitOutputField(field structField, value reflect.Value) bool {
 	return field.omitempty && value.Kind() == reflect.Pointer && value.IsNil()
 }
 

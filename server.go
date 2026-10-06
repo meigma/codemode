@@ -81,7 +81,7 @@ func capabilityBindings(capabilityCatalog *catalog.Catalog) []execution.Capabili
 		bindings[index] = execution.CapabilityBinding{
 			ID:    entry.ID,
 			Name:  entry.Name,
-			Input: entry.Plan.InputShape(),
+			Input: entry.Plan.InputSchema(),
 		}
 	}
 	return bindings
