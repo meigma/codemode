@@ -25,3 +25,16 @@ Findings to carry into the real design:
 - `InputSchema.Bind` revalidates the schema on every native call (as `BindShape` did); validation at engine/manifest load is enough.
 - The authz contract (`public-api.md` scalar-only canonical arguments) and the docs input matrix must change; Rego handles nested input naturally.
 - Not yet covered: integer widths/uints/float32, arrays, []byte inputs, recursive-type rejection test, the diagnostic 4 KiB cap with deep paths, payload-cap accounting for larger manifests.
+
+## 2026-10-06 10:09 — Composite inputs implemented; PR #67 open
+Decisions from the user: accept ints for float fields; relax the field-name rule for nested inputs and all outputs.
+
+Branch `feat/composite-inputs` (worktree `.wt/feat-composite-inputs`, from `origin/master` `d999f98`), commit `029e45f`, PR https://github.com/meigma/codemode/pull/67 (open, not merged). The spike worktree and branch were removed after their findings were carried over.
+- One shared type compiler (`internal/binding/compile.go`) with per-direction rules replaces the separate input/output compilers. Inputs take every integer width (range-checked through `InputNode.IntMin/IntMax`), `float32` (range-checked), `*T`, `[]T` (`[]byte` = list of 0-255), string-kind maps, and nested structs. Inputs reject arrays, pointer-to-pointer, and json/text unmarshalers; outputs keep rejecting marshalers.
+- `binding.InputSchema` (post-order arena) replaces `[]FieldShape` in `execution.CapabilityBinding` and the worker manifest. It is validated once at engine/manifest load; `Bind` no longer revalidates. Parent `BindValue` re-binds by reflection.
+- Names: root input names stay Starlark identifiers; others need only `encoding/json` tag validity (`names.go`). Notation quotes non-plain names. Paths use `.name` / `['key']`; optional mismatches say "or None".
+- A sub-agent (programmer) did the execution/worker plumbing and test migration, with new `input_schema_test.go` files in both packages, including a real worker-subprocess composite test. A technical-writer updated README, public-api, mcp-tools, security-model, and the Rego how-to. I ran the docs composite example against the implementation and it matched exactly.
+- Verification: `go test -race ./...` pass, `golangci-lint run ./...` 0 issues, `moon run docs:build` pass, new `TestActualMCPCompositeInputProgram` added to `mcp-smoke`.
+- Tooling note: `gopls` is not installed, so LSP renames are unavailable; `ast_edit` does not match Go type identifiers. The `programmer` agent's default model (Grok) was out of credits; re-spawned with `@default`.
+
+Next: PR review and CI, then squash-merge. TECH_NOTES updates at close: the input matrix and canonical-argument bullets are now stale.
