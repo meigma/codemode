@@ -38,3 +38,12 @@ Branch `feat/composite-inputs` (worktree `.wt/feat-composite-inputs`, from `orig
 - Tooling note: `gopls` is not installed, so LSP renames are unavailable; `ast_edit` does not match Go type identifiers. The `programmer` agent's default model (Grok) was out of credits; re-spawned with `@default`.
 
 Next: PR review and CI, then squash-merge. TECH_NOTES updates at close: the input matrix and canonical-argument bullets are now stale.
+
+## 2026-10-06 10:38 — Review findings fixed on PR #67
+A reviewer agent found three defects, each confirmed with a throwaway test. All are fixed in `fc7f5c2`:
+- Worker `InputSchema.Bind` had no budget, so aliased Starlark lists (`[[0]*300]*300...`) expanded to about 900 MB before `MaxValueBytes` was checked. `Bind` now takes `maxDepth, maxNodes` and charges nodes the same way `FromStarlark` does, checking container lengths before allocating, including `dict.Len()` before `Items()`. `ErrValueLimit` now maps to `ErrResourceLimit` in `execution.callCapability`.
+- Diagnostic paths were concatenated eagerly for every element, making cost O(keyLen x elements) in both the worker and the parent; a forged child could drive the parent cost. They are now an `argumentPath` segment stack (`names.go`) rendered only on error.
+- float32 canonical values differed from the handler's rounded value. `checkFloat` now returns `float64(float32(v))`.
+- The binder moved to `bind.go`, the parent re-binder uses an `argumentRebinder`, and `lookupInputField` was replaced by `fieldPosition`.
+- Regression tests in `internal/binding/bind_bounds_test.go` fail on `029e45f` (missing ErrValueLimit, 65 MB vs <1 MiB, float mismatch) and pass now. A new execution test proves the budget maps to `ErrResourceLimit` with no native call. Docs state float32 rounding and that argument maps over budget fail before dispatch.
+- Verification: `go test -race ./...` passed (before the final lint-only refactor of `bindValue`), `go test ./...` and race on `binding`/`execution` passed after it, `golangci-lint` reports 0 issues, and `docs:build` passes.
