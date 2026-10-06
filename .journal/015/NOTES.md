@@ -51,3 +51,7 @@ A reviewer agent found three defects, each confirmed with a throwaway test. All 
 ## 2026-10-06 11:01 — PR #67 merged
 CI was green (ci, CodeQL, Kusari, Pages). PR #67 was squash-merged to `master` as `c777839` (`feat(binding): support composite capability inputs (#67)`). The `feat/composite-inputs` worktree and local branch were removed. The root checkout's local `master` was not fast-forwarded.
 Remaining for close: update TECH_NOTES (the input matrix, canonical-argument shape, and field-name rule bullets are stale).
+
+## 2026-10-06 11:08 — Released v0.2.2
+Release-please PR #60 (updated to `chore(master): release 0.2.2` after #67) passed CI and was squash-merged as `530e307`. Release-please created a draft `v0.2.2` with no tag; publishing it with `gh release edit v0.2.2 --draft=false --latest` created the tag at `530e307` and made it Latest. `go list -m github.com/meigma/codemode@v0.2.2` resolves through the module proxy.
+Correction to TECH_NOTES: with `draft: true`, the git tag is NOT created until the draft is published (`git ls-remote` showed no `v0.2.2` tag while it was a draft). Also, mise shims outside the repo have no Go version configured; use `~/.local/share/mise/installs/go/<ver>/bin/go` in temp dirs.
