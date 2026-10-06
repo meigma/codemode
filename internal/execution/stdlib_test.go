@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/meigma/codemode/internal/binding"
 	"github.com/meigma/codemode/internal/execution"
 	"github.com/meigma/codemode/internal/universe"
 )
@@ -163,11 +162,9 @@ def main():
 // statsSumBinding returns a nonreserved nested sum capability.
 func statsSumBinding() execution.CapabilityBinding {
 	return execution.CapabilityBinding{
-		ID:   "cap.stats.sum",
-		Name: "stats.sum",
-		Input: []binding.FieldShape{
-			{Name: "value", Type: "str", Required: true},
-		},
+		ID:    "cap.stats.sum",
+		Name:  "stats.sum",
+		Input: mustInputSchema[valueInput](),
 	}
 }
 

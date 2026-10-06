@@ -20,8 +20,8 @@ type CapabilityBinding struct {
 	// Name is the dotted Starlark path used to assemble the frozen namespace.
 	Name string
 
-	// Input is the exact compiled input shape used to bind keyword arguments.
-	Input []binding.FieldShape
+	// Input is the private compiled input schema used to bind keyword arguments.
+	Input binding.InputSchema
 }
 
 // NativeCall invokes one capability with a fresh canonical argument map.
@@ -52,12 +52,10 @@ func New(bindings []CapabilityBinding) (*Engine, error) {
 func copyBindings(bindings []CapabilityBinding) []CapabilityBinding {
 	copied := make([]CapabilityBinding, len(bindings))
 	for index, capability := range bindings {
-		input := make([]binding.FieldShape, len(capability.Input))
-		copy(input, capability.Input)
 		copied[index] = CapabilityBinding{
 			ID:    capability.ID,
 			Name:  capability.Name,
-			Input: input,
+			Input: capability.Input.Clone(),
 		}
 	}
 	return copied
@@ -84,7 +82,7 @@ func validateBindings(bindings []CapabilityBinding) error {
 		if _, duplicate := names[capability.Name]; duplicate {
 			return fmt.Errorf("%w: duplicate namespace function", ErrInternal)
 		}
-		if err := binding.ValidateInputShape(capability.Input); err != nil {
+		if err := capability.Input.Validate(); err != nil {
 			return fmt.Errorf("%w: %w", ErrInternal, err)
 		}
 		ids[capability.ID] = struct{}{}

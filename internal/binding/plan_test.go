@@ -3,6 +3,7 @@ package binding
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -175,22 +176,48 @@ func TestCompileRejectsUnsupportedInputShapes(t *testing.T) {
 		contains string
 	}{
 		{name: "pointer input", inputType: reflect.TypeFor[*representativeInput](), contains: "non-pointer struct"},
-		{name: "unsupported integer width", inputType: reflect.TypeOf(struct {
+		{name: "array", inputType: reflect.TypeOf(struct {
 			// Value is the field under validation.
-			Value int32 `json:"value"`
+			Value [2]string `json:"value"`
 		}{}), contains: "unsupported type"},
-		{name: "unsupported unsigned integer", inputType: reflect.TypeOf(struct {
+		{name: "interface", inputType: reflect.TypeOf(struct {
 			// Value is the field under validation.
-			Value uint64 `json:"value"`
+			Value any `json:"value"`
 		}{}), contains: "unsupported type"},
-		{name: "unsupported optional integer width", inputType: reflect.TypeOf(struct {
+		{name: "complex", inputType: reflect.TypeOf(struct {
 			// Value is the field under validation.
-			Value *int `json:"value,omitempty"`
+			Value complex128 `json:"value"`
 		}{}), contains: "unsupported type"},
-		{name: "unsupported float width", inputType: reflect.TypeOf(struct {
+		{name: "pointer to pointer", inputType: reflect.TypeOf(struct {
 			// Value is the field under validation.
-			Value float32 `json:"value"`
+			Value **string `json:"value"`
 		}{}), contains: "unsupported type"},
+		{name: "non-string map key", inputType: reflect.TypeOf(struct {
+			// Value is the field under validation.
+			Value map[int]string `json:"value"`
+		}{}), contains: "unsupported map key type"},
+		{name: "recursive type", inputType: reflect.TypeOf(struct {
+			// Value is the field under validation.
+			Value directCycleOutput `json:"value"`
+		}{}), contains: "cyclic type"},
+		{name: "text unmarshaler", inputType: reflect.TypeOf(struct {
+			// Value is the field under validation.
+			Value time.Time `json:"value"`
+		}{}), contains: "unsupported type"},
+		{name: "nested invalid JSON name", inputType: reflect.TypeOf(struct {
+			// Value is the field under validation.
+			Value struct {
+				// Name carries a symbol, which encoding/json rejects as a tag name.
+				Name string `json:"a★b"`
+			} `json:"value"`
+		}{}), contains: "not a valid JSON field name"},
+		{name: "nested required omitempty", inputType: reflect.TypeOf(struct {
+			// Value is the field under validation.
+			Value struct {
+				// Name is required but tagged omitempty.
+				Name string `json:"name,omitempty"`
+			} `json:"value"`
+		}{}), contains: "cannot use omitempty"},
 		{name: "embedded field", inputType: reflect.TypeFor[embeddedInput](), contains: "embedded fields"},
 		{name: "unexported field", inputType: reflect.TypeOf(struct {
 			// value is intentionally unexported.

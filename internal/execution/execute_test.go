@@ -36,28 +36,20 @@ func TestNewRejectsInvalidBindings(t *testing.T) {
 		}},
 		{name: "namespace collision", bindings: []execution.CapabilityBinding{
 			valid,
-			{
-				ID:   "cap.detail",
-				Name: "records.lookup.detail",
-				Input: []binding.FieldShape{
-					{Name: "value", Type: "str", Required: true},
-				},
-			},
-		}},
-		{name: "invalid input shape", bindings: []execution.CapabilityBinding{
-			{
-				ID:   "cap.lookup",
-				Name: "records.lookup",
-				Input: []binding.FieldShape{
-					{Name: "value", Type: "unsupported", Required: true},
-				},
-			},
+			withName(withID(valid, "cap.detail"), "records.lookup.detail"),
 		}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := execution.New(tt.bindings)
+
+			require.ErrorIs(t, err, execution.ErrInternal)
+		})
+	}
+	for _, malformed := range malformedInputSchemas() {
+		t.Run(malformed.name, func(t *testing.T) {
+			_, err := execution.New([]execution.CapabilityBinding{withInput(valid, malformed.schema)})
 
 			require.ErrorIs(t, err, execution.ErrInternal)
 		})
@@ -69,7 +61,7 @@ func TestNewCopiesCallerBindings(t *testing.T) {
 	capability := lookupBinding()
 	engine, err := execution.New([]execution.CapabilityBinding{capability})
 	require.NoError(t, err)
-	capability.Input[0].Name = "mutated"
+	capability.Input.Nodes[capability.Input.Root].Fields[0].Name = "mutated"
 
 	result, err := engine.Execute(
 		`def main(): return records.lookup(value="alpha")`,
@@ -180,6 +172,18 @@ def main():
 				"count":  int64(3),
 				"active": true,
 				"score":  1.5,
+			},
+		},
+		{
+			name:   "integer supplied for float",
+			engine: buildWidenedEngine,
+			source: `def main(): return records.lookup(org="meigma", count=3, active=True, score=2, weight=4)`,
+			wantArguments: map[string]any{
+				"org":    "meigma",
+				"count":  int64(3),
+				"active": true,
+				"score":  2.0,
+				"weight": 4.0,
 			},
 		},
 	}
@@ -443,11 +447,9 @@ func buildEngine(t *testing.T) *execution.Engine {
 // lookupBinding returns the representative records.lookup capability.
 func lookupBinding() execution.CapabilityBinding {
 	return execution.CapabilityBinding{
-		ID:   "cap.lookup",
-		Name: "records.lookup",
-		Input: []binding.FieldShape{
-			{Name: "value", Type: "str", Required: true},
-		},
+		ID:    "cap.lookup",
+		Name:  "records.lookup",
+		Input: mustInputSchema[valueInput](),
 	}
 }
 
@@ -462,18 +464,9 @@ func buildWidenedEngine(t *testing.T) *execution.Engine {
 // widenedLookupBinding returns records.lookup with every supported scalar input form.
 func widenedLookupBinding() execution.CapabilityBinding {
 	return execution.CapabilityBinding{
-		ID:   "cap.lookup",
-		Name: "records.lookup",
-		Input: []binding.FieldShape{
-			{Name: "org", Type: "str", Required: true},
-			{Name: "count", Type: "int", Required: true},
-			{Name: "active", Type: "bool", Required: true},
-			{Name: "score", Type: "float", Required: true},
-			{Name: "label", Type: "str | None", Required: false},
-			{Name: "limit", Type: "int | None", Required: false},
-			{Name: "enabled", Type: "bool | None", Required: false},
-			{Name: "weight", Type: "float | None", Required: false},
-		},
+		ID:    "cap.lookup",
+		Name:  "records.lookup",
+		Input: mustInputSchema[widenedInput](),
 	}
 }
 
@@ -486,6 +479,12 @@ func withID(capability execution.CapabilityBinding, id string) execution.Capabil
 // withName returns a copy of capability with a replacement dotted name.
 func withName(capability execution.CapabilityBinding, name string) execution.CapabilityBinding {
 	capability.Name = name
+	return capability
+}
+
+// withInput returns a copy of capability with a replacement input schema.
+func withInput(capability execution.CapabilityBinding, input binding.InputSchema) execution.CapabilityBinding {
+	capability.Input = input
 	return capability
 }
 

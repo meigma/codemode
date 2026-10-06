@@ -83,7 +83,7 @@ func TestExecuteAttachesApprovedProgramDiagnostics(t *testing.T) {
 	}
 }
 
-// TestExecuteAttachesOneBindingDiagnostic proves BindShape suffixes omit the coarse prefix.
+// TestExecuteAttachesOneBindingDiagnostic proves binding suffixes omit the coarse prefix.
 func TestExecuteAttachesOneBindingDiagnostic(t *testing.T) {
 	var nativeCalls atomic.Int64
 	_, err := buildEngine(t).Execute(

@@ -29,8 +29,8 @@ type builderOutput struct {
 
 // invalidBuilderInput contains a type outside the restricted binder contract.
 type invalidBuilderInput struct {
-	// Count is intentionally unsupported as a 32-bit integer.
-	Count int32 `json:"count"`
+	// Values is intentionally unsupported as a fixed-size array.
+	Values [2]int64 `json:"values"`
 }
 
 // interfaceBuilderOutput is an unsupported interface/any nested output.

@@ -238,18 +238,46 @@ Input field shapes are:
 | Go field type | `type` | `required` |
 | --- | --- | --- |
 | `string` | `str` | `true` |
-| `int64` | `int` | `true` |
+| `int`, `int8`–`int64`, `uint`, `uint8`–`uint64` | `int` | `true` |
 | `bool` | `bool` | `true` |
-| `float64` | `float` | `true` |
-| `*string` | <code>str &#124; None</code> | `false` |
-| `*int64` | <code>int &#124; None</code> | `false` |
-| `*bool` | <code>bool &#124; None</code> | `false` |
-| `*float64` | <code>float &#124; None</code> | `false` |
+| `float32`, `float64` | `float` | `true` |
+| `[]T`, including `[]byte` | `list[T]` | `true` |
+| `map[K]T` with string-kind `K` | `dict[str, T]` | `true` |
+| Nested struct | <code>{a: T, b: U &#124; None}</code> | `true` |
+| `*T` for a supported non-pointer type | <code>T &#124; None</code> | `false` |
 
-Named input types with these underlying kinds have the same shapes. Required
-integers use the signed 64-bit range, and all floats must be finite. An omitted
-optional argument and explicit `None` both produce a nil pointer and omit the
-field from the canonical authorization map.
+Named types with these underlying kinds have the same shapes. These types
+compose recursively. Lists accept Starlark lists or tuples; `[]byte` accepts
+integers from 0 through 255. Dicts require string keys. Nested structs accept
+dicts with declared keys only. Non-pointer fields are required at every level;
+pointer fields may be omitted or `None`, with or without `omitempty`. Nested
+input optionality uses `field: T | None`, not the output notation `field?: T`.
+
+Signed integers must fit their Go type's range. Unsigned integers must be
+nonnegative and no greater than the smaller of the Go type's maximum and
+`math.MaxInt64`. Float fields accept floats or integers converted to floats.
+All floats must be finite, and `float32` values must fit the `float32` range.
+A `float32` value is rounded to the nearest `float32` before authorization, so
+policy sees the same number the handler receives. Float values are not
+accepted for integer fields.
+
+Root input names must be Starlark identifiers that are not keywords. Nested
+input names and all output names may be any non-empty tag name accepted by
+`encoding/json`, including keywords such as `from`. Type notation quotes names
+that are not plain identifiers, as in `{"created-at": str}`.
+
+An omitted optional struct field and explicit `None` both produce a nil pointer
+and omit the field from canonical authorization arguments at every level.
+`None` inside a list or dict value remains `nil`. Canonical arguments may
+contain nested objects and arrays. See the
+[composite input example](public-api.md#composite-input-example) for a Go input,
+its generated signature, a Starlark call, and the authorizer's argument map.
+
+Invalid arguments identify nested paths such as `filter.owner`, `tags[1]`,
+`labels['env']`, or `window['created-at']`. For example:
+`invalid capability arguments: missing required argument "window.end"`.
+The [input reference](public-api.md#supported-input-and-output-types) lists
+registration rejections, range checks, and diagnostic forms.
 
 Output `type` strings use this compact notation:
 

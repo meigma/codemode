@@ -47,8 +47,15 @@ A native call passes four stages in a fixed order:
 
 This order prevents policy from interpreting malformed Starlark values and
 prevents a handler from running before policy has evaluated the exact input the
-handler will receive. The canonical map is separate from the typed handler
-input, so policy cannot rewrite the handler's arguments by mutating the map.
+handler will receive. Canonical arguments can contain nested objects and arrays,
+not only scalars. Optional struct fields that are omitted or `None` are absent
+at every level; `None` inside a list or dict value remains `nil` (`null` in Rego).
+Integers supplied for float fields become `float64` values before authorization.
+Custom authorizers and Rego policies must account for these shapes when checking
+composite inputs. Every container is a fresh copy, separate from the typed
+handler input, so policy cannot rewrite the handler's arguments by mutating the
+map or its nested containers. `MaxValueDepth` and `MaxValueBytes` bound the
+entire native-call argument map.
 
 An authorizer reports a recognized denial with an error that wraps `authz.ErrDenied`. CodeMode classifies that outcome as `permission denied` and does not dispatch the handler. Any other authorizer error, and an authorizer panic recovered at the boundary, becomes `authorization policy failure`. Policy diagnostic text does not cross the MCP boundary.
 

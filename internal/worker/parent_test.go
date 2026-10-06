@@ -19,7 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/meigma/codemode/authz"
-	"github.com/meigma/codemode/internal/binding"
 	"github.com/meigma/codemode/internal/execution"
 )
 
@@ -48,11 +47,9 @@ func testLimits() Limits {
 // lookupBinding is one valid capability used by runner tests.
 func lookupBinding() execution.CapabilityBinding {
 	return execution.CapabilityBinding{
-		ID:   "cap.lookup",
-		Name: "records.lookup",
-		Input: []binding.FieldShape{
-			{Name: "value", Type: "str", Required: true},
-		},
+		ID:    "cap.lookup",
+		Name:  "records.lookup",
+		Input: mustInputSchema[valueInput](),
 	}
 }
 
@@ -387,10 +384,11 @@ func TestRunnerNewCopiesManifest(t *testing.T) {
 	require.NoError(t, err)
 
 	capability.ID = "mutated"
-	capability.Input[0].Name = "mutated"
+	capability.Input.Nodes[capability.Input.Root].Fields[0].Name = "mutated"
 	require.Len(t, runner.manifest, 1)
 	assert.Equal(t, "cap.lookup", runner.manifest[0].ID)
-	assert.Equal(t, "value", runner.manifest[0].Input[0].Name)
+	manifestInput := runner.manifest[0].Input
+	assert.Equal(t, "value", manifestInput.Nodes[manifestInput.Root].Fields[0].Name)
 }
 
 // TestRunnerNilStateAndOversizeSource proves nil runner, nil context, and oversized source fail before spawn.

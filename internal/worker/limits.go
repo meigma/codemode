@@ -43,8 +43,8 @@ type manifestEntry struct {
 	// The first segment must not collide with a reserved Starlark universe root.
 	Name string `json:"name"`
 
-	// Input is the exact compiled input shape.
-	Input []binding.FieldShape `json:"input"`
+	// Input is the private compiled input schema.
+	Input binding.InputSchema `json:"input"`
 }
 
 // childPayloadCap is the largest legal child-originated execution payload.
@@ -190,7 +190,7 @@ func validateManifest(entries []manifestEntry) error {
 		if _, duplicate := names[entry.Name]; duplicate {
 			return errInvalidManifest
 		}
-		if err := binding.ValidateInputShape(entry.Input); err != nil {
+		if err := entry.Input.Validate(); err != nil {
 			return fmt.Errorf("%w: %w", errInvalidManifest, err)
 		}
 		ids[entry.ID] = struct{}{}

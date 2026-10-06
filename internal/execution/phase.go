@@ -54,6 +54,12 @@ type executionState struct {
 
 	// call forwards a bound canonical map through the request-specific native port.
 	call nativeInvoker
+
+	// maxValueDepth bounds the nesting of each bound native-call argument map.
+	maxValueDepth int
+
+	// maxValueBytes supplies the byte-derived node budget for each bound argument map.
+	maxValueBytes int
 }
 
 // beginMain transitions exactly once from loading to running.

@@ -77,6 +77,12 @@ func main() {
 For the full walk-through — the input and output types, building the binary,
 and adding it to an agent — follow
 [Build your first CodeMode server](docs/docs/tutorials/first-server.md).
+
+Capability inputs support lists, string-keyed dicts, nested structs, and optional
+values as well as strings, Booleans, integers, and floats. See the
+[supported types and composite example](docs/docs/reference/public-api.md#supported-input-and-output-types)
+for binding rules and the nested argument map passed to authorization.
+
 Shorter compile-checked examples: [`example_test.go`](example_test.go) and
 [`mcpserver/example_test.go`](mcpserver/example_test.go).
 

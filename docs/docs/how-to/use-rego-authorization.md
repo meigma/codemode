@@ -58,7 +58,7 @@ The adapter supplies only this input shape:
 }
 ```
 
-`subject.id` comes from the trusted `authz.Subject`. The capability fields come from registration. `arguments` contains the canonical, validated keyword arguments for that native call. An omitted optional argument is absent rather than set to `null`. The input does not include credentials, request metadata, Starlark source, environment data, or the current time.
+`subject.id` comes from the trusted `authz.Subject`. The capability fields come from registration. `arguments` contains the canonical, validated keyword arguments for that native call. It may contain nested objects and arrays, so write policy checks against the registered input shape rather than assuming every argument is a scalar. Optional struct fields that are omitted or `None` are absent at every level; `None` in a list or dict value remains `null`. Integers passed to float fields become floating-point values before authorization. The input does not include credentials, request metadata, Starlark source, environment data, or the current time.
 
 ## Prepare the authorizer before the builder
 

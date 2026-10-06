@@ -93,14 +93,14 @@ func TestServeProtocolFailure(t *testing.T) {
 	assert.Zero(t, out.Len())
 }
 
-// TestServeManifestRejection proves an illegal advertised shape never starts Engine.
+// TestServeManifestRejection proves an illegal advertised input schema never starts Engine.
 func TestServeManifestRejection(t *testing.T) {
 	payload := []byte(
 		`{"type":"exec","version":1,"source":"def main():\n    return 1\n",` +
 			`"limits":{"max_source_bytes":256,"max_execution_steps":1000,` +
 			`"max_native_calls":8,"max_value_depth":8,"max_value_bytes":256},` +
 			`"manifest":[{"id":"cap.lookup","name":"records.lookup",` +
-			`"input":[{"name":"org","type":"str","required":false}]}]}`,
+			`"input":{"root":0,"nodes":[{"kind":"str"}]}}]}`,
 	)
 
 	var in bytes.Buffer

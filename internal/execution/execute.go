@@ -61,7 +61,9 @@ func execute(
 		nativeCalls: checkedCounter{
 			maximum: limits.MaxNativeCalls,
 		},
-		call: wrapNativeCall(nativeCall, limits),
+		call:          wrapNativeCall(nativeCall, limits),
+		maxValueDepth: limits.MaxValueDepth,
+		maxValueBytes: limits.MaxValueBytes,
 	}
 	thread := newThread(state, limits.MaxExecutionSteps)
 
@@ -161,7 +163,7 @@ func requireMain(globals starlark.StringDict) (*starlark.Function, error) {
 func callCapability(
 	thread *starlark.Thread,
 	id string,
-	input []binding.FieldShape,
+	input binding.InputSchema,
 	args starlark.Tuple,
 	kwargs []starlark.Tuple,
 ) (starlark.Value, error) {
@@ -175,12 +177,16 @@ func callCapability(
 	if counterErr := state.nativeCalls.increment(); counterErr != nil {
 		return nil, counterErr
 	}
-	canonical, bindingErr := binding.BindShape(input, args, kwargs)
+	canonical, bindingErr := input.Bind(args, kwargs, state.maxValueDepth, state.maxValueBytes)
 	if bindingErr != nil {
-		if errors.Is(bindingErr, binding.ErrInvalidArguments) {
+		switch {
+		case errors.Is(bindingErr, binding.ErrInvalidArguments):
 			return nil, invalidArgumentDetail(bindingErr)
+		case errors.Is(bindingErr, binding.ErrValueLimit):
+			return nil, fmt.Errorf("%w: %w", ErrResourceLimit, bindingErr)
+		default:
+			return nil, fmt.Errorf("%w: %w", ErrInternal, bindingErr)
 		}
-		return nil, fmt.Errorf("%w: %w", ErrInternal, bindingErr)
 	}
 	return state.call(id, canonical)
 }

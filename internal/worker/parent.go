@@ -15,7 +15,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/meigma/codemode/authz"
-	"github.com/meigma/codemode/internal/binding"
 	"github.com/meigma/codemode/internal/execution"
 )
 
@@ -363,16 +362,14 @@ func (r *Runner) Execute(ctx context.Context, subject authz.Subject, source stri
 	return interpretExec(runCtx, out, waitErr)
 }
 
-// copyManifest deep-copies ID, name, and input shapes into child manifest entries.
+// copyManifest deep-copies ID, name, and input schemas into child manifest entries.
 func copyManifest(bindings []execution.CapabilityBinding) []manifestEntry {
 	entries := make([]manifestEntry, len(bindings))
 	for index, capability := range bindings {
-		input := make([]binding.FieldShape, len(capability.Input))
-		copy(input, capability.Input)
 		entries[index] = manifestEntry{
 			ID:    capability.ID,
 			Name:  capability.Name,
-			Input: input,
+			Input: capability.Input.Clone(),
 		}
 	}
 	return entries
